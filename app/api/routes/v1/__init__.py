@@ -1,5 +1,6 @@
 from fastapi import APIRouter
-from app.api.routes.v1 import user, team, question, contest, bank
+
+from app.api.routes.v1 import bank, contest, question, team, user
 
 api_v1_router = APIRouter()
 

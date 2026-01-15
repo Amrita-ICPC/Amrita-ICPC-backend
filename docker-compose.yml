@@ -21,8 +21,8 @@ services:
     image: redis:7-alpine
     container_name: amrita_icpc_redis
     restart: always
-    # Only use password if REDIS_PASSWORD is set. 
-    # For simplicity in this example, we assume if it's set it's used, but in basic compose 
+    # Only use password if REDIS_PASSWORD is set.
+    # For simplicity in this example, we assume if it's set it's used, but in basic compose
     # it's often easier to omit if null. However, to support the config:
     command: >
       sh -c '

@@ -31,7 +31,7 @@ Backend service for the Amrita ICPC Coding Platform, built with FastAPI and SQLA
     ```bash
     cp .env.example .env
     ```
-    
+
     Update `.env` with your specific configurations if needed. By default, it is configured to work with the provided Docker Compose setup.
 
 ## Running the Application

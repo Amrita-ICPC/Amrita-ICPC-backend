@@ -1,16 +1,11 @@
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import sessionmaker
+
 from app.core.config import config
-from app.models.base import Base
 from app.core.logger import logger
+from app.models.base import Base
 
 # Import all models to ensure they are registered with Base.metadata
-from app.models.user import User
-from app.models.team import Team, TeamUser
-from app.models.bank import Bank, BankQuestion
-from app.models.question import Question
-from app.models.contest import Contest, ContestQuestion, ContestTeam
-from app.models.tag import Tag, QuestionTag
 
 # Construct the database URL
 DATABASE_URL = f"postgresql://{config.DATABASE_USERNAME}:{config.DATABASE_PASSWORD}@{config.DATABASE_HOST}:{config.DATABASE_PORT}/{config.DATABASE_NAME}"
@@ -29,6 +24,7 @@ SessionLocal = sessionmaker(
     autocommit=False,
 )
 
+
 def init_db():
     """
     Initialize the database.
@@ -38,6 +34,7 @@ def init_db():
         logger.info("Initializing database...")
         Base.metadata.create_all(bind=engine)
         logger.info("Database tables created successfully.")
+
 
 def get_db():
     """

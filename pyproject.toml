@@ -1,7 +1,7 @@
 [project]
 name = "amrita-icpc-backend"
 version = "0.1.0"
-description = "Add your description here"
+description = "ICPC Coding Platform - Backend"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -18,3 +18,18 @@ dependencies = [
     "uvicorn>=0.40.0",
     "fastapi-keycloak-middleware>=1.6.0",
 ]
+
+[dependency-groups]
+dev = ["pre-commit>=4.5.1", "ruff>=0.14.12"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
+ignore = ["E501", "N805", "N818"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

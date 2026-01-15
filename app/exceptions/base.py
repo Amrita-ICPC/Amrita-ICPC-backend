@@ -1,12 +1,11 @@
-from typing import Any, Dict, Optional
+from typing import Any, Optional
+
 
 class AppBaseException(Exception):
     """Base category for application exceptions."""
+
     def __init__(
-        self, 
-        message: str, 
-        status_code: int = 500, 
-        detail: Optional[Any] = None
+        self, message: str, status_code: int = 500, detail: Optional[Any] = None
     ):
         super().__init__(message)
         self.message = message

@@ -1,21 +1,32 @@
 import logging
 import sys
 from typing import Optional
+
 from rich.logging import RichHandler
+
 from .config import config
 
+
 class Logger:
-    _instance: Optional['Logger'] = None
+    _instance: Optional["Logger"] = None
     _initialized: bool = False
 
-    def __new__(cls, name: Optional[str] = None, log_level: str = "INFO",
-                log_format: str = '%(asctime)s - %(name)s - %(levelname)s - %(message)s') -> 'Logger':
+    def __new__(
+        cls,
+        name: Optional[str] = None,
+        log_level: str = "INFO",
+        log_format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    ) -> "Logger":
         if cls._instance is None:
             cls._instance = super(Logger, cls).__new__(cls)
         return cls._instance
 
-    def __init__(self, name: Optional[str] = None, log_level: str = "INFO",
-                 log_format: str = '%(asctime)s - %(name)s - %(levelname)s - %(message)s') -> None:
+    def __init__(
+        self,
+        name: Optional[str] = None,
+        log_level: str = "INFO",
+        log_format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    ) -> None:
         if not self._initialized:
             self.name = name or __name__
             self.log_level = getattr(logging, log_level.upper(), logging.INFO)
@@ -104,11 +115,12 @@ class Logger:
         return self.logger
 
     @classmethod
-    def get_instance(cls, name: Optional[str] = None) -> 'Logger':
+    def get_instance(cls, name: Optional[str] = None) -> "Logger":
         """Get the singleton logger instance."""
         if cls._instance is None:
             cls._instance = cls(name=name)
         return cls._instance
+
 
 if config.USE_RICH_LOGGING:
     # Logging Configuration
@@ -128,23 +140,29 @@ if config.USE_RICH_LOGGING:
         ],
     )
 
+
 def setup_sqlalchemy_logging():
     """Configure SQLAlchemy logging with RichHandler."""
     if config.USE_RICH_LOGGING:
         sqlalchemy_logger = logging.getLogger("sqlalchemy.engine")
-        sqlalchemy_logger.setLevel(logging.INFO if config.ENVIRONMENT == "development" else logging.WARN)
+        sqlalchemy_logger.setLevel(
+            logging.INFO if config.ENVIRONMENT == "development" else logging.WARN
+        )
         # Remove existing handlers
         for handler in sqlalchemy_logger.handlers[:]:
             sqlalchemy_logger.removeHandler(handler)
-        
-        sqlalchemy_logger.addHandler(RichHandler(
-            rich_tracebacks=True,
-            markup=True,
-            show_time=True,
-            show_level=True,
-            show_path=True,
-        ))
+
+        sqlalchemy_logger.addHandler(
+            RichHandler(
+                rich_tracebacks=True,
+                markup=True,
+                show_time=True,
+                show_level=True,
+                show_path=True,
+            )
+        )
         sqlalchemy_logger.propagate = False
+
 
 def setup_uvicorn_logging():
     """Configure Uvicorn logging with RichHandler."""
@@ -153,20 +171,25 @@ def setup_uvicorn_logging():
         for logger_name in loggers:
             logger_instance = logging.getLogger(logger_name)
             logger_instance.setLevel(config.LOG_LEVEL)
-            
+
             # Remove existing handlers
             for handler in logger_instance.handlers[:]:
                 logger_instance.removeHandler(handler)
-            
+
             # Add RichHandler
-            logger_instance.addHandler(RichHandler(
-                rich_tracebacks=True,
-                markup=True,
-                show_time=True,
-                show_level=True,
-                show_path=True,
-            ))
+            logger_instance.addHandler(
+                RichHandler(
+                    rich_tracebacks=True,
+                    markup=True,
+                    show_time=True,
+                    show_level=True,
+                    show_path=True,
+                )
+            )
             logger_instance.propagate = False
 
+
 # Global logger instance
-logger = Logger(name='api', log_level=config.LOG_LEVEL, log_format=config.LOG_FORMAT).get_logger()
+logger = Logger(
+    name="api", log_level=config.LOG_LEVEL, log_format=config.LOG_FORMAT
+).get_logger()
