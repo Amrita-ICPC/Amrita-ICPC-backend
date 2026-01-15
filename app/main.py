@@ -5,6 +5,7 @@ from app.core.clients.database import init_db
 from app.api.route import api_router
 from app.core.clients.redis import init_redis, close_redis
 from app.core.logger import logger, setup_sqlalchemy_logging, setup_uvicorn_logging
+from app.api.errors import setup_exception_handlers
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -34,6 +35,7 @@ fastapi_app = FastAPI(
     lifespan=lifespan
 )
 fastapi_app.include_router(api_router, prefix=config.API_PREFIX)
+setup_exception_handlers(fastapi_app)
 
 if __name__ == "__main__":
     import uvicorn

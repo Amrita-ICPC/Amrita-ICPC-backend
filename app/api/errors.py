@@ -1,0 +1,57 @@
+from fastapi import FastAPI, Request, status
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from sqlalchemy.exc import SQLAlchemyError, IntegrityError, NoResultFound
+from app.core.logger import logger
+from app.exceptions.base import AppBaseException
+
+def setup_exception_handlers(app: FastAPI) -> None:
+    """Register exception handlers for the FastAPI application."""
+
+    @app.exception_handler(AppBaseException)
+    async def app_exception_handler(request: Request, exc: AppBaseException):
+        logger.warning(f"App exception: {exc.message} (Status: {exc.status_code})")
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail, "message": exc.message},
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(request: Request, exc: RequestValidationError):
+        logger.error(f"Validation error: {exc}")
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            content={"detail": exc.errors(), "message": "Validation error"},
+        )
+
+    @app.exception_handler(SQLAlchemyError)
+    async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
+        logger.error(f"Database error: {str(exc)}")
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"detail": "Internal server error", "message": "A database error occurred"},
+        )
+        
+    @app.exception_handler(IntegrityError)
+    async def integrity_exception_handler(request: Request, exc: IntegrityError):
+        logger.error(f"Integrity error: {str(exc)}")
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={"detail": "Conflict", "message": "Data integrity violation (e.g., duplicate entry)"},
+        )
+    
+    @app.exception_handler(NoResultFound)
+    async def no_result_exception_handler(request: Request, exc: NoResultFound):
+        logger.warning(f"No result found: {str(exc)}")
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"detail": "Not Found", "message": "Requested resource not found"},
+        )
+
+    @app.exception_handler(Exception)
+    async def general_exception_handler(request: Request, exc: Exception):
+        logger.error(f"Unhandled exception: {str(exc)}", exc_info=True)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"detail": "Internal server error", "message": "An unexpected error occurred"},
+        )
