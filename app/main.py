@@ -6,6 +6,8 @@ from app.api.route import api_router
 from app.core.clients.redis import init_redis, close_redis
 from app.core.logger import logger, setup_sqlalchemy_logging, setup_uvicorn_logging
 from app.api.errors import setup_exception_handlers
+from fastapi.middleware.cors import CORSMiddleware
+from app.core.security import setup_security
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -34,6 +36,20 @@ fastapi_app = FastAPI(
     version=config.VERSION,
     lifespan=lifespan
 )
+
+# Setup Security (Authentication)
+setup_security(fastapi_app)
+
+# Setup CORS Middleware (Must come AFTER auth middleware setup to run FIRST on requests)
+# Allowing all origins for development
+fastapi_app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 fastapi_app.include_router(api_router, prefix=config.API_PREFIX)
 setup_exception_handlers(fastapi_app)
 

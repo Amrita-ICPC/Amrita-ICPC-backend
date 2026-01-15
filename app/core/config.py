@@ -148,6 +148,27 @@ class Config(BaseSettings):
         description="Judge0 API timeout"
     )
 
+    # Keycloak Configuration
+    KEYCLOAK_SERVER_URL: str = Field(
+        default="http://localhost:8080",
+        env="KEYCLOAK_SERVER_URL",
+        description="Keycloak Server URL"
+    )
+    KEYCLOAK_REALM: str = Field(
+        default="master",
+        env="KEYCLOAK_REALM",
+        description="Keycloak Realm"
+    )
+    KEYCLOAK_CLIENT_ID: str = Field(
+        default="amrita-icpc-backend",
+        env="KEYCLOAK_CLIENT_ID",
+        description="Keycloak Client ID"
+    )
+    KEYCLOAK_CLIENT_SECRET: Optional[str] = Field(
+        default=None,
+        env="KEYCLOAK_CLIENT_SECRET",
+        description="Keycloak Client Secret"
+    )
 
     @validator("LOG_LEVEL")
     def validate_log_level(cls, value):
