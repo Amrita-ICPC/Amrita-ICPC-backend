@@ -1,0 +1,47 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: amrita_icpc_db
+    restart: always
+    environment:
+      POSTGRES_USER: ${DATABASE_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-postgres}
+      POSTGRES_DB: ${DATABASE_NAME:-amrita_icpc}
+    ports:
+      - "${DATABASE_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USERNAME:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: amrita_icpc_redis
+    restart: always
+    # Only use password if REDIS_PASSWORD is set. 
+    # For simplicity in this example, we assume if it's set it's used, but in basic compose 
+    # it's often easier to omit if null. However, to support the config:
+    command: >
+      sh -c '
+        if [ -n "${REDIS_PASSWORD}" ]; then
+          redis-server --requirepass "${REDIS_PASSWORD}";
+        else
+          redis-server;
+        fi
+      '
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:

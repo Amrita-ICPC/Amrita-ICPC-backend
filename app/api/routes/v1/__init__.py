@@ -1,0 +1,10 @@
+from fastapi import APIRouter
+from app.api.routes.v1 import user, team, question, contest, bank
+
+api_v1_router = APIRouter()
+
+api_v1_router.include_router(user.router, prefix="/users", tags=["Users"])
+api_v1_router.include_router(team.router, prefix="/teams", tags=["Teams"])
+api_v1_router.include_router(question.router, prefix="/questions", tags=["Questions"])
+api_v1_router.include_router(contest.router, prefix="/contests", tags=["Contests"])
+api_v1_router.include_router(bank.router, prefix="/banks", tags=["Banks"])

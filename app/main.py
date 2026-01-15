@@ -1,0 +1,42 @@
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from app.core.config import config
+from app.core.clients.database import init_db
+from app.api.route import api_router
+from app.core.clients.redis import init_redis, close_redis
+from app.core.logger import logger, setup_sqlalchemy_logging, setup_uvicorn_logging
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Setup logging
+    setup_sqlalchemy_logging()
+    setup_uvicorn_logging()
+    logger.info(f"Starting application in {config.ENVIRONMENT} mode")
+    logger.info(f"API Prefix: {config.API_PREFIX}")
+    
+    # Initialize database (create tables) if in development
+    init_db()
+    
+    # Initialize Redis
+    await init_redis()
+    
+    yield
+    
+    # Close Redis
+    await close_redis()
+    
+    logger.info("Shutting down application")
+
+fastapi_app = FastAPI(
+    title=config.PROJECT_NAME,
+    description=config.PROJECT_DESCRIPTION,
+    version=config.VERSION,
+    lifespan=lifespan
+)
+fastapi_app.include_router(api_router, prefix=config.API_PREFIX)
+
+if __name__ == "__main__":
+    import uvicorn
+    # Use app.main:fastapi_app assuming running from root, or main:fastapi_app if running from inside app
+    # Given the project structure, running from root is best practice.
+    uvicorn.run("app.main:fastapi_app", host=config.API_HOST, port=config.API_PORT, reload=config.ENVIRONMENT == "development")
