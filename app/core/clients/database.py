@@ -4,8 +4,8 @@ from sqlalchemy.orm import sessionmaker
 from app.core.config import config
 from app.core.logger import logger
 from app.models.base import Base
-
 # Import all models to ensure they are registered with Base.metadata
+from app.models import bank, contest, question, tag, team, user
 
 # Construct the database URL
 DATABASE_URL = f"postgresql://{config.DATABASE_USERNAME}:{config.DATABASE_PASSWORD}@{config.DATABASE_HOST}:{config.DATABASE_PORT}/{config.DATABASE_NAME}"

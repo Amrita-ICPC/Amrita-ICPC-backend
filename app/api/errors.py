@@ -5,6 +5,12 @@ from sqlalchemy.exc import IntegrityError, NoResultFound, SQLAlchemyError
 
 from app.core.logger import logger
 from app.exceptions.base import AppBaseException
+from app.exceptions.contest import (
+    ContestAlreadyExistsError,
+    ContestNotFoundError,
+    ContestOperationError,
+    InvalidContestError,
+)
 
 
 def setup_exception_handlers(app: FastAPI) -> None:
@@ -56,6 +62,42 @@ def setup_exception_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=status.HTTP_404_NOT_FOUND,
             content={"detail": "Not Found", "message": "Requested resource not found"},
+        )
+
+    @app.exception_handler(ContestNotFoundError)
+    async def contest_not_found_handler(request: Request, exc: ContestNotFoundError):
+        logger.warning(f"Contest not found: {exc.message}")
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail, "message": exc.message},
+        )
+
+    @app.exception_handler(ContestAlreadyExistsError)
+    async def contest_already_exists_handler(
+        request: Request, exc: ContestAlreadyExistsError
+    ):
+        logger.warning(f"Contest already exists: {exc.message}")
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail, "message": exc.message},
+        )
+
+    @app.exception_handler(InvalidContestError)
+    async def invalid_contest_handler(request: Request, exc: InvalidContestError):
+        logger.warning(f"Invalid contest data: {exc.message}")
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail, "message": exc.message},
+        )
+
+    @app.exception_handler(ContestOperationError)
+    async def contest_operation_error_handler(
+        request: Request, exc: ContestOperationError
+    ):
+        logger.error(f"Contest operation error: {exc.message}")
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail, "message": exc.message},
         )
 
     @app.exception_handler(Exception)

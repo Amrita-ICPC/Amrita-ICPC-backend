@@ -12,3 +12,6 @@ wheels/
 .venv
 
 .env
+
+#vscode generated files 
+.vscode

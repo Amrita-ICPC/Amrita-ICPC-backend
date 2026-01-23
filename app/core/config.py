@@ -1,7 +1,7 @@
 from typing import Optional
 
 from dotenv import load_dotenv
-from pydantic import Field, validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
 
 load_dotenv()
@@ -119,13 +119,13 @@ class Config(BaseSettings):
         default=None, env="KEYCLOAK_CLIENT_SECRET", description="Keycloak Client Secret"
     )
 
-    @validator("LOG_LEVEL")
+    @field_validator("LOG_LEVEL")
     def validate_log_level(cls, value):
         if value not in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]:
             raise ValueError("Invalid log level")
         return value
 
-    @validator("ENVIRONMENT")
+    @field_validator("ENVIRONMENT")
     def validate_environment(cls, value):
         if value not in ["development", "staging", "production"]:
             raise ValueError("Invalid environment")
