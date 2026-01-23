@@ -20,7 +20,7 @@ router = APIRouter()
     status_code=status.HTTP_201_CREATED,
     summary="Create a new contest",
 )
-def create_contest(
+async def create_contest(
     contest: ContestCreate,
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -46,7 +46,7 @@ def create_contest(
     if "admin" not in user_roles:
         raise PermissionDeniedError("Only admins can create contests")
 
-    created_contest = ContestService.create_contest(db, contest)
+    created_contest = await ContestService.create_contest(db, contest)
     user_id = current_user.get("sub")
     logger.info(f"Contest '{created_contest.name}' with ID {created_contest.id} created by user {user_id}")
     
@@ -84,7 +84,7 @@ def get_all_contests(
     response_model=ContestResponse,
     summary="Get contest by ID",
 )
-def get_contest(
+async def get_contest(
     contest_id: UUID,
     db: Session = Depends(get_db),
 ):
@@ -101,7 +101,7 @@ def get_contest(
     Raises:
         ContestNotFoundError: If contest with given ID not found
     """
-    return ContestService.get_contest_by_id(db, contest_id)
+    return await ContestService.get_contest_by_id(db, contest_id)
 
 
 @router.patch(
@@ -109,7 +109,7 @@ def get_contest(
     response_model=MessageResponse,
     summary="Update contest",
 )
-def update_contest(
+async def update_contest(
     contest_id: UUID,
     contest_data: ContestUpdate,
     db: Session = Depends(get_db),
@@ -139,7 +139,7 @@ def update_contest(
     if "admin" not in user_roles:
         raise PermissionDeniedError("Only admins can update contests")
 
-    ContestService.update_contest(db, contest_id, contest_data)
+    await ContestService.update_contest(db, contest_id, contest_data)
     user_id = current_user.get("sub")
     logger.info(f"Contest with ID {contest_id} updated by user {user_id}")
     
@@ -152,7 +152,7 @@ def update_contest(
     status_code=status.HTTP_200_OK,
     summary="Delete contest",
 )
-def delete_contest(
+async def delete_contest(
     contest_id: UUID,
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -179,7 +179,7 @@ def delete_contest(
     if "admin" not in user_roles:
         raise PermissionDeniedError("Only admins can delete contests")
 
-    ContestService.delete_contest(db, contest_id)
+    await ContestService.delete_contest(db, contest_id)
     user_id = current_user.get("sub")
     logger.info(f"Contest with ID {contest_id} deleted by user {user_id}")
     

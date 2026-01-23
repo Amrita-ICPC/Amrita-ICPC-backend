@@ -6,13 +6,14 @@ from sqlalchemy.orm import Session
 from app.exceptions.contest import ContestNotFoundError
 from app.models.contest import Contest
 from app.schema.contest import ContestCreate, ContestUpdate
+from app.utils.contest_cache import ContestCache
 
 
 class ContestService:
     """Service for contest database operations."""
 
     @staticmethod
-    def create_contest(db: Session, contest: ContestCreate) -> Contest:
+    async def create_contest(db: Session, contest: ContestCreate) -> Contest:
         """
         Create a new contest in the database.
 
@@ -32,10 +33,14 @@ class ContestService:
         db.add(db_contest)
         db.commit()
         db.refresh(db_contest)
+        
+        # Cache the newly created contest
+        await ContestCache.set_contest(db_contest)
+        
         return db_contest
 
     @staticmethod
-    def get_contest_by_id(db: Session, contest_id: UUID) -> Contest:
+    async def get_contest_by_id(db: Session, contest_id: UUID) -> Contest:
             """
             Get a contest by its ID.
 
@@ -49,9 +54,27 @@ class ContestService:
             Raises:
                 ContestNotFoundError: If contest not found
             """
+            # Try to get from cache first
+            cached_contest = await ContestCache.get_contest(contest_id)
+            if cached_contest:
+                # Reconstruct Contest object from cached data
+                contest = Contest(
+                    id=UUID(cached_contest["id"]),
+                    name=cached_contest["name"],
+                    description=cached_contest["description"],
+                    image=cached_contest["image"],
+                    is_public=cached_contest["is_public"],
+                )
+                return contest
+            
+            # If not in cache, fetch from database
             contest = db.query(Contest).filter(Contest.id == contest_id).first()
             if not contest:
                 raise ContestNotFoundError(str(contest_id))
+            
+            # Cache the contest for future requests
+            await ContestCache.set_contest(contest)
+            
             return contest
     
     @staticmethod
@@ -74,7 +97,7 @@ class ContestService:
         return total, contests
 
     @staticmethod
-    def update_contest(
+    async def update_contest(
         db: Session, contest_id: UUID, contest_data: ContestUpdate
     ) -> Contest:
         """
@@ -91,19 +114,26 @@ class ContestService:
         Raises:
             ContestNotFoundError: If contest not found
         """
-        db_contest = ContestService.get_contest_by_id(db, contest_id)
+        # Fetch contest from database (not cache) to ensure we have latest data
+        contest = db.query(Contest).filter(Contest.id == contest_id).first()
+        if not contest:
+            raise ContestNotFoundError(str(contest_id))
 
         # Update only provided fields
         update_data = contest_data.model_dump(exclude_unset=True)
         for field, value in update_data.items():
-            setattr(db_contest, field, value)
+            setattr(contest, field, value)
 
         db.commit()
-        db.refresh(db_contest)
-        return db_contest
+        db.refresh(contest)
+        
+        # Update cache (delete old and set new)
+        await ContestCache.update_contest(contest)
+        
+        return contest
 
     @staticmethod
-    def delete_contest(db: Session, contest_id: UUID) -> Contest:
+    async def delete_contest(db: Session, contest_id: UUID) -> Contest:
         """
         Delete a contest.
 
@@ -117,7 +147,15 @@ class ContestService:
         Raises:
             ContestNotFoundError: If contest not found
         """
-        db_contest = ContestService.get_contest_by_id(db, contest_id)
-        db.delete(db_contest)
+        # Fetch contest from database
+        contest = db.query(Contest).filter(Contest.id == contest_id).first()
+        if not contest:
+            raise ContestNotFoundError(str(contest_id))
+        
+        db.delete(contest)
         db.commit()
-        return db_contest
+        
+        # Delete from cache
+        await ContestCache.delete_contest(contest_id)
+        
+        return contest
