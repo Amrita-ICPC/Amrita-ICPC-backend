@@ -27,7 +27,7 @@ class Config(BaseSettings):
 
     # Environment Configuration
     ENVIRONMENT: str = Field(
-        default="development",
+        default="production",
         env="ENVIRONMENT",
         description="Environment of the application",
     )
