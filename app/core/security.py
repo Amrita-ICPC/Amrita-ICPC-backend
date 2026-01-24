@@ -25,7 +25,7 @@ async def map_user(userinfo: dict):
         "name": userinfo.get("name"),
         "email": userinfo.get("email"),
         "roles": userinfo.get("resource_access", {})
-        .get("account", {})
+        .get(config.KEYCLOAK_CLIENT_ID, {})
         .get("roles", []),
         "groups": list(map(lambda x: x.lstrip("/"), userinfo.get("groups", []) or [])),
     }

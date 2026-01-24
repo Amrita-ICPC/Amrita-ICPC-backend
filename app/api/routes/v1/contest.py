@@ -1,5 +1,6 @@
 from typing import Any, Dict
 from uuid import UUID
+from app.auth.dependencies import can_create, can_read,can_update,can_delete
 
 from fastapi import APIRouter, Depends, Query, status
 
@@ -19,6 +20,7 @@ router = APIRouter()
     response_model=MessageResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create a new contest",
+    dependencies=[can_create("contests")],
 )
 async def create_contest(
     contest: ContestCreate,
@@ -41,11 +43,6 @@ async def create_contest(
     Raises:
         PermissionDeniedError: If user is not admin
     """
-    # Check if user has admin role
-    user_roles = current_user.get("groups", [])
-    if "admin" not in user_roles:
-        raise PermissionDeniedError("Only admins can create contests")
-
     created_contest = await ContestService.create_contest(db, contest)
     user_id = current_user.get("sub")
     logger.info(f"Contest '{created_contest.name}' with ID {created_contest.id} created by user {user_id}")
@@ -57,6 +54,7 @@ async def create_contest(
     "/",
     response_model=ContestListResponse,
     summary="Get all contests",
+    dependencies=[can_read("contests")],
 )
 def get_all_contests(
     page: int = Query(1, ge=1, description="Page number (starts from 1)"),
@@ -83,6 +81,7 @@ def get_all_contests(
     "/{contest_id}",
     response_model=ContestResponse,
     summary="Get contest by ID",
+    dependencies=[can_read("contests")],
 )
 async def get_contest(
     contest_id: UUID,
@@ -108,6 +107,7 @@ async def get_contest(
     "/{contest_id}",
     response_model=MessageResponse,
     summary="Update contest",
+    dependencies=[can_update("contests")],
 )
 async def update_contest(
     contest_id: UUID,
@@ -134,11 +134,6 @@ async def update_contest(
         ContestNotFoundError: If contest with given ID not found
         PermissionDeniedError: If user is not admin
     """
-    # Check if user has admin role
-    user_roles = current_user.get("groups", [])
-    if "admin" not in user_roles:
-        raise PermissionDeniedError("Only admins can update contests")
-
     await ContestService.update_contest(db, contest_id, contest_data)
     user_id = current_user.get("sub")
     logger.info(f"Contest with ID {contest_id} updated by user {user_id}")
@@ -151,6 +146,7 @@ async def update_contest(
     response_model=MessageResponse,
     status_code=status.HTTP_200_OK,
     summary="Delete contest",
+    dependencies=[can_delete("contests")],
 )
 async def delete_contest(
     contest_id: UUID,
@@ -174,11 +170,6 @@ async def delete_contest(
         ContestNotFoundError: If contest with given ID not found
         PermissionDeniedError: If user is not admin
     """
-    # Check if user has admin role
-    user_roles = current_user.get("groups", [])
-    if "admin" not in user_roles:
-        raise PermissionDeniedError("Only admins can delete contests")
-
     await ContestService.delete_contest(db, contest_id)
     user_id = current_user.get("sub")
     logger.info(f"Contest with ID {contest_id} deleted by user {user_id}")
