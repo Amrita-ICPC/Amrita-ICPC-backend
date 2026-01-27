@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
@@ -27,6 +28,11 @@ class ContestCache:
             "description": contest.description,
             "image": contest.image,
             "is_public": contest.is_public,
+            "start_time": contest.start_time.isoformat() if contest.start_time else None,
+            "end_time": contest.end_time.isoformat() if contest.end_time else None,
+            "created_by": str(contest.created_by) if contest.created_by else None,
+            "created_at": contest.created_at.isoformat() if contest.created_at else None,
+            "updated_at": contest.updated_at.isoformat() if contest.updated_at else None,
         }
 
     @staticmethod

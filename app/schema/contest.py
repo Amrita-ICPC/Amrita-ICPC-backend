@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
@@ -13,6 +14,8 @@ class ContestBase(BaseModel):
     )
     image: Optional[str] = Field(None, description="Contest image URL")
     is_public: bool = Field(default=False, description="Whether contest is public")
+    start_time: datetime = Field(..., description="Contest start time (UTC)")
+    end_time: datetime = Field(..., description="Contest end time (UTC)")
 
 
 class ContestCreate(ContestBase):
@@ -32,12 +35,21 @@ class ContestUpdate(BaseModel):
     )
     image: Optional[str] = Field(None, description="Contest image URL")
     is_public: Optional[bool] = Field(None, description="Whether contest is public")
+    start_time: Optional[datetime] = Field(
+        None, description="Contest start time (UTC)"
+    )
+    end_time: Optional[datetime] = Field(
+        None, description="Contest end time (UTC)"
+    )
 
 
 class ContestResponse(ContestBase):
     """Schema for contest response."""
 
     id: UUID = Field(..., description="Contest ID")
+    created_by: UUID = Field(..., description="Creator user ID")
+    created_at: datetime = Field(..., description="Contest creation time (UTC)")
+    updated_at: datetime = Field(..., description="Last update time (UTC)")
 
     class Config:
         from_attributes = True

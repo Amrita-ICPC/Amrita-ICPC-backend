@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
@@ -13,13 +14,16 @@ class ContestService:
     """Service for contest database operations."""
 
     @staticmethod
-    async def create_contest(db: Session, contest: ContestCreate) -> Contest:
+    async def create_contest(
+        db: Session, contest: ContestCreate, created_by: UUID
+    ) -> Contest:
         """
         Create a new contest in the database.
 
         Args:
             db: Database session
             contest: Contest creation data
+            created_by: User ID creating the contest
 
         Returns:
             Created contest object
@@ -29,6 +33,9 @@ class ContestService:
             description=contest.description,
             image=contest.image,
             is_public=contest.is_public,
+            start_time=contest.start_time,
+            end_time=contest.end_time,
+            created_by=created_by,
         )
         db.add(db_contest)
         db.commit()
@@ -41,42 +48,47 @@ class ContestService:
 
     @staticmethod
     async def get_contest_by_id(db: Session, contest_id: UUID) -> Contest:
-            """
-            Get a contest by its ID.
+        """
+        Get a contest by its ID.
 
-            Args:
-                db: Database session
-                contest_id: Contest ID
+        Args:
+            db: Database session
+            contest_id: Contest ID
 
-            Returns:
-                Contest object
+        Returns:
+            Contest object
 
-            Raises:
-                ContestNotFoundError: If contest not found
-            """
-            # Try to get from cache first
-            cached_contest = await ContestCache.get_contest(contest_id)
-            if cached_contest:
-                # Reconstruct Contest object from cached data
-                contest = Contest(
-                    id=UUID(cached_contest["id"]),
-                    name=cached_contest["name"],
-                    description=cached_contest["description"],
-                    image=cached_contest["image"],
-                    is_public=cached_contest["is_public"],
-                )
-                return contest
-            
-            # If not in cache, fetch from database
-            contest = db.query(Contest).filter(Contest.id == contest_id).first()
-            if not contest:
-                raise ContestNotFoundError(str(contest_id))
-            
-            # Cache the contest for future requests
-            await ContestCache.set_contest(contest)
-            
+        Raises:
+            ContestNotFoundError: If contest not found
+        """
+        cached_contest = await ContestCache.get_contest(contest_id)
+        if cached_contest:
+            start_time = cached_contest.get("start_time")
+            end_time = cached_contest.get("end_time")
+            created_at = cached_contest.get("created_at")
+            updated_at = cached_contest.get("updated_at")
+            contest = Contest(
+                id=UUID(cached_contest["id"]),
+                name=cached_contest.get("name"),
+                description=cached_contest.get("description"),
+                image=cached_contest.get("image"),
+                is_public=cached_contest.get("is_public", False),
+                start_time=datetime.fromisoformat(start_time) if start_time else None,
+                end_time=datetime.fromisoformat(end_time) if end_time else None,
+                created_by=UUID(cached_contest["created_by"]),
+                created_at=datetime.fromisoformat(created_at) if created_at else None,
+                updated_at=datetime.fromisoformat(updated_at) if updated_at else None,
+            )
             return contest
-    
+
+        contest = db.query(Contest).filter(Contest.id == contest_id).first()
+        if not contest:
+            raise ContestNotFoundError(str(contest_id))
+
+        await ContestCache.set_contest(contest)
+
+        return contest
+
     @staticmethod
     def get_all_contests(
         db: Session, skip: int = 0, limit: int = 100

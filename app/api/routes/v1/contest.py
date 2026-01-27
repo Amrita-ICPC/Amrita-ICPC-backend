@@ -10,6 +10,7 @@ from app.core.logger import logger
 from app.exceptions.auth import PermissionDeniedError
 from app.schema.contest import ContestCreate, ContestListResponse, ContestResponse, ContestUpdate, MessageResponse
 from app.service.contest_service import ContestService
+from app.service.user_service import UserService
 from sqlalchemy.orm import Session
 
 router = APIRouter()
@@ -42,10 +43,13 @@ async def create_contest(
 
     Raises:
         PermissionDeniedError: If user is not admin
+        UserNotFoundError: If user not found in database
     """
-    created_contest = await ContestService.create_contest(db, contest)
-    user_id = current_user.get("sub")
-    logger.info(f"Contest '{created_contest.name}' with ID {created_contest.id} created by user {user_id}")
+    # Fetch the database user using the Keycloak user ID (sub)
+    keycloak_user_id = current_user["sub"]
+    db_user = UserService.get_user_by_keycloak_id(db, keycloak_user_id)
+    created_contest = await ContestService.create_contest(db, contest, db_user.id)
+    logger.info(f"Contest '{created_contest.name}' with ID {created_contest.id} created by user {db_user.id}")
     
     return MessageResponse(message="Contest created successfully")
 
