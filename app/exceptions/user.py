@@ -31,3 +31,23 @@ class UserAlreadyExistsError(AppBaseException):
             message=f"User with ID {user_id} already exists",
             status_code=status.HTTP_409_CONFLICT,
         )
+
+
+class KeycloakSyncError(AppBaseException):
+    """Raised when Keycloak user synchronization fails."""
+
+    def __init__(self, message: str = "Failed to synchronize Keycloak users"):
+        super().__init__(
+            message=message,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+class UnauthorizedSyncError(AppBaseException):
+    """Raised when non-admin user attempts to sync Keycloak users."""
+
+    def __init__(self, message: str = "Only administrators can sync Keycloak users"):
+        super().__init__(
+            message=message,
+            status_code=status.HTTP_403_FORBIDDEN,
+        )

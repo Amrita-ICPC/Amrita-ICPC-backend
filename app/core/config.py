@@ -119,6 +119,17 @@ class Config(BaseSettings):
         default=None, env="KEYCLOAK_CLIENT_SECRET", description="Keycloak Client Secret"
     )
 
+    KEYCLOAK_ADMIN_USERNAME: Optional[str] = Field(
+        default=None,
+        env="KEYCLOAK_ADMIN_USERNAME",
+        description="Keycloak Admin Username",
+    )
+    KEYCLOAK_ADMIN_PASSWORD: Optional[str] = Field(
+        default=None,
+        env="KEYCLOAK_ADMIN_PASSWORD",
+        description="Keycloak Admin Password",
+    )
+
     @field_validator("LOG_LEVEL")
     def validate_log_level(cls, value):
         if value not in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]:
