@@ -134,6 +134,37 @@ def has_role(roles: List[str]):
     return AccessControl(allowed_roles=roles)
 
 
+def require_admin(user: Dict[str, Any] = Depends(get_current_user)):
+    """
+    Dependency to ensure only admin users can access the protected endpoint.
+
+    Args:
+        user: Current authenticated user
+
+    Returns:
+        Current user if they have admin role
+
+    Raises:
+        PermissionDeniedError: If user is not an admin
+    """
+    user_roles = get_user_roles(user)
+    user_groups = get_user_groups(user)
+
+    # Normalize group names (remove leading slash)
+    normalized_groups = [g.lstrip("/") for g in user_groups]
+
+    # Check if user is admin via roles or groups
+    is_admin = "admin" in user_roles or "admin" in normalized_groups
+
+    if not is_admin:
+        logger.warning(
+            f"Unauthorized admin action attempted by user {user.get('preferred_username')} ({user.get('email')})"
+        )
+        raise PermissionDeniedError("Admin privileges required for this operation")
+
+    return user
+
+
 # Permission Primitives
 def check_permission(resource: str, action: str):
     return AccessControl(permission=f"{resource}:{action}")
