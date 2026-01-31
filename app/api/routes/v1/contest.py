@@ -60,7 +60,8 @@ async def create_contest(
     summary="Get all contests",
     dependencies=[can_read("contests")],
 )
-def get_all_contests(
+async def get_all_contests(
+    current_user: Dict[str, Any] = Depends(get_current_user),   
     page: int = Query(1, ge=1, description="Page number (starts from 1)"),
     page_size: int = Query(10, ge=1, le=100, description="Number of contests per page"),
     db: Session = Depends(get_db),
@@ -76,8 +77,10 @@ def get_all_contests(
     Returns:
         List of contests and total count
     """
+    kc_id = current_user.get("sub")
+    user_id = UserService.get_user_by_keycloak_id(db, kc_id).id
     skip = (page - 1) * page_size
-    total, contests = ContestService.get_all_contests(db, skip, page_size)
+    total, contests = await ContestService.get_all_contests(db, user_id, skip, page_size)
     return ContestListResponse(total=total, contests=contests)
 
 
@@ -138,8 +141,9 @@ async def update_contest(
         ContestNotFoundError: If contest with given ID not found
         PermissionDeniedError: If user is not admin
     """
-    await ContestService.update_contest(db, contest_id, contest_data)
-    user_id = current_user.get("sub")
+    kc_id = current_user.get("sub")
+    user_id = UserService.get_user_by_keycloak_id(db, kc_id).id
+    await ContestService.update_contest(db, contest_id, contest_data, user_id)
     logger.info(f"Contest with ID {contest_id} updated by user {user_id}")
     
     return MessageResponse(message="Contest updated successfully")
@@ -174,8 +178,9 @@ async def delete_contest(
         ContestNotFoundError: If contest with given ID not found
         PermissionDeniedError: If user is not admin
     """
-    await ContestService.delete_contest(db, contest_id)
-    user_id = current_user.get("sub")
+    kc_id = current_user.get("sub")
+    user_id = UserService.get_user_by_keycloak_id(db, kc_id).id
+    await ContestService.delete_contest(db, contest_id, user_id)
     logger.info(f"Contest with ID {contest_id} deleted by user {user_id}")
     
     return MessageResponse(message="Contest deleted successfully")

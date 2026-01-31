@@ -74,6 +74,10 @@ class Config(BaseSettings):
         default=0, env="REDIS_DB", description="Redis database"
     )
 
+    CACHE_ENABLED: Optional[bool] = Field(
+        default=True, env="CACHE_ENABLED", description="Cache enabled"
+    )   
+
     # Log Configuration
     LOG_LEVEL: str = Field(default="INFO", env="LOG_LEVEL", description="Log level")
     LOG_FORMAT: str = Field(
