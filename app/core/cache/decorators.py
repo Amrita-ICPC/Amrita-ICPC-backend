@@ -98,12 +98,18 @@ def cache_delete(
                     try:
                         if "*" in key_pattern:
                             # Use scan_iter for wildcard matching
-                            cursor = b'0'
-                            while cursor:
-                                cursor, matches = await redis.redis_client.scan(cursor, match=key_pattern, count=100)
+                            cursor = 0
+                            while True:
+                                cursor, matches = await redis.redis_client.scan(
+                                    cursor, match=key_pattern, count=100
+                                )
                                 if matches:
                                     await redis.redis_client.delete(*matches)
-                                    logger.info(f"Cache invalidated for pattern: {key_pattern} ({len(matches)} keys)")
+                                    logger.info(
+                                        f"Cache invalidated for pattern: {key_pattern} ({len(matches)} keys)"
+                                    )
+                                if cursor == 0:
+                                    break
                         else:
                             await redis.redis_client.delete(key_pattern)
                             logger.info(f"Cache invalidated for key: {key_pattern}")
