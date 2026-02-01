@@ -34,7 +34,7 @@ def create_user():
 
 
 @router.post("/sync-keycloak-users", status_code=status.HTTP_200_OK)
-async def sync_keycloak_users(
+def sync_keycloak_users(
     admin_user: Dict[str, Any] = Depends(require_admin),
     db=Depends(get_db),
 ):

@@ -112,9 +112,10 @@ class ContestService:
         )
         .distinct()
     )
+        total = base_query.count()
 
         contests = base_query.offset(skip).limit(limit).all()
-        return len(contests), [ContestResponse.model_validate(contest) for contest in contests]
+        return total, [ContestResponse.model_validate(contest) for contest in contests]
 
     @staticmethod
     @cache_delete(
@@ -153,6 +154,11 @@ class ContestService:
 
         # Update only provided fields
         update_data = contest_data.model_dump(exclude_unset=True)
+        new_start = update_data.get("start_time", contest.start_time)
+        new_end = update_data.get("end_time", contest.end_time)
+        if new_end <= new_start:
+            raise InvalidContestError("end_time must be after start_time")    
+        
         for field, value in update_data.items():
             setattr(contest, field, value)
 
@@ -190,7 +196,8 @@ class ContestService:
 
         ContestPermission.can_manage_contest(db, user_id=user_id, contest=contest)
         
+        response = ContestResponse.model_validate(contest)
         db.delete(contest)
         db.commit()
         
-        return ContestResponse.model_validate(contest)
+        return response

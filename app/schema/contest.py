@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field,model_validator
 
 
 class ContestBase(BaseModel):
@@ -16,6 +16,12 @@ class ContestBase(BaseModel):
     is_public: bool = Field(default=False, description="Whether contest is public")
     start_time: datetime = Field(..., description="Contest start time (UTC)")
     end_time: datetime = Field(..., description="Contest end time (UTC)")
+
+    @model_validator(mode="after")
+    def validate_end_time(self):
+        if self.end_time <= self.start_time:
+            raise ValueError("End time must be after start time")
+        return self
 
 
 class ContestCreate(ContestBase):

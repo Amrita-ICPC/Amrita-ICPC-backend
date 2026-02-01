@@ -134,6 +134,10 @@ class Config(BaseSettings):
         description="Keycloak Admin Password",
     )
 
+    KEYCLOAK_DEFAULT_REALM: str = Field(
+        default="master", env="KEYCLOAK_DEFAULT_REALM", description="Keycloak Default Realm"
+    )
+
     @field_validator("LOG_LEVEL")
     def validate_log_level(cls, value):
         if value not in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]:

@@ -77,8 +77,8 @@ class UserService:
                 server_url=config.KEYCLOAK_SERVER_URL,
                 username=config.KEYCLOAK_ADMIN_USERNAME,
                 password=config.KEYCLOAK_ADMIN_PASSWORD,
-                realm_name="icpc",
-                user_realm_name="master",
+                realm_name=config.KEYCLOAK_REALM,
+                user_realm_name=config.KEYCLOAK_DEFAULT_REALM,
                 client_id="admin-cli",
                 client_secret_key=config.KEYCLOAK_CLIENT_SECRET,
             )
@@ -113,9 +113,14 @@ class UserService:
                     user_role = role_mapping.get(group_name, UserRole.student)
 
                 # Create new user record
+                email = kc_user.get("email")
+                if not email:
+                    logger.warning("Skipping Keycloak user %s: missing email", user_id)
+                    continue
+
                 new_user = User(
                     user_id=user_id,
-                    email=kc_user.get("email", ""),
+                    email=email,
                     name=f"{kc_user.get('firstName', '')} {kc_user.get('lastName', '')}".strip(),
                     phone_no=kc_user.get("attributes", {}).get("phone_no", [None])[0],
                     role=user_role
@@ -131,8 +136,11 @@ class UserService:
             return users_synced
 
         except KeycloakSyncError:
+            db.rollback()
+            logger.error("Failed to sync Keycloak users")
             raise
         except Exception as e:
+            db.rollback()
             error_message = f"Failed to sync Keycloak users: {str(e)}"
             logger.error(error_message)
             raise KeycloakSyncError(error_message)
