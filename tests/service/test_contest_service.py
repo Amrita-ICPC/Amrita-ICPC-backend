@@ -6,14 +6,9 @@ from datetime import datetime, timedelta, timezone
 from app.service.contest_service import ContestService
 from app.repositories.contest_repository import ContestRepository
 from app.schema.contest import ContestCreate, ContestUpdate, ContestResponse
-from app.models.contest import Contest
-from app.models.user import User
-from app.models.question import Question
-from app.models.team import Team
-from app.models.bank import BankQuestion
-from app.models.tag import QuestionTag
 from app.exceptions.contest import ContestNotFoundError, InvalidContestError
 from app.exceptions.auth import PermissionDeniedError
+from copy import deepcopy
 
 @pytest.fixture
 def mock_repo():
@@ -39,11 +34,16 @@ def sample_contest_data():
         end_time=datetime.now() + timedelta(hours=2),
     )
 
+class MockContest:
+    def __init__(self, **kwargs):
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
 @pytest.fixture
 def existing_contest(sample_contest_data):
     contest_id = uuid4()
     creator_id = uuid4()
-    return Contest(
+    return MockContest(
         id=contest_id,
         name=sample_contest_data.name,
         description=sample_contest_data.description,
@@ -57,7 +57,7 @@ def existing_contest(sample_contest_data):
     )
 
 @pytest.mark.asyncio
-async def test_create_contest(contest_service, mock_repo, sample_contest_data, existing_contest):
+async def test_create_contest(contest_service:ContestService, mock_repo, sample_contest_data, existing_contest):
     user_id = existing_contest.created_by
     mock_repo.create.return_value = existing_contest
 
@@ -103,7 +103,7 @@ async def test_update_contest_success_owner(contest_service, mock_repo, existing
     update_data = ContestUpdate(name="Updated Name")
     user_id = existing_contest.created_by # Owner
     
-    updated_contest_obj = existing_contest
+    updated_contest_obj = deepcopy(existing_contest)
     updated_contest_obj.name = "Updated Name"
     mock_repo.update.return_value = updated_contest_obj
 
