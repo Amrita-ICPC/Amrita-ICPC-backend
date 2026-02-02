@@ -69,6 +69,14 @@ This project uses Alembic for database migrations.
     uv run alembic upgrade head
     ```
 
+## Testing
+
+To run the unit tests, use the following command:
+
+```bash
+uv run pytest
+```
+
 ## Development
 
 -   **Development Mode**: In development environment (default), the application automatically checks and creates tables on startup if they don't exist.
