@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field,model_validator
+from pydantic import BaseModel, Field,model_validator,ConfigDict
 
 
 class ContestBase(BaseModel):
@@ -26,6 +26,7 @@ class ContestBase(BaseModel):
 
 class ContestCreate(ContestBase):
     """Schema for creating a contest."""
+    model_config = ConfigDict(from_attributes=True)
 
     pass
 
@@ -57,8 +58,7 @@ class ContestResponse(ContestBase):
     created_at: datetime = Field(..., description="Contest creation time (UTC)")
     updated_at: datetime = Field(..., description="Last update time (UTC)")
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ContestListResponse(BaseModel):
