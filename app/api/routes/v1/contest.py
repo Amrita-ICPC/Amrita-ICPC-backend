@@ -1,19 +1,37 @@
 from typing import Any, Dict
 from uuid import UUID
-from app.auth.dependencies import can_create, can_read,can_update,can_delete
 
 from fastapi import APIRouter, Depends, Query, status
+from sqlalchemy.orm import Session
 
-from app.auth.dependencies import AccessControl, get_current_user
+from app.auth.dependencies import (
+    AccessControl,
+    can_create,
+    can_delete,
+    can_read,
+    can_update,
+    get_current_user,
+)
 from app.core.clients.database import get_db
 from app.core.logger import logger
 from app.exceptions.auth import PermissionDeniedError
-from app.schema.contest import ContestCreate, ContestListResponse, ContestResponse, ContestUpdate, MessageResponse
+from app.repositories.contest_repository import ContestRepository
+from app.schema.contest import (
+    ContestCreate,
+    ContestListResponse,
+    ContestResponse,
+    ContestUpdate,
+    MessageResponse,
+)
 from app.service.contest_service import ContestService
 from app.service.user_service import UserService
-from sqlalchemy.orm import Session
 
 router = APIRouter()
+
+
+def get_contest_service(db: Session = Depends(get_db)) -> ContestService:
+    repository = ContestRepository(db)
+    return ContestService(repository)
 
 
 @router.post(
@@ -27,6 +45,7 @@ async def create_contest(
     contest: ContestCreate,
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_current_user),
+    service: ContestService = Depends(get_contest_service),
 ):
     """
     Create a new contest.
@@ -37,6 +56,7 @@ async def create_contest(
         contest: Contest creation data
         db: Database session
         current_user: Current authenticated user
+        service: Contest service instance
 
     Returns:
         Success message
@@ -48,9 +68,11 @@ async def create_contest(
     # Fetch the database user using the Keycloak user ID (sub)
     keycloak_user_id = current_user["sub"]
     db_user = UserService.get_user_by_keycloak_id(db, keycloak_user_id)
-    created_contest = await ContestService.create_contest(db, contest, db_user.id)
-    logger.info(f"Contest '{created_contest.name}' with ID {created_contest.id} created by user {db_user.id}")
-    
+    created_contest = await service.create_contest(contest, db_user.id)
+    logger.info(
+        f"Contest '{created_contest.name}' with ID {created_contest.id} created by user {db_user.id}"
+    )
+
     return MessageResponse(message="Contest created successfully")
 
 
@@ -61,10 +83,11 @@ async def create_contest(
     dependencies=[can_read("contests")],
 )
 async def get_all_contests(
-    current_user: Dict[str, Any] = Depends(get_current_user),   
+    current_user: Dict[str, Any] = Depends(get_current_user),
     page: int = Query(1, ge=1, description="Page number (starts from 1)"),
     page_size: int = Query(10, ge=1, le=100, description="Number of contests per page"),
     db: Session = Depends(get_db),
+    service: ContestService = Depends(get_contest_service),
 ):
     """
     Get all contests with pagination support.
@@ -73,6 +96,7 @@ async def get_all_contests(
         page: Page number (starts from 1)
         page_size: Number of contests per page (max 100)
         db: Database session
+        service: Contest service instance
 
     Returns:
         List of contests and total count
@@ -80,7 +104,7 @@ async def get_all_contests(
     kc_id = current_user.get("sub")
     user_id = UserService.get_user_by_keycloak_id(db, kc_id).id
     skip = (page - 1) * page_size
-    total, contests = await ContestService.get_all_contests(db, user_id, skip, page_size)
+    total, contests = await service.get_all_contests(user_id, skip, page_size)
     return ContestListResponse(total=total, contests=contests)
 
 
@@ -92,14 +116,14 @@ async def get_all_contests(
 )
 async def get_contest(
     contest_id: UUID,
-    db: Session = Depends(get_db),
+    service: ContestService = Depends(get_contest_service),
 ):
     """
     Get a specific contest by its ID.
 
     Args:
         contest_id: Contest ID
-        db: Database session
+        service: Contest service instance
 
     Returns:
         Contest details
@@ -107,7 +131,7 @@ async def get_contest(
     Raises:
         ContestNotFoundError: If contest with given ID not found
     """
-    return await ContestService.get_contest_by_id(db, contest_id)
+    return await service.get_contest_by_id(contest_id)
 
 
 @router.patch(
@@ -121,6 +145,7 @@ async def update_contest(
     contest_data: ContestUpdate,
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_current_user),
+    service: ContestService = Depends(get_contest_service),
 ):
     """
     Partially update an existing contest with provided fields.
@@ -133,6 +158,7 @@ async def update_contest(
         contest_data: Contest update data (partial update - only provided fields are updated)
         db: Database session
         current_user: Current authenticated user
+        service: Contest service instance
 
     Returns:
         Success message
@@ -143,9 +169,9 @@ async def update_contest(
     """
     kc_id = current_user.get("sub")
     user_id = UserService.get_user_by_keycloak_id(db, kc_id).id
-    await ContestService.update_contest(db, contest_id, contest_data, user_id)
+    await service.update_contest(contest_id, contest_data, user_id)
     logger.info(f"Contest with ID {contest_id} updated by user {user_id}")
-    
+
     return MessageResponse(message="Contest updated successfully")
 
 
@@ -160,6 +186,7 @@ async def delete_contest(
     contest_id: UUID,
     db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_current_user),
+    service: ContestService = Depends(get_contest_service),
 ):
     """
     Delete a contest by its ID.
@@ -170,6 +197,7 @@ async def delete_contest(
         contest_id: Contest ID
         db: Database session
         current_user: Current authenticated user
+        service: Contest service instance
 
     Returns:
         Success message
@@ -180,7 +208,7 @@ async def delete_contest(
     """
     kc_id = current_user.get("sub")
     user_id = UserService.get_user_by_keycloak_id(db, kc_id).id
-    await ContestService.delete_contest(db, contest_id, user_id)
+    await service.delete_contest(contest_id, user_id)
     logger.info(f"Contest with ID {contest_id} deleted by user {user_id}")
-    
+
     return MessageResponse(message="Contest deleted successfully")
