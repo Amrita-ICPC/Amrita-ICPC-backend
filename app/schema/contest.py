@@ -19,8 +19,9 @@ class ContestBase(BaseModel):
 
     @model_validator(mode="after")
     def validate_end_time(self):
-        if self.end_time <= self.start_time:
-            raise ValueError("End time must be after start time")
+        if self.start_time and self.end_time:
+            if self.end_time <= self.start_time:
+                raise ValueError("End time must be after start time")
         return self
 
 
@@ -48,6 +49,12 @@ class ContestUpdate(BaseModel):
     end_time: Optional[datetime] = Field(
         None, description="Contest end time (UTC)"
     )
+    @model_validator(mode="after")
+    def validate_end_time(self):
+        if self.start_time and  self.end_time:
+            if self.end_time <= self.start_time:
+                raise ValueError("End time must be after start time")
+        return self
 
 
 class ContestResponse(ContestBase):
