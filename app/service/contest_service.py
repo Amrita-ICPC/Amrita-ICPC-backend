@@ -1,18 +1,22 @@
 from typing import List
 from uuid import UUID
 
+from sqlalchemy import or_
+from sqlalchemy.orm import Session
+
 from app.core.cache.decorators import cache_delete, cache_get, cache_set
+from app.core.permissions import ContestPermission
 from app.exceptions.auth import PermissionDeniedError
 from app.exceptions.contest import ContestNotFoundError, InvalidContestError
-from app.repositories.contest_repository import ContestRepository
+from app.models.contest import Contest, ContestInstructor
 from app.schema.contest import ContestCreate, ContestResponse, ContestUpdate
 
 
 class ContestService:
     """Service for contest database operations."""
 
-    def __init__(self, contest_repository: ContestRepository):
-        self.repository = contest_repository
+    def __init__(self, db: Session):
+        self.db = db
 
     @cache_delete(
         key_builder=lambda self, contest, created_by: f"contests:user:{created_by}:*",
@@ -35,7 +39,18 @@ class ContestService:
         Returns:
             Created contest object
         """
-        db_contest = self.repository.create(contest, created_by)
+        db_contest = Contest(
+            name=contest.name,
+            description=contest.description,
+            image=contest.image,
+            is_public=contest.is_public,
+            start_time=contest.start_time,
+            end_time=contest.end_time,
+            created_by=created_by,
+        )
+        self.db.add(db_contest)
+        self.db.flush()
+        self.db.refresh(db_contest)
         return ContestResponse.model_validate(db_contest)
 
     @cache_get(
@@ -55,7 +70,7 @@ class ContestService:
         Raises:
             ContestNotFoundError: If contest not found
         """
-        contest = self.repository.get_by_id(contest_id)
+        contest = self.db.query(Contest).filter(Contest.id == contest_id).first()
         if not contest:
             raise ContestNotFoundError(str(contest_id))
 
@@ -79,7 +94,19 @@ class ContestService:
         Returns:
             Tuple of (total count, contests list)
         """
-        total, contests = self.repository.get_all(user_id, skip, limit)
+        base_query = (
+            self.db.query(Contest)
+            .outerjoin(ContestInstructor)
+            .filter(
+                or_(
+                    Contest.created_by == user_id,
+                    ContestInstructor.instructor_id == user_id,
+                )
+            )
+            .distinct()
+        )
+        total = base_query.count()
+        contests = base_query.offset(skip).limit(limit).all()
         return total, [ContestResponse.model_validate(contest) for contest in contests]
 
     @cache_delete(
@@ -109,16 +136,11 @@ class ContestService:
             PermissionDeniedError: If user doesn't have permission
             InvalidContestError: If update data is invalid
         """
-        contest = self.repository.get_by_id(contest_id)
+        contest = self.db.query(Contest).filter(Contest.id == contest_id).first()
         if not contest:
             raise ContestNotFoundError(str(contest_id))
 
-        if contest.created_by != user_id and not self.repository.is_instructor(
-            contest.id, user_id
-        ):
-            raise PermissionDeniedError(
-                "You do not have permission to manage this contest"
-            )
+        ContestPermission.can_manage_contest(self.db, user_id=user_id, contest=contest)
 
         update_data = contest_data.model_dump(exclude_unset=True)
         new_start = update_data.get("start_time", contest.start_time)
@@ -126,8 +148,11 @@ class ContestService:
         if new_end <= new_start:
             raise InvalidContestError("end_time must be after start_time")
 
-        updated_contest = self.repository.update(contest, update_data)
-        return ContestResponse.model_validate(updated_contest)
+        for field, value in update_data.items():
+            setattr(contest, field, value)
+        self.db.flush()
+        self.db.refresh(contest)
+        return ContestResponse.model_validate(contest)
 
     @cache_delete(
         key_builder=lambda self, contest_id, user_id: [
@@ -150,18 +175,14 @@ class ContestService:
             ContestNotFoundError: If contest not found
             PermissionDeniedError: If user doesn't have permission
         """
-        contest = self.repository.get_by_id(contest_id)
+        contest = self.db.query(Contest).filter(Contest.id == contest_id).first()
         if not contest:
             raise ContestNotFoundError(str(contest_id))
 
-        if contest.created_by != user_id and not self.repository.is_instructor(
-            contest.id, user_id
-        ):
-            raise PermissionDeniedError(
-                "You do not have permission to manage this contest"
-            )
+        ContestPermission.can_manage_contest(self.db, user_id=user_id, contest=contest)
 
         response = ContestResponse.model_validate(contest)
-        self.repository.delete(contest)
+        self.db.delete(contest)
+        self.db.flush()
 
         return response

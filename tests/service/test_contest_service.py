@@ -1,26 +1,27 @@
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 from datetime import datetime, timedelta, timezone
 
 from app.service.contest_service import ContestService
-from app.repositories.contest_repository import ContestRepository
-from app.schema.contest import ContestCreate, ContestUpdate, ContestResponse
-from app.exceptions.contest import ContestNotFoundError, InvalidContestError
+from app.schema.contest import ContestCreate, ContestUpdate
+from app.exceptions.contest import ContestNotFoundError
 from app.exceptions.auth import PermissionDeniedError
-from copy import deepcopy
+from sqlalchemy.orm import Session
+# Models imported to ensure SQLAlchemy mapper registry is populated
+from app.models.contest import Contest
 
 @pytest.fixture
-def mock_repo():
-    return MagicMock(spec=ContestRepository)
+def mock_db():
+    return MagicMock(spec=Session)
 
 @pytest.fixture
-def contest_service(mock_repo):
+def contest_service(mock_db):
     # Patch the cache decorators to avoid redis connection issues
     with patch("app.core.cache.decorators.cache_get", side_effect=lambda **kwargs: lambda func: func), \
          patch("app.core.cache.decorators.cache_set", side_effect=lambda **kwargs: lambda func: func), \
          patch("app.core.cache.decorators.cache_delete", side_effect=lambda **kwargs: lambda func: func):
-        service = ContestService(mock_repo)
+        service = ContestService(mock_db)
         yield service 
 
 @pytest.fixture
@@ -57,100 +58,173 @@ def existing_contest(sample_contest_data):
     )
 
 @pytest.mark.asyncio
-async def test_create_contest(contest_service:ContestService, mock_repo, sample_contest_data, existing_contest):
+async def test_create_contest(contest_service:ContestService, mock_db, sample_contest_data, existing_contest):
     user_id = existing_contest.created_by
-    mock_repo.create.return_value = existing_contest
+    
+    # Mock refresh to update the instance with ID (simulation)
+    def side_effect_refresh(instance):
+        instance.id = existing_contest.id
+        instance.created_at = existing_contest.created_at
+        instance.updated_at = existing_contest.updated_at
+        return None
+    mock_db.refresh.side_effect = side_effect_refresh
 
     result = await contest_service.create_contest(sample_contest_data, user_id)
 
     assert result.id == existing_contest.id
     assert result.name == existing_contest.name
-    mock_repo.create.assert_called_once_with(sample_contest_data, user_id)
-
+    mock_db.add.assert_called_once()
+    mock_db.flush.assert_called_once()
+    mock_db.refresh.assert_called_once()
 
 @pytest.mark.asyncio
-async def test_get_contest_by_id_success(contest_service, mock_repo, existing_contest):
-    mock_repo.get_by_id.return_value = existing_contest
+async def test_create_contest_exception_propagation(contest_service, mock_db, sample_contest_data, existing_contest):
+    user_id = existing_contest.created_by
+    # Simulate error during flush or add
+    mock_db.flush.side_effect = Exception("DB Error")
+
+    with pytest.raises(Exception):
+        await contest_service.create_contest(sample_contest_data, user_id)
+    
+    # No explicit rollback in service, so we don't assert it here.
+    # We just ensure the exception bubbles up for global handler.
+
+@pytest.mark.asyncio
+async def test_get_contest_by_id_success(contest_service, mock_db, existing_contest):
+    # Setup chain: db.query(Contest).filter(...).first() -> existing_contest
+    mock_query = mock_db.query.return_value
+    mock_filter = mock_query.filter.return_value
+    mock_filter.first.return_value = existing_contest
 
     result = await contest_service.get_contest_by_id(existing_contest.id)
 
     assert result.id == existing_contest.id
-    mock_repo.get_by_id.assert_called_once_with(existing_contest.id)
+    mock_db.query.assert_called_with(Contest)
+
 
 @pytest.mark.asyncio
-async def test_get_contest_by_id_not_found(contest_service, mock_repo):
-    mock_repo.get_by_id.return_value = None
+async def test_get_contest_by_id_not_found(contest_service, mock_db):
+    mock_query = mock_db.query.return_value
+    mock_filter = mock_query.filter.return_value
+    mock_filter.first.return_value = None
     contest_id = uuid4()
 
     with pytest.raises(ContestNotFoundError):
         await contest_service.get_contest_by_id(contest_id)
 
 @pytest.mark.asyncio
-async def test_get_all_contests(contest_service, mock_repo, existing_contest):
+async def test_get_all_contests(contest_service, mock_db, existing_contest):
     user_id = uuid4()
-    mock_repo.get_all.return_value = (1, [existing_contest])
+    
+    # query(Contest).outerjoin().filter().distinct()
+    # query(Contest).outerjoin().filter().distinct()
+    mock_db.query.return_value.outerjoin.return_value.filter.return_value.distinct.return_value.count.return_value = 1
+    mock_db.query.return_value.outerjoin.return_value.filter.return_value.distinct.return_value.offset.return_value.limit.return_value.all.return_value = [existing_contest]
 
     total, contests = await contest_service.get_all_contests(user_id)
 
     assert total == 1
     assert len(contests) == 1
     assert contests[0].id == existing_contest.id
-    mock_repo.get_all.assert_called_once_with(user_id, 0, 100)
+    mock_db.query.assert_called_with(Contest)
 
 @pytest.mark.asyncio
-async def test_update_contest_success_owner(contest_service, mock_repo, existing_contest):
-    mock_repo.get_by_id.return_value = existing_contest
+async def test_update_contest_success_owner(contest_service, mock_db, existing_contest):
+    # Setup get_by_id
+    mock_query = mock_db.query.return_value
+    
+    def query_side_effect(model):
+        mock = MagicMock()
+        if model == Contest:
+            mock.filter.return_value.first.return_value = existing_contest
+        return mock
+    
+    mock_db.query.side_effect = query_side_effect
+
     update_data = ContestUpdate(name="Updated Name")
     user_id = existing_contest.created_by # Owner
     
-    updated_contest_obj = deepcopy(existing_contest)
-    updated_contest_obj.name = "Updated Name"
-    mock_repo.update.return_value = updated_contest_obj
-
-    result = await contest_service.update_contest(existing_contest.id, update_data, user_id)
+    # Mock permission check to pass
+    with patch("app.service.contest_service.ContestPermission.can_manage_contest") as mock_perm:
+        result = await contest_service.update_contest(existing_contest.id, update_data, user_id)
+        mock_perm.assert_called_once()
 
     assert result.name == "Updated Name"
-    mock_repo.update.assert_called_once()
+    # existing_contest itself should be mutated
+    assert existing_contest.name == "Updated Name"
+    mock_db.flush.assert_called_once()
+    mock_db.refresh.assert_called_with(existing_contest)
 
 
 @pytest.mark.asyncio
-async def test_update_contest_permission_denied(contest_service, mock_repo, existing_contest):
-    mock_repo.get_by_id.return_value = existing_contest
+async def test_update_contest_permission_denied(contest_service, mock_db, existing_contest):
+    user_id = uuid4() # Not owner
+    
+    def query_side_effect(model):
+        mock = MagicMock()
+        if model == Contest:
+            mock.filter.return_value.first.return_value = existing_contest
+        return mock
+    
+    mock_db.query.side_effect = query_side_effect
+
     update_data = ContestUpdate(name="Updated Name")
-    other_user_id = uuid4()
-    mock_repo.is_instructor.return_value = False
 
-    with pytest.raises(PermissionDeniedError):
-        await contest_service.update_contest(existing_contest.id, update_data, other_user_id)
+    with patch("app.service.contest_service.ContestPermission.can_manage_contest", side_effect=PermissionDeniedError("Denied")):
+        with pytest.raises(PermissionDeniedError):
+            await contest_service.update_contest(existing_contest.id, update_data, user_id)
 
 @pytest.mark.asyncio
-async def test_update_contest_invalid_dates(contest_service, mock_repo, existing_contest):
-    mock_repo.get_by_id.return_value = existing_contest
+async def test_update_contest_invalid_dates(contest_service, mock_db, existing_contest):
+    # Setup get by id (owner)
+    def query_side_effect(model):
+        mock = MagicMock()
+        if model == Contest:
+            mock.filter.return_value.first.return_value = existing_contest
+        return mock
+    mock_db.query.side_effect = query_side_effect
+    
     user_id = existing_contest.created_by
     # End time before start time
-    update_data = ContestUpdate(
-        start_time=datetime.now() + timedelta(hours=5),
-        end_time=datetime.now() + timedelta(hours=1),
-    )
-
-    with pytest.raises(InvalidContestError):
-        await contest_service.update_contest(existing_contest.id, update_data, user_id)
+    # The model now validates this, so it raises ValidationError on instantiation
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        ContestUpdate(
+            start_time=datetime.now() + timedelta(hours=5),
+            end_time=datetime.now() + timedelta(hours=1),
+        )
 
 @pytest.mark.asyncio
-async def test_delete_contest_success(contest_service, mock_repo, existing_contest):
-    mock_repo.get_by_id.return_value = existing_contest
+async def test_delete_contest_success(contest_service, mock_db, existing_contest):
+    def query_side_effect(model):
+        mock = MagicMock()
+        if model == Contest:
+            mock.filter.return_value.first.return_value = existing_contest
+        return mock
+    mock_db.query.side_effect = query_side_effect
+
     user_id = existing_contest.created_by
 
-    result = await contest_service.delete_contest(existing_contest.id, user_id)
+    with patch("app.service.contest_service.ContestPermission.can_manage_contest") as mock_perm:
+        result = await contest_service.delete_contest(existing_contest.id, user_id)
+        mock_perm.assert_called_once()
 
     assert result.id == existing_contest.id
-    mock_repo.delete.assert_called_once_with(existing_contest)
+    mock_db.delete.assert_called_once_with(existing_contest)
+    mock_db.flush.assert_called_once()
 
 @pytest.mark.asyncio
-async def test_delete_contest_permission_denied(contest_service, mock_repo, existing_contest):
-    mock_repo.get_by_id.return_value = existing_contest
-    other_user_id = uuid4()
-    mock_repo.is_instructor.return_value = False
+async def test_delete_contest_permission_denied(contest_service, mock_db, existing_contest):
+    user_id = uuid4() # Not owner
+    
+    def query_side_effect(model):
+        mock = MagicMock()
+        if model == Contest:
+            mock.filter.return_value.first.return_value = existing_contest
+        return mock
+    
+    mock_db.query.side_effect = query_side_effect
 
-    with pytest.raises(PermissionDeniedError):
-        await contest_service.delete_contest(existing_contest.id, other_user_id)
+    with patch("app.service.contest_service.ContestPermission.can_manage_contest", side_effect=PermissionDeniedError("Denied")):
+        with pytest.raises(PermissionDeniedError):
+            await contest_service.delete_contest(existing_contest.id, user_id)
