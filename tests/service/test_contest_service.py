@@ -2,14 +2,16 @@ import pytest
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 from datetime import datetime, timedelta, timezone
-
-from app.service.contest_service import ContestService
 from app.schema.contest import ContestCreate, ContestUpdate
-from app.exceptions.contest import ContestNotFoundError
+from app.exceptions.contest import ContestNotFoundError, InvalidContestError
 from app.exceptions.auth import PermissionDeniedError
 from sqlalchemy.orm import Session
 # Models imported to ensure SQLAlchemy mapper registry is populated
 from app.models.contest import Contest
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.service.contest_service import ContestService
 
 @pytest.fixture
 def mock_db():
@@ -21,6 +23,8 @@ def contest_service(mock_db):
     with patch("app.core.cache.decorators.cache_get", side_effect=lambda **kwargs: lambda func: func), \
          patch("app.core.cache.decorators.cache_set", side_effect=lambda **kwargs: lambda func: func), \
          patch("app.core.cache.decorators.cache_delete", side_effect=lambda **kwargs: lambda func: func):
+
+        from app.service.contest_service import ContestService
         service = ContestService(mock_db)
         yield service 
 
@@ -58,7 +62,8 @@ def existing_contest(sample_contest_data):
     )
 
 @pytest.mark.asyncio
-async def test_create_contest(contest_service:ContestService, mock_db, sample_contest_data, existing_contest):
+async def test_create_contest(contest_service: "ContestService", mock_db, sample_contest_data, existing_contest):
+    """Test successful creation of a contest."""
     user_id = existing_contest.created_by
     
     # Mock refresh to update the instance with ID (simulation)
@@ -79,11 +84,12 @@ async def test_create_contest(contest_service:ContestService, mock_db, sample_co
 
 @pytest.mark.asyncio
 async def test_create_contest_exception_propagation(contest_service, mock_db, sample_contest_data, existing_contest):
+    """Test that exceptions during creation are propagated (allowing global rollback)."""
     user_id = existing_contest.created_by
     # Simulate error during flush or add
-    mock_db.flush.side_effect = Exception("DB Error")
+    mock_db.flush.side_effect = RuntimeError("DB Error")
 
-    with pytest.raises(Exception):
+    with pytest.raises(RuntimeError,match="DB Error"):
         await contest_service.create_contest(sample_contest_data, user_id)
     
     # No explicit rollback in service, so we don't assert it here.
@@ -91,6 +97,7 @@ async def test_create_contest_exception_propagation(contest_service, mock_db, sa
 
 @pytest.mark.asyncio
 async def test_get_contest_by_id_success(contest_service, mock_db, existing_contest):
+    """Test retrieving a contest by ID successfully."""
     # Setup chain: db.query(Contest).filter(...).first() -> existing_contest
     mock_query = mock_db.query.return_value
     mock_filter = mock_query.filter.return_value
@@ -104,6 +111,7 @@ async def test_get_contest_by_id_success(contest_service, mock_db, existing_cont
 
 @pytest.mark.asyncio
 async def test_get_contest_by_id_not_found(contest_service, mock_db):
+    """Test retrieving a non-existent contest raises ContestNotFoundError."""
     mock_query = mock_db.query.return_value
     mock_filter = mock_query.filter.return_value
     mock_filter.first.return_value = None
@@ -114,6 +122,7 @@ async def test_get_contest_by_id_not_found(contest_service, mock_db):
 
 @pytest.mark.asyncio
 async def test_get_all_contests(contest_service, mock_db, existing_contest):
+    """Test retrieving all contests with pagination."""
     user_id = uuid4()
     
     # query(Contest).outerjoin().filter().distinct()
@@ -130,9 +139,7 @@ async def test_get_all_contests(contest_service, mock_db, existing_contest):
 
 @pytest.mark.asyncio
 async def test_update_contest_success_owner(contest_service, mock_db, existing_contest):
-    # Setup get_by_id
-    mock_query = mock_db.query.return_value
-    
+    """Test successful contest update by the owner."""
     def query_side_effect(model):
         mock = MagicMock()
         if model == Contest:
@@ -158,6 +165,7 @@ async def test_update_contest_success_owner(contest_service, mock_db, existing_c
 
 @pytest.mark.asyncio
 async def test_update_contest_permission_denied(contest_service, mock_db, existing_contest):
+    """Test that updating a contest without permission raises PermissionDeniedError."""
     user_id = uuid4() # Not owner
     
     def query_side_effect(model):
@@ -175,7 +183,8 @@ async def test_update_contest_permission_denied(contest_service, mock_db, existi
             await contest_service.update_contest(existing_contest.id, update_data, user_id)
 
 @pytest.mark.asyncio
-async def test_update_contest_invalid_dates(contest_service, mock_db, existing_contest):
+async def test_update_contest_invalid_dates(contest_service: "ContestService", mock_db, existing_contest):
+    """Test that updating with invalid dates (end < start) raises ValidationError via Pydantic."""
     # Setup get by id (owner)
     def query_side_effect(model):
         mock = MagicMock()
@@ -196,6 +205,7 @@ async def test_update_contest_invalid_dates(contest_service, mock_db, existing_c
 
 @pytest.mark.asyncio
 async def test_delete_contest_success(contest_service, mock_db, existing_contest):
+    """Test successful contest deletion."""
     def query_side_effect(model):
         mock = MagicMock()
         if model == Contest:
@@ -215,6 +225,7 @@ async def test_delete_contest_success(contest_service, mock_db, existing_contest
 
 @pytest.mark.asyncio
 async def test_delete_contest_permission_denied(contest_service, mock_db, existing_contest):
+    """Test that deleting a contest without permission raises PermissionDeniedError."""
     user_id = uuid4() # Not owner
     
     def query_side_effect(model):

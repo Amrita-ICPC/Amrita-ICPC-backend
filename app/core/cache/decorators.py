@@ -1,4 +1,4 @@
-# app/cache/decorators.py
+# app/core/cache/decorators.py
 from functools import wraps
 from typing import Callable, Any, Optional
 from pydantic import TypeAdapter
