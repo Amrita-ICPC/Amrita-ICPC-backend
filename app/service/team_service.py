@@ -105,6 +105,32 @@ class TeamService:
         teams = base_query.offset(skip).limit(limit).all()
         return total, [TeamResponse.model_validate(team) for team in teams]
     
+    @cache_get(
+        key_builder=lambda self, user_id, skip=0, limit=100: f"teams:user:{user_id}:skip:{skip}:limit:{limit}",
+        ttl=300,
+    )
+    async def get_user_teams(self, user_id: UUID, skip: int = 0, limit: int = 100) -> tuple[int, List[TeamResponse]]:
+        """
+        Get all teams for a specific user with pagination.
+
+        Args:
+            user_id: User ID
+            skip: Number of records to skip
+            limit: Maximum number of records to return
+
+        Returns:
+            Tuple of (total count, teams list)
+        """
+        base_query = (
+            self.db.query(Team)
+            .join(TeamUser)
+            .filter(TeamUser.user_id == user_id)
+            .distinct()
+        )
+        total = base_query.count()
+        teams = base_query.offset(skip).limit(limit).all()
+        return total, [TeamResponse.model_validate(team) for team in teams]
+    
     @cache_delete(
         key_builder=lambda self, team_id, team_data: "teams:list:*",
     )

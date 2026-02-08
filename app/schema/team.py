@@ -56,3 +56,10 @@ class RemoveTeamMemberResponse(BaseModel):
     user_id: UUID
     team_id: UUID
     removed_at: datetime
+
+class MessageResponse(BaseModel):
+    """Schema for message response."""
+
+    message: str = Field(..., description="Response message")
+
+    
