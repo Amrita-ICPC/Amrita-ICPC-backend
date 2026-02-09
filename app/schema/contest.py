@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field,model_validator,ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ContestBase(BaseModel):
@@ -27,6 +27,7 @@ class ContestBase(BaseModel):
 
 class ContestCreate(ContestBase):
     """Schema for creating a contest."""
+
     model_config = ConfigDict(from_attributes=True)
 
     pass
@@ -43,15 +44,12 @@ class ContestUpdate(BaseModel):
     )
     image: Optional[str] = Field(None, description="Contest image URL")
     is_public: Optional[bool] = Field(None, description="Whether contest is public")
-    start_time: Optional[datetime] = Field(
-        None, description="Contest start time (UTC)"
-    )
-    end_time: Optional[datetime] = Field(
-        None, description="Contest end time (UTC)"
-    )
+    start_time: Optional[datetime] = Field(None, description="Contest start time (UTC)")
+    end_time: Optional[datetime] = Field(None, description="Contest end time (UTC)")
+
     @model_validator(mode="after")
     def validate_end_time(self):
-        if self.start_time and  self.end_time:
+        if self.start_time and self.end_time:
             if self.end_time <= self.start_time:
                 raise ValueError("End time must be after start time")
         return self
@@ -79,4 +77,3 @@ class MessageResponse(BaseModel):
     """Schema for message response."""
 
     message: str = Field(..., description="Response message")
-

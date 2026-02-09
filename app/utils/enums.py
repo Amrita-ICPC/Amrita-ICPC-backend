@@ -5,7 +5,7 @@ class UserRole(enum.Enum):
     student = "student"
     instructor = "instructor"
     admin = "admin"
-    manager="manager"
+    manager = "manager"
 
 
 class QuestionDifficulty(enum.Enum):

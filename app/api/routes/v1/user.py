@@ -75,9 +75,5 @@ def sync_keycloak_users(
         "status": "success",
         "message": "Keycloak users synced successfully",
         "users_synced": users_synced,
-        "synced_by": {
-            "name": admin_name,
-            "email": admin_email,
-            "id": admin_id
-        }
+        "synced_by": {"name": admin_name, "email": admin_email, "id": admin_id},
     }

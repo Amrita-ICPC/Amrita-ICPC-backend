@@ -1,4 +1,5 @@
 from uuid import UUID
+
 from sqlalchemy.orm import Session
 
 from app.exceptions.auth import PermissionDeniedError

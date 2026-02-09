@@ -1,5 +1,5 @@
-from datetime import datetime, timezone
 import uuid
+from datetime import datetime, timezone
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
@@ -22,21 +22,28 @@ class Contest(Base):
 
     questions = relationship("ContestQuestion", back_populates="contest")
     teams = relationship("ContestTeam", back_populates="contest")
-    instructors:Mapped[list["ContestInstructor"]] = relationship("ContestInstructor", back_populates="contest")
+    instructors: Mapped[list["ContestInstructor"]] = relationship(
+        "ContestInstructor", back_populates="contest"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
     )
-    start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    start_time: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
     end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     created_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("users.id"), nullable=True)
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
 
-    creator = relationship("User",lazy="joined")
+    creator = relationship("User", lazy="joined")
+
 
 class ContestInstructor(Base):
     __tablename__ = "contest_instructor"
