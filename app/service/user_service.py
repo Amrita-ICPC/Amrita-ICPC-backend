@@ -2,6 +2,7 @@ from uuid import UUID
 
 from keycloak import KeycloakAdmin
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 
 from app.core.config import config
 from app.core.logger import logger
@@ -101,9 +102,18 @@ class UserService:
                 )
                 if existing_user:
                     continue
+                user_id = kc_user["id"]
+                email = kc_user.get("email", "")
+                
+                # Check if user already exists in database by ID or Email
+                existing_user = db.query(User).filter(
+                    or_(
+                        User.user_id == user_id,
+                        User.email == email
+                    )
+                ).first()
 
                 # Fetch user's groups from Keycloak
-                user_id = kc_user["id"]
                 user_groups = keycloak_admin.get_user_groups(user_id)
 
                 # Determine user role from groups, default to student
@@ -112,21 +122,27 @@ class UserService:
                     group_name = user_groups[0]["name"]
                     user_role = role_mapping.get(group_name, UserRole.student)
 
-                # Create new user record
-                email = kc_user.get("email")
-                if not email:
-                    logger.warning("Skipping Keycloak user %s: missing email", user_id)
-                    continue
+                name = f"{kc_user.get('firstName', '')} {kc_user.get('lastName', '')}".strip()
+                phone_no = kc_user.get("attributes", {}).get("phone_no", [None])[0]
 
-                new_user = User(
-                    user_id=user_id,
-                    email=email,
-                    name=f"{kc_user.get('firstName', '')} {kc_user.get('lastName', '')}".strip(),
-                    phone_no=kc_user.get("attributes", {}).get("phone_no", [None])[0],
-                    role=user_role,
-                )
-
-                db.add(new_user)
+                if existing_user:
+                    # Update existing user
+                    existing_user.user_id = user_id # Ensure ID matches Keycloak
+                    existing_user.name = name
+                    existing_user.email = email
+                    existing_user.phone_no = phone_no
+                    existing_user.role = user_role
+                else:
+                    # Create new user record
+                    new_user = User(
+                        user_id=user_id,
+                        email=email,
+                        name=name,
+                        phone_no=phone_no,
+                        role=user_role
+                    )
+                    db.add(new_user)
+                
                 users_synced += 1
 
             # Commit all changes to database

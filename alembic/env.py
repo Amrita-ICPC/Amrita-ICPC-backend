@@ -1,17 +1,25 @@
 from logging.config import fileConfig
-import os
-from dotenv import load_dotenv
+
 
 from sqlalchemy import engine_from_config, pool
 
 from alembic import context
 
-# Load environment variables from .env
-load_dotenv()
+from app.core.config import config as app_config
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
+
+# Set the sqlalchemy.url in the config object
+if app_config.DATABASE_PASSWORD:
+    sqlalchemy_url = f"postgresql+psycopg2://{app_config.DATABASE_USERNAME}:{app_config.DATABASE_PASSWORD}@{app_config.DATABASE_HOST}:{app_config.DATABASE_PORT}/{app_config.DATABASE_NAME}"
+else:
+    # Handle case with no password or different auth, fallback or error if needed.
+    # Assuming standard setup for now based on .env
+    sqlalchemy_url = f"postgresql+psycopg2://{app_config.DATABASE_USERNAME}@{app_config.DATABASE_HOST}:{app_config.DATABASE_PORT}/{app_config.DATABASE_NAME}"
+
+config.set_main_option("sqlalchemy.url", sqlalchemy_url)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -21,20 +29,9 @@ if config.config_file_name is not None:
 # add your model's MetaData object here
 # for 'autogenerate' support
 from app.models.base import Base
+from app.models import bank, contest, question, tag, team, user  # noqa
+
 target_metadata = Base.metadata
-
-# Load database URL from environment
-database_url = os.getenv("DATABASE_URL")
-if not database_url:
-    db_user = os.getenv("DATABASE_USERNAME", "icpc")
-    db_pass = os.getenv("DATABASE_PASSWORD", "icpc")
-    db_host = os.getenv("DATABASE_HOST", "localhost")
-    db_port = os.getenv("DATABASE_PORT", "5432")
-    db_name = os.getenv("DATABASE_NAME", "amrita-icpc")
-    database_url = f"postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
-
-if database_url:
-    config.set_main_option("sqlalchemy.url", database_url)
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
