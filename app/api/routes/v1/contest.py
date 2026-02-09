@@ -18,6 +18,8 @@ from app.schema.contest import (
     ContestListResponse,
     ContestResponse,
     ContestUpdate,
+    InstructorListResponse,
+    InstructorManageRequest,
     MessageResponse,
 )
 from app.service.contest_service import ContestService
@@ -208,3 +210,137 @@ async def delete_contest(
     logger.info(f"Contest with ID {contest_id} deleted by user {user_id}")
 
     return MessageResponse(message="Contest deleted successfully")
+
+
+@router.post(
+    "/{contest_id}/instructors",
+    response_model=MessageResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Assign instructors to contest",
+    dependencies=[can_update("contests")],
+)
+async def assign_instructors_to_contest(
+    contest_id: UUID,
+    request: InstructorManageRequest,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    service: ContestService = Depends(get_contest_service),
+):
+    """
+    Assign a list of instructors to a contest.
+
+    Only users with admin role can assign instructors to contests.
+
+    Args:
+        contest_id: Contest ID
+        request: Request containing list of instructor IDs
+        db: Database session
+        current_user: Current authenticated user
+        service: Contest service instance
+
+    Returns:
+        Success message
+
+    Raises:
+        ContestNotFoundError: If contest not found
+        UserNotFoundError: If any instructor not found
+        InstructorAlreadyAssignedError: If any instructor is already assigned
+        PermissionDeniedError: If user doesn't have permission
+    """
+    kc_id = current_user.get("sub")
+    user_id = UserService.get_user_by_keycloak_id(db, kc_id).id
+    await service.assign_instructors_to_contest(contest_id, request, user_id)
+    logger.info(
+        f"Assigned {len(request.instructor_ids)} instructors to contest {contest_id} by user {user_id}"
+    )
+
+    return MessageResponse(message="Instructors assigned successfully")
+
+
+@router.delete(
+    "/{contest_id}/instructors",
+    response_model=MessageResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Remove instructors from contest",
+    dependencies=[can_update("contests")],
+)
+async def remove_instructors_from_contest(
+    contest_id: UUID,
+    request: InstructorManageRequest,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    service: ContestService = Depends(get_contest_service),
+):
+    """
+    Remove a list of instructors from a contest.
+
+    Only users with admin role can remove instructors from contests.
+
+    Args:
+        contest_id: Contest ID
+        request: Request containing list of instructor IDs
+        db: Database session
+        current_user: Current authenticated user
+        service: Contest service instance
+
+    Returns:
+        Success message
+
+    Raises:
+        ContestNotFoundError: If contest not found
+        InstructorNotAssignedError: If any instructor is not assigned to the contest
+        PermissionDeniedError: If user doesn't have permission
+    """
+    kc_id = current_user.get("sub")
+    user_id = UserService.get_user_by_keycloak_id(db, kc_id).id
+    await service.remove_instructors_from_contest(contest_id, request, user_id)
+    logger.info(
+        f"Removed {len(request.instructor_ids)} instructors from contest {contest_id} by user {user_id}"
+    )
+
+    return MessageResponse(message="Instructors removed successfully")
+
+
+@router.get(
+    "/{contest_id}/instructors",
+    response_model=InstructorListResponse,
+    summary="Get contest instructors",
+    dependencies=[can_read("contests")],
+)
+async def get_contest_instructors(
+    contest_id: UUID,
+    page: int = Query(1, ge=1, description="Page number (starts from 1)"),
+    page_size: int = Query(
+        10, ge=1, le=100, description="Number of instructors per page"
+    ),
+    service: ContestService = Depends(get_contest_service),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """
+    Get all instructors assigned to a contest with pagination support.
+
+    Only users who can manage the contest (creators or assigned instructors) can view the instructors list.
+
+    Args:
+        contest_id: Contest ID
+        page: Page number (starts from 1)
+        page_size: Number of instructors per page (max 100)
+        service: Contest service instance
+        current_user: Current authenticated user
+
+    Returns:
+        List of instructors assigned to the contest
+
+    Raises:
+        ContestNotFoundError: If contest not found
+        PermissionDeniedError: If user cannot manage the contest
+    """
+    kc_id = current_user.get("sub")
+    user_id = UserService.get_user_by_keycloak_id(service.db, kc_id).id
+    skip = (page - 1) * page_size
+    result = await service.get_contest_instructors(contest_id, user_id, skip, page_size)
+    logger.info(
+        f"Retrieved {len(result.instructors)} instructors for contest {contest_id}"
+    )
+
+    return result
