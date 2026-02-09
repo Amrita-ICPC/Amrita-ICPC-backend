@@ -488,7 +488,7 @@ async def test_remove_member_from_team_success(team_service: "TeamService", mock
 
         assert result.user_id == existing_user.id
         assert result.team_id == existing_team.id
-        assert result.message == "Member removed succesfully"
+        assert result.message == "Member removed successfully"
         mock_db.delete.assert_called_once_with(team_user)
         mock_db.flush.assert_called_once()
 
