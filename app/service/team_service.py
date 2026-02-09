@@ -132,7 +132,11 @@ class TeamService:
         return total, [TeamResponse.model_validate(team) for team in teams]
     
     @cache_delete(
-        key_builder=lambda self, team_id, team_data: "teams:list:*",
+        key_builder=lambda self, team_id, team_data: [
+            "teams:list:*",
+            "teams:user:*",
+            f"team:{team_id}:members"
+        ],
     )
     @cache_set(
         key_builder=lambda team: f"team:{team.id}",
@@ -162,7 +166,7 @@ class TeamService:
         try:
             self.db.flush()
             self.db.refresh(team)
-            logger.info(f"Team updated successfully")
+            logger.info("Team updated successfully")
             return TeamResponse.model_validate(team)
         except Exception as e:
             self.db.rollback()
@@ -172,7 +176,9 @@ class TeamService:
     @cache_delete(
         key_builder=lambda self, team_id: [
             f"team:{team_id}",
+            f"team:{team_id}:members",
             "teams:list:*",
+            "teams:user:*",
         ]
     )
     async def delete_team(self, team_id: UUID) -> TeamResponse:
@@ -202,7 +208,11 @@ class TeamService:
             raise AppBaseException("Failed to delete team", status_code=500)
     
     @cache_delete(
-        key_builder=lambda self, team_id, user_id: [f"team:{team_id}", f"team:{team_id}:members"]
+        key_builder=lambda self, team_id, user_id: [
+            f"team:{team_id}",
+            f"team:{team_id}:members",
+            f"teams:user:{user_id}:*",
+        ]
     )
     async def add_member_to_team(self, team_id: UUID, user_id: UUID) -> AddTeamMemberResponse:
         """
@@ -228,7 +238,7 @@ class TeamService:
         ).first()
 
         if existing:
-            raise UserAlreadyInTeamError(str(user_id), str(team_id))
+            raise UserAlreadyInTeamError(str(team_id), str(user_id))
         
         try:
             team_user = TeamUser(team_id=team_id, user_id=user_id)
@@ -249,7 +259,11 @@ class TeamService:
             raise AppBaseException("Failed to add member to team", status_code=500)
     
     @cache_delete(
-        key_builder=lambda self, team_id, user_id: [f"team:{team_id}", f"team:{team_id}:members"]
+        key_builder=lambda self, team_id, user_id: [
+            f"team:{team_id}",
+            f"team:{team_id}:members",
+            f"teams:user:{user_id}:*",
+        ]
     )
     async def remove_member_from_team(self, team_id: UUID, user_id: UUID) -> RemoveTeamMemberResponse:
         """

@@ -86,7 +86,9 @@ async def create_team(
     Returns:
         Success message
     """
-    keycloak_user_id = current_user["sub"]
+    keycloak_user_id = current_user.get("sub")
+    if not keycloak_user_id:
+        raise PermissionDeniedError("Invalid authentication: missing user ID")
     db_user = UserService.get_user_by_keycloak_id(db, keycloak_user_id)
     created_team = await service.create_team(team)
     logger.info(
@@ -120,7 +122,9 @@ async def get_my_teams(
     Returns:
         Paginated list of teams
     """
-    keycloak_user_id = current_user["sub"]
+    keycloak_user_id = current_user.get("sub")
+    if not keycloak_user_id:
+        raise PermissionDeniedError("Invalid authentication: missing user ID")
     db_user = UserService.get_user_by_keycloak_id(db, keycloak_user_id)
     total, teams = await service.get_user_teams(db_user.id, skip, limit)
     return {"total": total, "teams": teams}
@@ -173,6 +177,8 @@ async def update_team(
         Success message
     """
     kc_id = current_user.get("sub")
+    if not kc_id:
+        raise PermissionDeniedError("Invalid authentication: missing user ID")
     user_id = UserService.get_user_by_keycloak_id(db, kc_id).id
     await service.update_team(team_id, team_data)
 
@@ -203,6 +209,8 @@ async def delete_team(
         Success message
     """
     kc_id = current_user.get("sub")
+    if not kc_id:
+        raise PermissionDeniedError("Invalid authentication: missing user ID")
     user_id = UserService.get_user_by_keycloak_id(db, kc_id).id
     
     await service.delete_team(team_id)

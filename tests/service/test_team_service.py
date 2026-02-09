@@ -30,9 +30,9 @@ def mock_db():
 @pytest.fixture
 def team_service(mock_db):
     # Patch the cache decorators to avoid redis connection issues
-    with patch("app.core.cache.decorators.cache_get", side_effect=lambda **kwargs: lambda func: func), \
-         patch("app.core.cache.decorators.cache_set", side_effect=lambda **kwargs: lambda func: func), \
-         patch("app.core.cache.decorators.cache_delete", side_effect=lambda **kwargs: lambda func: func):
+    with patch("app.core.cache.decorators.cache_get", side_effect=lambda **_kwargs: lambda func: func), \
+         patch("app.core.cache.decorators.cache_set", side_effect=lambda **_kwargs: lambda func: func), \
+         patch("app.core.cache.decorators.cache_delete", side_effect=lambda **_kwargs: lambda func: func):
 
         from app.service.team_service import TeamService
         service = TeamService(mock_db)
@@ -293,7 +293,7 @@ async def test_update_team_partial_update(team_service: "TeamService", mock_db, 
     update_data = TeamUpdate(description="Updated Description")
     original_name = existing_team.name
     
-    result = await team_service.update_team(existing_team.id, update_data)
+    await team_service.update_team(existing_team.id, update_data)
 
     assert existing_team.description == "Updated Description"
     assert existing_team.name == original_name  # Should not change
@@ -419,7 +419,7 @@ async def test_add_member_to_team_success(team_service: "TeamService", mock_db, 
 
 
 @pytest.mark.asyncio
-async def test_add_member_team_not_found(team_service: "TeamService", mock_db, existing_user):
+async def test_add_member_team_not_found(team_service: "TeamService", existing_user):
     """Test adding member to non-existent team."""
     team_id = uuid4()
     
@@ -494,7 +494,7 @@ async def test_remove_member_from_team_success(team_service: "TeamService", mock
 
 
 @pytest.mark.asyncio
-async def test_remove_member_team_not_found(team_service: "TeamService", mock_db, existing_user):
+async def test_remove_member_team_not_found(team_service: "TeamService", existing_user):
     """Test removing member from non-existent team."""
     team_id = uuid4()
     
@@ -570,7 +570,7 @@ async def test_get_team_members_empty(team_service: "TeamService", mock_db, exis
 
 
 @pytest.mark.asyncio
-async def test_get_team_members_team_not_found(team_service: "TeamService", mock_db):
+async def test_get_team_members_team_not_found(team_service: "TeamService"):
     """Test getting members for non-existent team."""
     team_id = uuid4()
     
