@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
@@ -23,23 +24,23 @@ def upgrade() -> None:
     # Create team table
     op.create_table(
         'team',
-        sa.Column('id', sa.Integer(), nullable=False),
+        sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False, server_default=sa.text("gen_random_uuid()")),
         sa.Column('name', sa.String(length=255), nullable=False),
-        sa.Column('description', sa.String(length=500), nullable=True),
-        sa.Column('logo', sa.String(length=500), nullable=True),
-        sa.Column('created_at', sa.DateTime(), nullable=False, server_default=sa.func.now()),
-        sa.Column('updated_at', sa.DateTime(), nullable=False, server_default=sa.func.now()),
+        sa.Column('description', sa.Text(), nullable=True),
+        sa.Column('logo', sa.Text(), nullable=True),
+        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.PrimaryKeyConstraint('id')
     )
     
     # Create team_user junction table
     op.create_table(
         'team_user',
-        sa.Column('team_id', sa.Integer(), nullable=False),
-        sa.Column('user_id', sa.Integer(), nullable=False),
-        sa.Column('created_at', sa.DateTime(), nullable=False, server_default=sa.func.now()),
+        sa.Column('team_id', postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column('user_id', postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.ForeignKeyConstraint(['team_id'], ['team.id'], ondelete='CASCADE'),
-        sa.ForeignKeyConstraint(['user_id'], ['user.id'], ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('team_id', 'user_id')
     )
 
@@ -48,3 +49,4 @@ def downgrade() -> None:
     """Downgrade schema - drop team and team_user tables."""
     op.drop_table('team_user')
     op.drop_table('team')
+
