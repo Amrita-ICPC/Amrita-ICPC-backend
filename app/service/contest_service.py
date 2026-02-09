@@ -5,10 +5,25 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.cache.decorators import cache_delete, cache_get, cache_set
+from app.core.logger import logger
 from app.core.permissions import ContestPermission
-from app.exceptions.contest import ContestNotFoundError, InvalidContestError
+from app.exceptions.contest import (
+    ContestNotFoundError,
+    InstructorAlreadyAssignedError,
+    InstructorNotAssignedError,
+    InvalidContestError,
+)
+from app.exceptions.user import UserNotFoundError
 from app.models.contest import Contest, ContestInstructor
-from app.schema.contest import ContestCreate, ContestResponse, ContestUpdate
+from app.models.user import User
+from app.schema.contest import (
+    ContestCreate,
+    ContestResponse,
+    ContestUpdate,
+    InstructorListResponse,
+    InstructorManageRequest,
+    InstructorResponse,
+)
 
 
 class ContestService:
@@ -21,7 +36,7 @@ class ContestService:
         key_builder=lambda self, contest, created_by: f"contests:user:{created_by}:*",
     )
     @cache_set(
-        key_builder=lambda contest: f"contest:{contest.id}",
+        key_builder=lambda result: f"contest:{result.id}",
         ttl=300,
         from_result=True,
     )
@@ -118,7 +133,7 @@ class ContestService:
         user_id: f"contests:user:{user_id}:*",
     )
     @cache_set(
-        key_builder=lambda contest: f"contest:{contest.id}",
+        key_builder=lambda result: f"contest:{result.id}",
         ttl=300,
         from_result=True,
     )
@@ -191,3 +206,194 @@ class ContestService:
         self.db.flush()
 
         return response
+
+    @cache_delete(
+        key_builder=lambda self, contest_id, request, user_id: [
+            f"contest:{contest_id}:instructors:*",
+            f"contests:user:{user_id}:*",
+        ]
+    )
+    async def assign_instructors_to_contest(
+        self, contest_id: UUID, request: InstructorManageRequest, user_id: UUID
+    ) -> None:
+        """
+        Assign instructors to a contest.
+
+        Args:
+            contest_id: Contest ID
+            request: Request containing instructor IDs to assign
+            user_id: User ID performing the assignment
+
+        Raises:
+            ContestNotFoundError: If contest not found
+            UserNotFoundError: If any instructor not found
+            InstructorAlreadyAssignedError: If any instructor is already assigned
+            PermissionDeniedError: If user doesn't have permission
+        """
+        # Check if contest exists
+        contest = self.db.query(Contest).filter(Contest.id == contest_id).first()
+        if not contest:
+            logger.error(f"Contest {contest_id} not found")
+            raise ContestNotFoundError(str(contest_id))
+
+        # Check permissions
+        ContestPermission.can_manage_contest(self.db, user_id=user_id, contest=contest)
+
+        # Validate instructors
+        for instructor_id in request.instructor_ids:
+            # Check if user exists
+            instructor = self.db.query(User).filter(User.id == instructor_id).first()
+            if not instructor:
+                logger.error(f"Instructor {instructor_id} not found")
+                raise UserNotFoundError(str(instructor_id))
+
+            # Check if instructor is already assigned
+            existing_assignment = (
+                self.db.query(ContestInstructor)
+                .filter(
+                    ContestInstructor.contest_id == contest_id,
+                    ContestInstructor.instructor_id == instructor_id,
+                )
+                .first()
+            )
+            if existing_assignment:
+                logger.warning(
+                    f"Instructor {instructor_id} is already assigned to contest {contest_id}"
+                )
+                raise InstructorAlreadyAssignedError(
+                    str(instructor_id), str(contest_id)
+                )
+
+        # Assign instructors
+        for instructor_id in request.instructor_ids:
+            assignment = ContestInstructor(
+                contest_id=contest_id, instructor_id=instructor_id
+            )
+            self.db.add(assignment)
+            logger.info(
+                f"Assigned instructor {instructor_id} to contest {contest_id} by user {user_id}"
+            )
+
+        self.db.flush()
+
+    @cache_delete(
+        key_builder=lambda self, contest_id, request, user_id: [
+            f"contest:{contest_id}:instructors:*",
+            f"contests:user:{user_id}:*",
+        ]
+    )
+    async def remove_instructors_from_contest(
+        self, contest_id: UUID, request: InstructorManageRequest, user_id: UUID
+    ) -> None:
+        """
+        Remove instructors from a contest.
+
+        Args:
+            contest_id: Contest ID
+            request: Request containing instructor IDs to remove
+            user_id: User ID performing the removal
+
+        Raises:
+            ContestNotFoundError: If contest not found
+            InstructorNotAssignedError: If any instructor is not assigned to the contest
+            PermissionDeniedError: If user doesn't have permission
+        """
+        # Check if contest exists
+        contest = self.db.query(Contest).filter(Contest.id == contest_id).first()
+        if not contest:
+            logger.error(f"Contest {contest_id} not found")
+            raise ContestNotFoundError(str(contest_id))
+
+        # Check permissions
+        ContestPermission.can_manage_contest(self.db, user_id=user_id, contest=contest)
+
+        # Validate assignments and remove
+        for instructor_id in request.instructor_ids:
+            assignment = (
+                self.db.query(ContestInstructor)
+                .filter(
+                    ContestInstructor.contest_id == contest_id,
+                    ContestInstructor.instructor_id == instructor_id,
+                )
+                .first()
+            )
+            if not assignment:
+                logger.error(
+                    f"Instructor {instructor_id} is not assigned to contest {contest_id}"
+                )
+                raise InstructorNotAssignedError(str(instructor_id), str(contest_id))
+
+            self.db.delete(assignment)
+            logger.info(
+                f"Removed instructor {instructor_id} from contest {contest_id} by user {user_id}"
+            )
+
+        self.db.flush()
+
+    @cache_get(
+        key_builder=lambda self,
+        contest_id,
+        user_id,
+        skip=0,
+        limit=100: f"contest:{contest_id}:instructors:user:{user_id}:skip:{skip}:limit:{limit}",
+        ttl=300,
+    )
+    async def get_contest_instructors(
+        self, contest_id: UUID, user_id: UUID, skip: int = 0, limit: int = 100
+    ) -> InstructorListResponse:
+        """
+        Get all instructors assigned to a contest.
+
+        Args:
+            contest_id: Contest ID
+            user_id: User ID requesting the list (must have manage permissions)
+            skip: Number of records to skip
+            limit: Maximum number of records to return
+
+        Returns:
+            List of instructors assigned to the contest
+
+        Raises:
+            ContestNotFoundError: If contest not found
+            PermissionDeniedError: If user cannot manage the contest
+        """
+        # Check if contest exists
+        contest = self.db.query(Contest).filter(Contest.id == contest_id).first()
+        if not contest:
+            logger.error(f"Contest {contest_id} not found")
+            raise ContestNotFoundError(str(contest_id))
+
+        ContestPermission.can_manage_contest(
+            self.db, user_id=user_id, contest=contest
+        )  # Permission check for instructors list
+
+        # Get instructors with pagination
+        base_query = (
+            self.db.query(User)
+            .join(ContestInstructor, User.id == ContestInstructor.instructor_id)
+            .filter(ContestInstructor.contest_id == contest_id)
+        )
+
+        total = base_query.count()
+        instructors = base_query.offset(skip).limit(limit).all()
+
+        instructor_responses = [
+            InstructorResponse.model_validate(instructor) for instructor in instructors
+        ]
+
+        # Get creator information
+        creator = None
+        if contest.created_by:
+            creator_user = (
+                self.db.query(User).filter(User.id == contest.created_by).first()
+            )
+            if creator_user:
+                creator = InstructorResponse.model_validate(creator_user)
+
+        logger.info(
+            f"Retrieved {len(instructor_responses)} instructors for contest {contest_id}"
+        )
+
+        return InstructorListResponse(
+            total=total, instructors=instructor_responses, creator=creator
+        )

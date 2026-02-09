@@ -9,6 +9,9 @@ from app.exceptions.contest import (
     ContestAlreadyExistsError,
     ContestNotFoundError,
     ContestOperationError,
+    InstructorAlreadyAssignedError,
+    InstructorNotAssignedError,
+    InstructorNotFoundError,
     InvalidContestError,
 )
 
@@ -95,6 +98,36 @@ def setup_exception_handlers(app: FastAPI) -> None:
         request: Request, exc: ContestOperationError
     ):
         logger.error(f"Contest operation error: {exc.message}")
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail, "message": exc.message},
+        )
+
+    @app.exception_handler(InstructorAlreadyAssignedError)
+    async def instructor_already_assigned_handler(
+        request: Request, exc: InstructorAlreadyAssignedError
+    ):
+        logger.warning(f"Instructor already assigned: {exc.message}")
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail, "message": exc.message},
+        )
+
+    @app.exception_handler(InstructorNotAssignedError)
+    async def instructor_not_assigned_handler(
+        request: Request, exc: InstructorNotAssignedError
+    ):
+        logger.warning(f"Instructor not assigned: {exc.message}")
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail, "message": exc.message},
+        )
+
+    @app.exception_handler(InstructorNotFoundError)
+    async def instructor_not_found_handler(
+        request: Request, exc: InstructorNotFoundError
+    ):
+        logger.warning(f"Instructor not found: {exc.message}")
         return JSONResponse(
             status_code=exc.status_code,
             content={"detail": exc.detail, "message": exc.message},

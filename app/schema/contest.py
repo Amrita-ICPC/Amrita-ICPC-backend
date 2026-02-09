@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import List, Optional
 from uuid import UUID
 
@@ -60,6 +60,7 @@ class ContestResponse(ContestBase):
 
     id: UUID = Field(..., description="Contest ID")
     created_by: UUID = Field(..., description="Creator user ID")
+    creator: Optional["InstructorResponse"] = Field(None, description="Creator details")
     created_at: datetime = Field(..., description="Contest creation time (UTC)")
     updated_at: datetime = Field(..., description="Last update time (UTC)")
 
@@ -77,3 +78,43 @@ class MessageResponse(BaseModel):
     """Schema for message response."""
 
     message: str = Field(..., description="Response message")
+
+
+class InstructorManageRequest(BaseModel):
+    """Schema for managing instructors in a contest."""
+
+    instructor_ids: List[UUID] = Field(
+        ..., description="List of instructor IDs to assign or remove"
+    )
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class InstructorResponse(BaseModel):
+    """Schema for instructor response."""
+
+    id: UUID = Field(..., description="Instructor ID")
+    user_id: str = Field(..., description="Instructor user ID")
+    name: str = Field(..., description="Instructor name")
+    email: str = Field(..., description="Instructor email")
+    phone_no: Optional[str] = Field(None, description="Instructor phone number")
+    role: str = Field(..., description="Instructor role")
+    gender: Optional[str] = Field(None, description="Instructor gender")
+    dob: Optional[date] = Field(None, description="Instructor date of birth")
+    created_at: datetime = Field(..., description="Account creation time (UTC)")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class InstructorListResponse(BaseModel):
+    """Schema for instructor list response."""
+
+    total: int = Field(..., description="Total number of instructors")
+    instructors: List[InstructorResponse] = Field(
+        ..., description="List of instructors"
+    )
+    creator: Optional[InstructorResponse] = Field(
+        None, description="Contest creator details"
+    )
+
+    model_config = ConfigDict(from_attributes=True)
