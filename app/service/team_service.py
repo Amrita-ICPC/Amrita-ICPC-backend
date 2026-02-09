@@ -295,7 +295,7 @@ class TeamService:
             self.db.flush()
             logger.info(f"User {user_id} removed from the team {team_id}")
             return RemoveTeamMemberResponse(
-                message="Member removed succesfully",
+                message="Member removed successfully",
                 user_id=user_id,
                 team_id=team_id,
                 removed_at=datetime.now(timezone.utc)
