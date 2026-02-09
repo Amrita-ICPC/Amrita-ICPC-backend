@@ -9,7 +9,6 @@ keycloak_config = KeycloakConfiguration(
     url=config.KEYCLOAK_SERVER_URL,
     realm=config.KEYCLOAK_REALM,
     client_id=config.KEYCLOAK_CLIENT_ID,
-    client_secret=config.KEYCLOAK_CLIENT_SECRET,
     claims=["sub", "name", "email", "resource_access", "groups"],
     reject_on_missing_claim=config.ENVIRONMENT == "production",
     # Disabling SSL verify for local dev/internal CA issues or Keycloak on HTTP. not recommended for production

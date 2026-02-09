@@ -1,14 +1,20 @@
 import enum
 
 
-class UserRole(enum.Enum):
+class UserRole(str, enum.Enum):
     student = "student"
     instructor = "instructor"
     admin = "admin"
     manager = "manager"
 
 
-class QuestionDifficulty(enum.Enum):
+class QuestionDifficulty(str, enum.Enum):
     EASY = "EASY"
     MEDIUM = "MEDIUM"
     HARD = "HARD"
+
+
+class BankPermission(str, enum.Enum):
+    read = "read"
+    edit = "edit"
+    owner = "owner"
