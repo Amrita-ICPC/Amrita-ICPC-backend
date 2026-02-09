@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schema.question import QuestionResponse
 from app.utils.enums import BankPermission
@@ -29,16 +29,14 @@ class BankResponse(BankBase):
     created_at: datetime = Field(..., description="Creation time")
     updated_at: datetime = Field(..., description="Last update time")
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BankShareBase(BaseModel):
     user_id: UUID
     permission: BankPermission
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BankDetailResponse(BankResponse):
