@@ -19,3 +19,11 @@ The client roles defined for managing contests are:
 *   `contests:update` - Allows updating contest details.
 *   `contests:delete` - Allows deleting contests.
 *   `contests:create` - Allows creating new contests.
+
+The client roles defined for managing banks are:
+
+*   `banks:read` - Allows reading banks.
+*   `banks:update` - Allows updating banks.
+*   `banks:delete` - Allows deleting banks.
+*   `banks:create` - Allows creating banks.
+*   `banks:share` - Allows sharing banks.
