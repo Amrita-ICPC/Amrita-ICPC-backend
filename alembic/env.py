@@ -1,8 +1,13 @@
 from logging.config import fileConfig
+import os
+from dotenv import load_dotenv
 
 from sqlalchemy import engine_from_config, pool
 
 from alembic import context
+
+# Load environment variables from .env
+load_dotenv()
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -15,9 +20,21 @@ if config.config_file_name is not None:
 
 # add your model's MetaData object here
 # for 'autogenerate' support
-# from myapp import mymodel
-# target_metadata = mymodel.Base.metadata
-target_metadata = None
+from app.models.base import Base
+target_metadata = Base.metadata
+
+# Load database URL from environment
+database_url = os.getenv("DATABASE_URL")
+if not database_url:
+    db_user = os.getenv("DATABASE_USERNAME", "icpc")
+    db_pass = os.getenv("DATABASE_PASSWORD", "icpc")
+    db_host = os.getenv("DATABASE_HOST", "localhost")
+    db_port = os.getenv("DATABASE_PORT", "5432")
+    db_name = os.getenv("DATABASE_NAME", "amrita-icpc")
+    database_url = f"postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
+
+if database_url:
+    config.set_main_option("sqlalchemy.url", database_url)
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:

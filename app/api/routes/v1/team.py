@@ -36,6 +36,31 @@ router = APIRouter()
 def get_team_service(db: Session = Depends(get_db)) -> TeamService:
     return TeamService(db)
 
+@router.get(
+    "/",
+    response_model=Dict[str, Any],
+    summary="Get all teams",
+    dependencies=[can_read("teams")],
+)
+async def get_all_teams(
+    skip: int = Query(0, ge=0, description="Offset for pagination"),
+    limit: int = Query(100, ge=1, le=100, description="Limit for pagination"),
+    service: TeamService = Depends(get_team_service),
+):
+    """
+    Get all teams with pagination.
+
+    Args:
+        skip: Offset for pagination
+        limit: Limit for pagination
+        service: Team service instance
+
+    Returns:
+        Paginated list of all teams
+    """
+    total, teams = await service.get_all_teams(skip, limit)
+    return {"total": total, "teams": teams}
+
 @router.post(
     "/",
     response_model=MessageResponse,
@@ -69,7 +94,6 @@ async def create_team(
     )
 
     return MessageResponse(message="Team created successfully")
-
 
 @router.get(
     "/my-teams",
