@@ -5,7 +5,6 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import (
-    AccessControl,
     can_create,
     can_delete,
     can_read,
@@ -14,7 +13,6 @@ from app.auth.dependencies import (
 )
 from app.core.clients.database import get_db
 from app.core.logger import logger
-from app.exceptions.auth import PermissionDeniedError
 from app.schema.contest import (
     ContestCreate,
     ContestListResponse,
@@ -26,7 +24,6 @@ from app.service.contest_service import ContestService
 from app.service.user_service import UserService
 
 router = APIRouter()
-
 
 
 def get_contest_service(db: Session = Depends(get_db)) -> ContestService:

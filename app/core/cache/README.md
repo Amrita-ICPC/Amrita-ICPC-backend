@@ -14,7 +14,7 @@ This directory contains the caching implementation for the application, leveragi
 **Purpose**: Caches the result of an asynchronous function. If the key exists in Redis, the cached value is returned. Otherwise, the function is executed, and its result is stored in Redis.
 
 ### Key Features
-- **Automatic Serialization**: 
+- **Automatic Serialization**:
   - If the decorated function has a return type annotation (e.g., `-> UserResponse`), it uses Pydantic's `TypeAdapter` to validate and serialize/deserialize the data.
   - If no return type is present (or `None`), it falls back to the default `serialize`/`deserialize` functions (using standard JSON).
 - **TTL (Time To Live)**: Configurable expiration time for cache keys.
@@ -102,8 +102,8 @@ async def delete_contest(contest_id: str):
 from app.core.cache.decorators import cache_set
 
 @cache_set(
-    key_builder=lambda user: f"user:{user.id}", 
-    ttl=600, 
+    key_builder=lambda user: f"user:{user.id}",
+    ttl=600,
     from_result=True
 )
 async def create_user(data: CreateUserRequest) -> UserResponse:
@@ -114,7 +114,7 @@ async def create_user(data: CreateUserRequest) -> UserResponse:
 ### Parameters
 - `key_builder` (`Callable[..., str]`): Function to generate the cache key.
 - `ttl` (`int`, default=300): Expiration time for the new cache entry.
-- `from_result` (`bool`, default=False): 
+- `from_result` (`bool`, default=False):
   - If `True`, `key_builder` is called with the *return value* of the function.
   - If `False`, `key_builder` is called with the *arguments* of the function.
 
@@ -124,7 +124,7 @@ async def create_user(data: CreateUserRequest) -> UserResponse:
 
 ### Serialization Logic
 The decorators check `func.__annotations__.get("return")`.
-1. **Pydantic Models**: If the return type is a valid Pydantic type, `TypeAdapter(return_type)` is created. 
+1. **Pydantic Models**: If the return type is a valid Pydantic type, `TypeAdapter(return_type)` is created.
    - Uses `adapter.validate_json(cached_data)` for deserialization.
    - Uses `adapter.dump_json(result)` for serialization.
 2. **Fallback**: If no type is found or `TypeAdapter` fails, it uses `app.core.cache.serialize`.

@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi_keycloak_middleware import KeycloakConfiguration, setup_keycloak_middleware
+
 from app.core.config import config
 from app.core.logger import logger
 
@@ -14,7 +15,6 @@ keycloak_config = KeycloakConfiguration(
     # Disabling SSL verify for local dev/internal CA issues or Keycloak on HTTP. not recommended for production
     verify=config.ENVIRONMENT == "production",
 )
-
 
 
 # Custom User Mapper

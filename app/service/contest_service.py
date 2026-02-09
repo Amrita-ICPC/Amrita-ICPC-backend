@@ -6,7 +6,6 @@ from sqlalchemy.orm import Session
 
 from app.core.cache.decorators import cache_delete, cache_get, cache_set
 from app.core.permissions import ContestPermission
-from app.exceptions.auth import PermissionDeniedError
 from app.exceptions.contest import ContestNotFoundError, InvalidContestError
 from app.models.contest import Contest, ContestInstructor
 from app.schema.contest import ContestCreate, ContestResponse, ContestUpdate
@@ -77,7 +76,10 @@ class ContestService:
         return ContestResponse.model_validate(contest)
 
     @cache_get(
-        key_builder=lambda self, user_id, skip=0, limit=100: f"contests:user:{user_id}:skip:{skip}:limit:{limit}",
+        key_builder=lambda self,
+        user_id,
+        skip=0,
+        limit=100: f"contests:user:{user_id}:skip:{skip}:limit:{limit}",
         ttl=300,
     )
     async def get_all_contests(
@@ -110,7 +112,10 @@ class ContestService:
         return total, [ContestResponse.model_validate(contest) for contest in contests]
 
     @cache_delete(
-        key_builder=lambda self, contest_id, contest_data, user_id: f"contests:user:{user_id}:*",
+        key_builder=lambda self,
+        contest_id,
+        contest_data,
+        user_id: f"contests:user:{user_id}:*",
     )
     @cache_set(
         key_builder=lambda contest: f"contest:{contest.id}",

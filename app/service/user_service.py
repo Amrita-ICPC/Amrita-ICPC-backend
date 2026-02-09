@@ -1,13 +1,12 @@
 from uuid import UUID
 
+from keycloak import KeycloakAdmin
 from sqlalchemy.orm import Session
 
 from app.core.config import config
 from app.core.logger import logger
-from app.exceptions.user import UserNotFoundError, KeycloakSyncError
+from app.exceptions.user import KeycloakSyncError, UserNotFoundError
 from app.models.user import User
-from keycloak import KeycloakAdmin
-
 from app.utils.enums import UserRole
 
 
@@ -53,7 +52,7 @@ class UserService:
         if not user:
             raise UserNotFoundError(str(user_id))
         return user
-    
+
     @staticmethod
     def sync_keycloak_users(db: Session) -> int:
         """
@@ -75,12 +74,11 @@ class UserService:
             # Initialize Keycloak admin client
             keycloak_admin = KeycloakAdmin(
                 server_url=config.KEYCLOAK_SERVER_URL,
-                username=config.KEYCLOAK_ADMIN_USERNAME,
-                password=config.KEYCLOAK_ADMIN_PASSWORD,
                 realm_name=config.KEYCLOAK_REALM,
-                user_realm_name=config.KEYCLOAK_DEFAULT_REALM,
-                client_id="admin-cli",
-                client_secret_key=config.KEYCLOAK_CLIENT_SECRET,
+                user_realm_name=config.KEYCLOAK_REALM,
+                client_id=config.KEYCLOAK_USERS_SYNC_CLIENT_ID,
+                client_secret_key=config.KEYCLOAK_USERS_SYNC_CLIENT_SECRET,
+                verify=True,
             )
 
             # Fetch all users from Keycloak
@@ -92,13 +90,15 @@ class UserService:
                 "manager": UserRole.manager,
                 "admin": UserRole.admin,
                 "instructor": UserRole.instructor,
-                "student": UserRole.student
+                "student": UserRole.student,
             }
-
+            print(keycloak_users)
             # Process each Keycloak user
             for kc_user in keycloak_users:
                 # Check if user already exists in database
-                existing_user = db.query(User).filter(User.user_id == kc_user["id"]).first()
+                existing_user = (
+                    db.query(User).filter(User.user_id == kc_user["id"]).first()
+                )
                 if existing_user:
                     continue
 
@@ -123,7 +123,7 @@ class UserService:
                     email=email,
                     name=f"{kc_user.get('firstName', '')} {kc_user.get('lastName', '')}".strip(),
                     phone_no=kc_user.get("attributes", {}).get("phone_no", [None])[0],
-                    role=user_role
+                    role=user_role,
                 )
 
                 db.add(new_user)

@@ -19,9 +19,7 @@ class Config(BaseSettings):
         default="A backend tool for Amrita ICPC Coding Platform",
         description="Description of the project",
     )
-    VERSION: str = Field(
-        default="1.0.0", description="Version of the application"
-    )
+    VERSION: str = Field(default="1.0.0", description="Version of the application")
 
     # Environment Configuration
     ENVIRONMENT: str = Field(
@@ -35,45 +33,25 @@ class Config(BaseSettings):
     API_PREFIX: str = Field(default="/api", description="API prefix")
 
     # Database Configuration
-    DATABASE_NAME: Optional[str] = Field(
-        default=None, description="Database name"
-    )
+    DATABASE_NAME: Optional[str] = Field(default=None, description="Database name")
     DATABASE_USERNAME: Optional[str] = Field(
         default=None, description="Database username"
     )
     DATABASE_PASSWORD: Optional[str] = Field(
         default=None, description="Database password"
     )
-    DATABASE_HOST: str = Field(
-        default="localhost", description="Database host"
-    )
-    DATABASE_PORT: Optional[int] = Field(
-        default=5432, description="Database port"
-    )
-    DATABASE_POOL_SIZE: int = Field(
-        default=5, description="Database pool size"
-    )
-    DATABASE_MAX_OVERFLOW: int = Field(
-        default=10, description="Database max overflow"
-    )
+    DATABASE_HOST: str = Field(default="localhost", description="Database host")
+    DATABASE_PORT: Optional[int] = Field(default=5432, description="Database port")
+    DATABASE_POOL_SIZE: int = Field(default=5, description="Database pool size")
+    DATABASE_MAX_OVERFLOW: int = Field(default=10, description="Database max overflow")
 
     # Redis configuration
-    REDIS_HOST: Optional[str] = Field(
-        default=None, description="Redis host"
-    )
-    REDIS_PORT: Optional[int] = Field(
-        default=6379, description="Redis port"
-    )
-    REDIS_PASSWORD: Optional[str] = Field(
-        default=None, description="Redis password"
-    )
-    REDIS_DB: Optional[int] = Field(
-        default=0, description="Redis database"
-    )
+    REDIS_HOST: Optional[str] = Field(default=None, description="Redis host")
+    REDIS_PORT: Optional[int] = Field(default=6379, description="Redis port")
+    REDIS_PASSWORD: Optional[str] = Field(default=None, description="Redis password")
+    REDIS_DB: Optional[int] = Field(default=0, description="Redis database")
 
-    CACHE_ENABLED: Optional[bool] = Field(
-        default=True, description="Cache enabled"
-    )   
+    CACHE_ENABLED: Optional[bool] = Field(default=True, description="Cache enabled")
 
     # Log Configuration
     LOG_LEVEL: str = Field(default="INFO", description="Log level")
@@ -81,17 +59,11 @@ class Config(BaseSettings):
         default="{asctime} {levelname} {message}",
         description="Log format",
     )
-    LOG_DIR: Optional[str] = Field(
-        default=None, description="Log directory"
-    )
-    USE_RICH_LOGGING: bool = Field(
-        default=True, description="Use Rich logging"
-    )
+    LOG_DIR: Optional[str] = Field(default=None, description="Log directory")
+    USE_RICH_LOGGING: bool = Field(default=True, description="Use Rich logging")
 
     # Judge0 Configuration
-    JUDGE0_API_KEY: Optional[str] = Field(
-        default=None, description="Judge0 API key"
-    )
+    JUDGE0_API_KEY: Optional[str] = Field(default=None, description="Judge0 API key")
     JUDGE0_API_URL: Optional[str] = Field(
         default="https://api.judge0.com",
         description="Judge0 API URL",
@@ -105,9 +77,7 @@ class Config(BaseSettings):
         default="http://localhost:8080",
         description="Keycloak Server URL",
     )
-    KEYCLOAK_REALM: str = Field(
-        default="master", description="Keycloak Realm"
-    )
+    KEYCLOAK_REALM: str = Field(default="master", description="Keycloak Realm")
     KEYCLOAK_CLIENT_ID: str = Field(
         default="amrita-icpc-backend",
         description="Keycloak Client ID",
@@ -116,17 +86,14 @@ class Config(BaseSettings):
         default=None, description="Keycloak Client Secret"
     )
 
-    KEYCLOAK_ADMIN_USERNAME: Optional[str] = Field(
-        default=None,
-        description="Keycloak Admin Username",
-    )
-    KEYCLOAK_ADMIN_PASSWORD: Optional[str] = Field(
-        default=None,
-        description="Keycloak Admin Password",
+    KEYCLOAK_USERS_SYNC_CLIENT_ID: str = Field(
+        default="amrita-icpc-backend",
+        description="Keycloak Users Sync Client ID",
     )
 
-    KEYCLOAK_DEFAULT_REALM: str = Field(
-        default="master", description="Keycloak Default Realm"
+    KEYCLOAK_USERS_SYNC_CLIENT_SECRET: Optional[str] = Field(
+        default=None,
+        description="Keycloak Users Sync Client Secret",
     )
 
     @field_validator("LOG_LEVEL")
