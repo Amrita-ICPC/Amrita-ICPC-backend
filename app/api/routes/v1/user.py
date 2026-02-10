@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, status
 from app.auth.dependencies import get_current_user, require_admin
 from app.core.clients.database import get_db
 from app.core.logger import logger
-from app.schema.user import UserProfile
+from app.schema.user import UserProfile, UserSyncResponse
 from app.service.user_service import UserService
 
 router = APIRouter()
@@ -33,7 +33,7 @@ def create_user():
     return {"message": "User created"}
 
 
-@router.post("/sync-keycloak-users", status_code=status.HTTP_200_OK)
+@router.post("/sync-keycloak-users", response_model=UserSyncResponse, status_code=status.HTTP_200_OK)
 def sync_keycloak_users(
     admin_user: Dict[str, Any] = Depends(require_admin),
     db=Depends(get_db),
@@ -65,15 +65,20 @@ def sync_keycloak_users(
     )
 
     # Sync Keycloak users (exception handled in service layer)
-    users_synced = UserService.sync_keycloak_users(db)
+    sync_result = UserService.sync_keycloak_users(db)
+    
+    users_synced = sync_result["synced_count"]
+    skipped_count = sync_result["skipped_count"]
 
     logger.info(
-        f"Keycloak user sync completed successfully: {users_synced} users synced by {admin_name} ({admin_email})"
+        f"Keycloak user sync completed: {users_synced} synced, {skipped_count} skipped. Initiated by {admin_name} ({admin_email})"
     )
 
     return {
         "status": "success",
-        "message": "Keycloak users synced successfully",
+        "message": "Keycloak users sync completed",
         "users_synced": users_synced,
+        "skipped_count": skipped_count,
+        "skipped_users": sync_result["skipped_users"],
         "synced_by": {"name": admin_name, "email": admin_email, "id": admin_id},
     }
