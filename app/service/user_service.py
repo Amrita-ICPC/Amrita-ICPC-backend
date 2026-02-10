@@ -85,6 +85,7 @@ class UserService:
             # Fetch all users from Keycloak
             keycloak_users = keycloak_admin.get_users()
             users_synced = 0
+            skipped_users = []
 
             # Role mapping from Keycloak groups to application roles
             role_mapping = {
@@ -93,17 +94,28 @@ class UserService:
                 "instructor": UserRole.instructor,
                 "student": UserRole.student,
             }
-            print(keycloak_users)
+            
             # Process each Keycloak user
             for kc_user in keycloak_users:
+                user_id = kc_user["id"]
+                email = kc_user.get("email", "")
+                name = f"{kc_user.get('firstName', '')} {kc_user.get('lastName', '')}".strip()
+
+                if not email:
+                    logger.warning(f"Skipping user {name} (ID: {user_id}) - Missing email")
+                    skipped_users.append({
+                        "user_id": user_id,
+                        "name": name,
+                        "reason": "Missing email"
+                    })
+                    continue
+
                 # Check if user already exists in database
                 existing_user = (
                     db.query(User).filter(User.user_id == kc_user["id"]).first()
                 )
                 if existing_user:
                     continue
-                user_id = kc_user["id"]
-                email = kc_user.get("email", "")
                 
                 # Check if user already exists in database by ID or Email
                 existing_user = db.query(User).filter(
@@ -122,7 +134,6 @@ class UserService:
                     group_name = user_groups[0]["name"]
                     user_role = role_mapping.get(group_name, UserRole.student)
 
-                name = f"{kc_user.get('firstName', '')} {kc_user.get('lastName', '')}".strip()
                 phone_no = kc_user.get("attributes", {}).get("phone_no", [None])[0]
 
                 if existing_user:
@@ -149,7 +160,11 @@ class UserService:
             if users_synced > 0:
                 db.commit()
 
-            return users_synced
+            return {
+                "synced_count": users_synced,
+                "skipped_count": len(skipped_users),
+                "skipped_users": skipped_users
+            }
 
         except KeycloakSyncError:
             db.rollback()
