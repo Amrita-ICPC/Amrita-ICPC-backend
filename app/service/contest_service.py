@@ -211,6 +211,10 @@ class ContestService:
         key_builder=lambda self, contest_id, request, user_id: [
             f"contest:{contest_id}:instructors:*",
             f"contests:user:{user_id}:*",
+            *[
+                f"contests:user:{instructor_id}:*"
+                for instructor_id in request.instructor_ids
+            ],
         ]
     )
     async def assign_instructors_to_contest(
@@ -280,6 +284,10 @@ class ContestService:
         key_builder=lambda self, contest_id, request, user_id: [
             f"contest:{contest_id}:instructors:*",
             f"contests:user:{user_id}:*",
+            *[
+                f"contests:user:{instructor_id}:*"
+                for instructor_id in request.instructor_ids
+            ],
         ]
     )
     async def remove_instructors_from_contest(
