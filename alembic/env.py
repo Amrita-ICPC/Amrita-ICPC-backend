@@ -22,7 +22,7 @@ sqlalchemy_url = URL.create(
     database=app_config.DATABASE_NAME,
 )
 
-config.set_main_option("sqlalchemy.url", str(sqlalchemy_url))
+config.set_main_option("sqlalchemy.url", sqlalchemy_url.render_as_string(hide_password=False))
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
