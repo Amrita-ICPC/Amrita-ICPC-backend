@@ -110,12 +110,7 @@ class UserService:
                     })
                     continue
 
-                # Check if user already exists in database
-                existing_user = (
-                    db.query(User).filter(User.user_id == kc_user["id"]).first()
-                )
-                if existing_user:
-                    continue
+
                 
                 # Check if user already exists in database by ID or Email
                 existing_user = db.query(User).filter(
