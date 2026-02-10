@@ -2,6 +2,7 @@ from logging.config import fileConfig
 
 
 from sqlalchemy import engine_from_config, pool
+from sqlalchemy.engine import URL
 
 from alembic import context
 
@@ -12,14 +13,16 @@ from app.core.config import config as app_config
 config = context.config
 
 # Set the sqlalchemy.url in the config object
-if app_config.DATABASE_PASSWORD:
-    sqlalchemy_url = f"postgresql+psycopg2://{app_config.DATABASE_USERNAME}:{app_config.DATABASE_PASSWORD}@{app_config.DATABASE_HOST}:{app_config.DATABASE_PORT}/{app_config.DATABASE_NAME}"
-else:
-    # Handle case with no password or different auth, fallback or error if needed.
-    # Assuming standard setup for now based on .env
-    sqlalchemy_url = f"postgresql+psycopg2://{app_config.DATABASE_USERNAME}@{app_config.DATABASE_HOST}:{app_config.DATABASE_PORT}/{app_config.DATABASE_NAME}"
+sqlalchemy_url = URL.create(
+    drivername="postgresql+psycopg2",
+    username=app_config.DATABASE_USERNAME,
+    password=app_config.DATABASE_PASSWORD,
+    host=app_config.DATABASE_HOST,
+    port=app_config.DATABASE_PORT,
+    database=app_config.DATABASE_NAME,
+)
 
-config.set_main_option("sqlalchemy.url", sqlalchemy_url)
+config.set_main_option("sqlalchemy.url", str(sqlalchemy_url))
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -29,7 +32,7 @@ if config.config_file_name is not None:
 # add your model's MetaData object here
 # for 'autogenerate' support
 from app.models.base import Base
-from app.models import bank, contest, question, tag, team, user  # noqa
+from app.models import bank, contest, question, tag, team, user  # noqa: F401
 
 target_metadata = Base.metadata
 
