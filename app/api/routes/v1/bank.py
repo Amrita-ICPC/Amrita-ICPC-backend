@@ -248,7 +248,7 @@ async def share_bank(
         bank_id, share_data.shares, db_user.id
     )
 
-    logger.info(f"Bank with ID {bank_id} shared by user {db_user.id} with {share_data.shares}")
+    logger.info(f"Bank {bank_id} shared by user {db_user.id} to {len(share_data.shares)} recipients")
     return MessageResponse(message="Bank shared successfully")
 
 
