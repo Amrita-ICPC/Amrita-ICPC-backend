@@ -1,3 +1,4 @@
+from typing import Any, Dict, List
 from uuid import UUID
 
 from keycloak import KeycloakAdmin
@@ -55,7 +56,7 @@ class UserService:
         return user
 
     @staticmethod
-    def sync_keycloak_users(db: Session) -> int:
+    def sync_keycloak_users(db: Session) -> Dict[str, Any]:
         """
         Synchronize Keycloak users with the local database.
 
@@ -66,7 +67,10 @@ class UserService:
             db: Database session
 
         Returns:
-            int: Number of users successfully synced to the database
+            Dict[str, Any]: A dictionary containing:
+                - "synced_count" (int): Number of users successfully synced
+                - "skipped_count" (int): Number of users skipped
+                - "skipped_users" (List[Dict]): List of skipped users with reasons
 
         Raises:
             KeycloakSyncError: If sync operation fails
