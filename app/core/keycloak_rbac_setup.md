@@ -27,3 +27,10 @@ The client roles defined for managing banks are:
 *   `banks:delete` - Allows deleting banks.
 *   `banks:create` - Allows creating banks.
 *   `banks:share` - Allows sharing banks.
+
+The client roles defined for managing teams are:
+
+*   `teams:read` - Allows viewing teams.
+*   `teams:update` - Allows updating team details and managing members.
+*   `teams:delete` - Allows deleting teams.
+*   `teams:create` - Allows creating new teams.
