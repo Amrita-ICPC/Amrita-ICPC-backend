@@ -5,7 +5,6 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import (
-    AccessControl,
     can_create,
     can_delete,
     can_read,
@@ -15,15 +14,13 @@ from app.auth.dependencies import (
 )
 from app.core.clients.database import get_db
 from app.core.logger import logger
-from app.exceptions.auth import PermissionDeniedError
 from app.schema.bank import (
     BankCreate,
     BankDetailResponse,
-    BankResponse,
+    BankListResponse,
     BankShareRequest,
     BankUnshareRequest,
     BankUpdate,
-    BankListResponse
 )
 from app.schema.contest import MessageResponse
 from app.service.bank_service import BankService
@@ -59,11 +56,13 @@ async def create_bank(
         BankAlreadyExistsError: If a bank with the same name already exists for the user.
     """
     keycloak_user_id = current_user["sub"]
-    db_user = UserService.get_user_by_keycloak_id(db, keycloak_user_id)
+    db_user = await UserService.get_user_by_keycloak_id(db, keycloak_user_id)
     bank_service = BankService(db)
     created_bank = await bank_service.create_bank(bank, db_user.id)
-    logger.info(f"Bank {created_bank.name} with ID {created_bank.id} created by user {db_user.id}")
-    
+    logger.info(
+        f"Bank {created_bank.name} with ID {created_bank.id} created by user {db_user.id}"
+    )
+
     return MessageResponse(message="Bank created successfully")
 
 
@@ -81,7 +80,7 @@ async def get_all_banks(
 ):
     """
     Get all banks accessible to the user.
-    
+
     This includes banks created by the user and banks shared with the user.
 
     Args:
@@ -94,7 +93,7 @@ async def get_all_banks(
         BankListResponse: A list of banks and the total count.
     """
     keycloak_user_id = current_user["sub"]
-    db_user = UserService.get_user_by_keycloak_id(db, keycloak_user_id)
+    db_user = await UserService.get_user_by_keycloak_id(db, keycloak_user_id)
     skip = (page - 1) * page_size
     bank_service = BankService(db)
     total, banks = await bank_service.get_all_banks(db_user.id, skip, page_size)
@@ -114,7 +113,7 @@ async def get_bank(
 ):
     """
     Get bank details including questions and shares.
-    
+
     Args:
         bank_id (UUID): The unique identifier of the bank.
         db (Session): Database session.
@@ -128,7 +127,7 @@ async def get_bank(
         BankAccessDeniedError: If the user does not have permission to view the bank.
     """
     keycloak_user_id = current_user["sub"]
-    db_user = UserService.get_user_by_keycloak_id(db, keycloak_user_id)
+    db_user = await UserService.get_user_by_keycloak_id(db, keycloak_user_id)
     bank_service = BankService(db)
     return await bank_service.get_bank_by_id(bank_id, db_user.id)
 
@@ -147,7 +146,7 @@ async def update_bank(
 ):
     """
     Update bank details.
-    
+
     Only the owner or users with EDIT permission can update the bank.
 
     Args:
@@ -165,7 +164,7 @@ async def update_bank(
         BankAccessDeniedError: If the user has no access.
     """
     keycloak_user_id = current_user["sub"]
-    db_user = UserService.get_user_by_keycloak_id(db, keycloak_user_id)
+    db_user = await UserService.get_user_by_keycloak_id(db, keycloak_user_id)
     bank_service = BankService(db)
     await bank_service.update_bank(bank_id, bank_update, db_user.id)
     logger.info(f"Bank with ID {bank_id} updated by user {db_user.id}")
@@ -187,7 +186,7 @@ async def delete_bank(
 ):
     """
     Delete a bank.
-    
+
     Only the owner can delete the bank.
 
     Args:
@@ -204,7 +203,7 @@ async def delete_bank(
         BankAccessDeniedError: If the user has no access.
     """
     keycloak_user_id = current_user["sub"]
-    db_user = UserService.get_user_by_keycloak_id(db, keycloak_user_id)
+    db_user = await UserService.get_user_by_keycloak_id(db, keycloak_user_id)
     bank_service = BankService(db)
     await bank_service.delete_bank(bank_id, db_user.id)
     logger.info(f"Bank with ID {bank_id} deleted by user {db_user.id}")
@@ -215,7 +214,7 @@ async def delete_bank(
     "/{bank_id}/share",
     response_model=MessageResponse,
     summary="Share bank with users",
-    dependencies=[Depends(check_permission("banks", "share"))], 
+    dependencies=[Depends(check_permission("banks", "share"))],
 )
 async def share_bank(
     bank_id: UUID,
@@ -225,7 +224,7 @@ async def share_bank(
 ):
     """
     Share bank with other users.
-    
+
     Only the owner can share the bank or transfer ownership.
 
     Args:
@@ -242,13 +241,13 @@ async def share_bank(
         BankPermissionError: If the user is not the owner.
     """
     keycloak_user_id = current_user["sub"]
-    db_user = UserService.get_user_by_keycloak_id(db, keycloak_user_id)
+    db_user = await UserService.get_user_by_keycloak_id(db, keycloak_user_id)
     bank_service = BankService(db)
-    await bank_service.share_bank(
-        bank_id, share_data.shares, db_user.id
-    )
+    await bank_service.share_bank(bank_id, share_data.shares, db_user.id)
 
-    logger.info(f"Bank {bank_id} shared by user {db_user.id} to {len(share_data.shares)} recipients")
+    logger.info(
+        f"Bank {bank_id} shared by user {db_user.id} to {len(share_data.shares)} recipients"
+    )
     return MessageResponse(message="Bank shared successfully")
 
 
@@ -266,7 +265,7 @@ async def unshare_bank(
 ):
     """
     Remove users from bank share.
-    
+
     Only the owner can remove users.
 
     Args:
@@ -283,10 +282,10 @@ async def unshare_bank(
         BankPermissionError: If the user is not the owner.
     """
     keycloak_user_id = current_user["sub"]
-    db_user = UserService.get_user_by_keycloak_id(db, keycloak_user_id)
+    db_user = await UserService.get_user_by_keycloak_id(db, keycloak_user_id)
     bank_service = BankService(db)
-    await bank_service.unshare_bank(
-        bank_id, unshare_data.user_ids, db_user.id
+    await bank_service.unshare_bank(bank_id, unshare_data.user_ids, db_user.id)
+    logger.info(
+        f"Bank with ID {bank_id} access removed for users {unshare_data.user_ids} by user {db_user.id}"
     )
-    logger.info(f"Bank with ID {bank_id} access removed for users {unshare_data.user_ids} by user {db_user.id}")
     return MessageResponse(message="Users removed from bank share successfully")

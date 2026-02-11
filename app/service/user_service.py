@@ -1,14 +1,16 @@
-from typing import Any, Dict, List
+from typing import Any, Dict
 from uuid import UUID
 
 from keycloak import KeycloakAdmin
-from sqlalchemy.orm import Session
 from sqlalchemy import or_
+from sqlalchemy.orm import Session
 
+from app.core.cache.decorators import cache_get
 from app.core.config import config
 from app.core.logger import logger
 from app.exceptions.user import KeycloakSyncError, UserNotFoundError
 from app.models.user import User
+from app.schema.user import UserResponse
 from app.utils.enums import UserRole
 
 
@@ -16,7 +18,13 @@ class UserService:
     """Service for user database operations."""
 
     @staticmethod
-    def get_user_by_keycloak_id(db: Session, keycloak_user_id: str) -> User:
+    @cache_get(
+        key_builder=lambda db, keycloak_user_id: f"user:keycloak:{keycloak_user_id}",
+        ttl=300,
+    )
+    async def get_user_by_keycloak_id(
+        db: Session, keycloak_user_id: str
+    ) -> UserResponse:
         """
         Get a user from the database by their Keycloak user ID.
 
@@ -25,7 +33,7 @@ class UserService:
             keycloak_user_id: Keycloak user ID (from token 'sub' claim)
 
         Returns:
-            User object
+            User response model
 
         Raises:
             UserNotFoundError: If user not found in database
@@ -33,10 +41,14 @@ class UserService:
         user = db.query(User).filter(User.user_id == keycloak_user_id).first()
         if not user:
             raise UserNotFoundError(keycloak_user_id)
-        return user
+        return UserResponse.model_validate(user)
 
     @staticmethod
-    def get_user_by_id(db: Session, user_id: UUID) -> User:
+    @cache_get(
+        key_builder=lambda db, user_id: f"user:id:{user_id}",
+        ttl=300,
+    )
+    async def get_user_by_id(db: Session, user_id: UUID) -> UserResponse:
         """
         Get a user from the database by their database ID.
 
@@ -45,7 +57,7 @@ class UserService:
             user_id: Database user ID (UUID)
 
         Returns:
-            User object
+            User response model
 
         Raises:
             UserNotFoundError: If user not found in database
@@ -53,7 +65,7 @@ class UserService:
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
             raise UserNotFoundError(str(user_id))
-        return user
+        return UserResponse.model_validate(user)
 
     @staticmethod
     def sync_keycloak_users(db: Session) -> Dict[str, Any]:
@@ -98,7 +110,7 @@ class UserService:
                 "instructor": UserRole.instructor,
                 "student": UserRole.student,
             }
-            
+
             # Process each Keycloak user
             for kc_user in keycloak_users:
                 user_id = kc_user["id"]
@@ -106,23 +118,20 @@ class UserService:
                 name = f"{kc_user.get('firstName', '')} {kc_user.get('lastName', '')}".strip()
 
                 if not email:
-                    logger.warning(f"Skipping user {name} (ID: {user_id}) - Missing email")
-                    skipped_users.append({
-                        "user_id": user_id,
-                        "name": name,
-                        "reason": "Missing email"
-                    })
+                    logger.warning(
+                        f"Skipping user {name} (ID: {user_id}) - Missing email"
+                    )
+                    skipped_users.append(
+                        {"user_id": user_id, "name": name, "reason": "Missing email"}
+                    )
                     continue
 
-
-                
                 # Check if user already exists in database by ID or Email
-                existing_user = db.query(User).filter(
-                    or_(
-                        User.user_id == user_id,
-                        User.email == email
-                    )
-                ).first()
+                existing_user = (
+                    db.query(User)
+                    .filter(or_(User.user_id == user_id, User.email == email))
+                    .first()
+                )
 
                 # Fetch user's groups from Keycloak
                 user_groups = keycloak_admin.get_user_groups(user_id)
@@ -137,7 +146,7 @@ class UserService:
 
                 if existing_user:
                     # Update existing user
-                    existing_user.user_id = user_id # Ensure ID matches Keycloak
+                    existing_user.user_id = user_id  # Ensure ID matches Keycloak
                     existing_user.name = name
                     existing_user.email = email
                     existing_user.phone_no = phone_no
@@ -149,10 +158,10 @@ class UserService:
                         email=email,
                         name=name,
                         phone_no=phone_no,
-                        role=user_role
+                        role=user_role,
                     )
                     db.add(new_user)
-                
+
                 users_synced += 1
 
             # Commit all changes to database
@@ -162,7 +171,7 @@ class UserService:
             return {
                 "synced_count": users_synced,
                 "skipped_count": len(skipped_users),
-                "skipped_users": skipped_users
+                "skipped_users": skipped_users,
             }
 
         except KeycloakSyncError:

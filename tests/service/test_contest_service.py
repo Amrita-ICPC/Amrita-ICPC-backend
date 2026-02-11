@@ -130,7 +130,9 @@ async def test_get_contest_by_id_success(contest_service, mock_db, existing_cont
     mock_filter = mock_query.filter.return_value
     mock_filter.first.return_value = existing_contest
 
-    result = await contest_service.get_contest_by_id(existing_contest.id)
+    result = await contest_service.get_contest_by_id(
+        existing_contest.id, existing_contest.created_by
+    )
 
     assert result.id == existing_contest.id
     mock_db.query.assert_called_with(Contest)
@@ -145,7 +147,7 @@ async def test_get_contest_by_id_not_found(contest_service, mock_db):
     contest_id = uuid4()
 
     with pytest.raises(ContestNotFoundError):
-        await contest_service.get_contest_by_id(contest_id)
+        await contest_service.get_contest_by_id(contest_id, uuid4())
 
 
 @pytest.mark.asyncio

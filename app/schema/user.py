@@ -1,6 +1,10 @@
+from datetime import date, datetime
 from typing import List, Optional
+from uuid import UUID
 
 from pydantic import BaseModel, EmailStr
+
+from app.utils.enums import UserRole
 
 
 class UserBase(BaseModel):
@@ -31,3 +35,18 @@ class UserSyncResponse(BaseModel):
     skipped_users: List[UserSyncSkipped] = []
     synced_by: dict
 
+
+class UserResponse(BaseModel):
+    id: UUID
+    user_id: str
+    name: str
+    email: EmailStr
+    phone_no: Optional[str] = None
+    role: UserRole
+    gender: Optional[str] = None
+    dob: Optional[date] = None
+    created_at: datetime
+    last_updated: datetime
+
+    class Config:
+        from_attributes = True
