@@ -26,6 +26,10 @@ class Config(BaseSettings):
         default="production",
         description="Environment of the application",
     )
+    MIGRATIONS_ENABLED: bool = Field(
+        default=False,
+        description="Whether migrations are enabled (true) or schema sync is used (false)",
+    )
 
     # API Configurations
     API_HOST: str = Field(default="127.0.0.1", description="API host")
