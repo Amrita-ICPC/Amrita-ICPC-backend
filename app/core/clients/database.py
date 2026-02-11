@@ -35,9 +35,14 @@ def init_db():
     """
     if config.ENVIRONMENT == "development":
         logger.info("Initializing database...")
-        sync = SchemaSync(engine, Base)
-        # Sync schema (checks all models by default)
-        sync.sync_schema()
+        if config.MIGRATIONS_ENABLED:
+            logger.info("Migrations enabled; creating tables via metadata.")
+            Base.metadata.create_all(bind=engine)
+        else:
+            logger.info("Migrations disabled; running schema sync.")
+            sync = SchemaSync(engine, Base)
+            # Sync schema (checks all models by default)
+            sync.sync_schema()
         logger.info("Database tables created successfully.")
 
 
