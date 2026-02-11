@@ -65,7 +65,7 @@ async def create_contest(
     """
     # Fetch the database user using the Keycloak user ID (sub)
     keycloak_user_id = current_user["sub"]
-    db_user = UserService.get_user_by_keycloak_id(db, keycloak_user_id)
+    db_user = await UserService.get_user_by_keycloak_id(db, keycloak_user_id)
     created_contest = await service.create_contest(contest, db_user.id)
     logger.info(
         f"Contest '{created_contest.name}' with ID {created_contest.id} created by user {db_user.id}"
@@ -100,7 +100,7 @@ async def get_all_contests(
         List of contests and total count
     """
     kc_id = current_user.get("sub")
-    user_id = UserService.get_user_by_keycloak_id(db, kc_id).id
+    user_id = (await UserService.get_user_by_keycloak_id(db, kc_id)).id
     skip = (page - 1) * page_size
     total, contests = await service.get_all_contests(user_id, skip, page_size)
     return ContestListResponse(total=total, contests=contests)
@@ -115,6 +115,8 @@ async def get_all_contests(
 async def get_contest(
     contest_id: UUID,
     service: ContestService = Depends(get_contest_service),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
     Get a specific contest by its ID.
@@ -122,14 +124,17 @@ async def get_contest(
     Args:
         contest_id: Contest ID
         service: Contest service instance
-
+        current_user: Current authenticated user
+        db: Database session
     Returns:
         Contest details
 
     Raises:
         ContestNotFoundError: If contest with given ID not found
     """
-    return await service.get_contest_by_id(contest_id)
+    kc_id = current_user.get("sub")
+    user_id = (await UserService.get_user_by_keycloak_id(db, kc_id)).id
+    return await service.get_contest_by_id(contest_id, user_id)
 
 
 @router.patch(
@@ -166,7 +171,7 @@ async def update_contest(
         PermissionDeniedError: If user is not admin
     """
     kc_id = current_user.get("sub")
-    user_id = UserService.get_user_by_keycloak_id(db, kc_id).id
+    user_id = (await UserService.get_user_by_keycloak_id(db, kc_id)).id
     await service.update_contest(contest_id, contest_data, user_id)
     logger.info(f"Contest with ID {contest_id} updated by user {user_id}")
 
@@ -205,7 +210,7 @@ async def delete_contest(
         PermissionDeniedError: If user is not admin
     """
     kc_id = current_user.get("sub")
-    user_id = UserService.get_user_by_keycloak_id(db, kc_id).id
+    user_id = (await UserService.get_user_by_keycloak_id(db, kc_id)).id
     await service.delete_contest(contest_id, user_id)
     logger.info(f"Contest with ID {contest_id} deleted by user {user_id}")
 
@@ -248,7 +253,7 @@ async def assign_instructors_to_contest(
         PermissionDeniedError: If user doesn't have permission
     """
     kc_id = current_user.get("sub")
-    user_id = UserService.get_user_by_keycloak_id(db, kc_id).id
+    user_id = (await UserService.get_user_by_keycloak_id(db, kc_id)).id
     await service.assign_instructors_to_contest(contest_id, request, user_id)
     logger.info(
         f"Assigned {len(request.instructor_ids)} instructors to contest {contest_id} by user {user_id}"
@@ -292,7 +297,7 @@ async def remove_instructors_from_contest(
         PermissionDeniedError: If user doesn't have permission
     """
     kc_id = current_user.get("sub")
-    user_id = UserService.get_user_by_keycloak_id(db, kc_id).id
+    user_id = (await UserService.get_user_by_keycloak_id(db, kc_id)).id
     await service.remove_instructors_from_contest(contest_id, request, user_id)
     logger.info(
         f"Removed {len(request.instructor_ids)} instructors from contest {contest_id} by user {user_id}"
@@ -336,7 +341,7 @@ async def get_contest_instructors(
         PermissionDeniedError: If user cannot manage the contest
     """
     kc_id = current_user.get("sub")
-    user_id = UserService.get_user_by_keycloak_id(service.db, kc_id).id
+    user_id = (await UserService.get_user_by_keycloak_id(service.db, kc_id)).id
     skip = (page - 1) * page_size
     result = await service.get_contest_instructors(contest_id, user_id, skip, page_size)
     logger.info(

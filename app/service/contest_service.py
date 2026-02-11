@@ -71,13 +71,15 @@ class ContestService:
         key_builder=lambda self, contest_id: f"contest:{contest_id}",
         ttl=300,
     )
-    async def get_contest_by_id(self, contest_id: UUID) -> ContestResponse:
+    async def get_contest_by_id(
+        self, contest_id: UUID, user_id: UUID
+    ) -> ContestResponse:
         """
         Get a contest by its ID.
 
         Args:
             contest_id: Contest ID
-
+            user_id: User ID requesting the contest (for permission check)
         Returns:
             Contest object
 
@@ -87,6 +89,10 @@ class ContestService:
         contest = self.db.query(Contest).filter(Contest.id == contest_id).first()
         if not contest:
             raise ContestNotFoundError(str(contest_id))
+
+        ContestPermission.can_manage_contest(
+            self.db, user_id=user_id, contest=contest
+        )  # Permission check for contest details
 
         return ContestResponse.model_validate(contest)
 
