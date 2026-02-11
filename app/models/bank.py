@@ -32,8 +32,12 @@ class Bank(Base):
         UniqueConstraint("name", "created_by", name="uk_bank_name_created_by"),
     )
 
-    questions = relationship("BankQuestion", back_populates="bank", cascade="all, delete-orphan")
-    shares = relationship("BankShare", back_populates="bank", cascade="all, delete-orphan")
+    questions = relationship(
+        "BankQuestion", back_populates="bank", cascade="all, delete-orphan"
+    )
+    shares = relationship(
+        "BankShare", back_populates="bank", cascade="all, delete-orphan"
+    )
 
 
 class BankShare(Base):
