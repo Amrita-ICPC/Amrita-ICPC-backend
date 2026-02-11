@@ -153,7 +153,10 @@ class SchemaSync:
         # Handle common type equivalences
         type_mappings = {
             "INTEGER": ["INT", "INTEGER"],
-            "VARCHAR": ["VARCHAR", "STRING", "TEXT"],
+            "VARCHAR": ["VARCHAR", "STRING"],
+            "TEXT": [
+                "TEXT",
+            ],
             "BOOLEAN": ["BOOLEAN", "BOOL"],
             "DATETIME": ["DATETIME", "TIMESTAMP"],
         }
