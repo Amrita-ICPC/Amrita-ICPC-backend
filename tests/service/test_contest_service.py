@@ -91,6 +91,9 @@ def existing_contest(sample_contest_data):
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc),
         updated_by=None,
+        is_deleted=False,
+        deleted_at=None,
+        deleted_by=None,
     )
 
 
@@ -173,8 +176,9 @@ async def test_get_all_contests(contest_service, mock_db, existing_contest):
 
     # query(Contest).outerjoin().filter().distinct()
     # query(Contest).outerjoin().filter().distinct()
-    mock_db.query.return_value.outerjoin.return_value.filter.return_value.distinct.return_value.count.return_value = 1
-    mock_db.query.return_value.outerjoin.return_value.filter.return_value.distinct.return_value.offset.return_value.limit.return_value.all.return_value = [
+    # query(Contest).outerjoin().filter().filter().distinct()
+    mock_db.query.return_value.outerjoin.return_value.filter.return_value.filter.return_value.distinct.return_value.count.return_value = 1
+    mock_db.query.return_value.outerjoin.return_value.filter.return_value.filter.return_value.distinct.return_value.offset.return_value.limit.return_value.all.return_value = [
         existing_contest
     ]
 
@@ -343,3 +347,101 @@ async def test_publish_contest_success(contest_service, mock_db, existing_contes
     # but let's just check it changed to something valid
     assert existing_contest.status in ["SCHEDULED", "RUNNING", "FINISHED"]
     mock_db.flush.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_soft_delete_contest_success(contest_service, mock_db, existing_contest):
+    """Test successful contest soft deletion."""
+    user_id = existing_contest.created_by
+
+    def query_side_effect(model):
+        mock = MagicMock()
+        if model == Contest:
+            mock.filter.return_value.first.return_value = existing_contest
+        return mock
+
+    mock_db.query.side_effect = query_side_effect
+
+    with patch(
+        "app.service.contest_service.ContestPermission.can_manage_contest"
+    ) as mock_perm:
+        await contest_service.soft_delete_contest(existing_contest.id, user_id)
+        mock_perm.assert_called_once()
+
+    assert existing_contest.is_deleted is True
+    assert existing_contest.deleted_at is not None
+    assert existing_contest.deleted_by == user_id
+    mock_db.flush.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_get_soft_deleted_contest(contest_service, mock_db, existing_contest):
+    """Test that retrieving a soft-deleted contest raises ContestNotFoundError."""
+    existing_contest.is_deleted = True
+
+    mock_query = mock_db.query.return_value
+    mock_filter = mock_query.filter.return_value
+    mock_filter.first.return_value = existing_contest
+
+    with pytest.raises(ContestNotFoundError):
+        await contest_service.get_contest_by_id(existing_contest.id, uuid4())
+
+
+@pytest.mark.asyncio
+async def test_restore_contest_success(contest_service, mock_db, existing_contest):
+    """Test successful contest restoration."""
+    existing_contest.is_deleted = True
+    existing_contest.deleted_at = datetime.now(timezone.utc)
+    existing_contest.deleted_by = existing_contest.created_by
+    user_id = existing_contest.created_by
+
+    def query_side_effect(model):
+        mock = MagicMock()
+        if model == Contest:
+            mock.filter.return_value.first.return_value = existing_contest
+        return mock
+
+    mock_db.query.side_effect = query_side_effect
+
+    with patch(
+        "app.service.contest_service.ContestPermission.can_manage_contest"
+    ) as mock_perm:
+        result = await contest_service.restore_contest(existing_contest.id, user_id)
+        mock_perm.assert_called_once()
+
+    assert existing_contest.is_deleted is False
+    assert existing_contest.deleted_at is None
+    assert existing_contest.deleted_by is None
+    assert result.id == existing_contest.id
+    mock_db.flush.assert_called_once()
+    mock_db.refresh.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_get_soft_deleted_contests(contest_service, mock_db, existing_contest):
+    """Test retrieving soft-deleted contests."""
+    existing_contest.is_deleted = True
+    user_id = existing_contest.created_by
+
+    # Mock the query chain
+    mock_query = mock_db.query.return_value
+    mock_outerjoin = mock_query.outerjoin.return_value
+    mock_filter1 = mock_outerjoin.filter.return_value
+    mock_filter2 = mock_filter1.filter.return_value
+    mock_distinct = mock_filter2.distinct.return_value
+
+    mock_distinct.count.return_value = 1
+    mock_distinct.offset.return_value.limit.return_value.all.return_value = [
+        existing_contest
+    ]
+
+    total, contests = await contest_service.get_soft_deleted_contests(user_id)
+
+    assert total == 1
+    assert len(contests) == 1
+    assert contests[0].id == existing_contest.id
+
+    # Verify the filter was called with is_deleted=True
+    # We can't easily verify the argument to filter passed as logic, but we can verify the chain was called
+    mock_query.outerjoin.assert_called()
+    mock_filter2.distinct.assert_called()

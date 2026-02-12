@@ -73,11 +73,17 @@ class Contest(Base):
     )
     deleter = relationship("User", foreign_keys=[deleted_by])
 
-    contest_teams = relationship("Team", back_populates="contest")
-    questions = relationship("ContestQuestion", back_populates="contest")
-    teams = relationship("ContestTeam", back_populates="contest")
+    contest_teams = relationship(
+        "Team", back_populates="contest", cascade="all, delete-orphan"
+    )
+    questions = relationship(
+        "ContestQuestion", back_populates="contest", cascade="all, delete-orphan"
+    )
+    teams = relationship(
+        "ContestTeam", back_populates="contest", cascade="all, delete-orphan"
+    )
     instructors: Mapped[list["ContestInstructor"]] = relationship(
-        "ContestInstructor", back_populates="contest"
+        "ContestInstructor", back_populates="contest", cascade="all, delete-orphan"
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
