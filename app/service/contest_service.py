@@ -97,7 +97,7 @@ class ContestService:
             ContestNotFoundError: If contest not found
         """
         contest = self.db.query(Contest).filter(Contest.id == contest_id).first()
-        if not contest:
+        if not contest or contest.is_deleted:
             raise ContestNotFoundError(str(contest_id))
 
         ContestPermission.can_manage_contest(
@@ -136,6 +136,7 @@ class ContestService:
                     ContestInstructor.instructor_id == user_id,
                 )
             )
+            .filter(Contest.is_deleted.is_(False))
             .distinct()
         )
         total = base_query.count()
@@ -464,3 +465,111 @@ class ContestService:
 
         self.db.flush()
         logger.info(f"Contest {contest_id} published by user {user_id}")
+
+    @cache_delete(
+        key_builder=lambda self, contest_id, user_id: [
+            f"contest:{contest_id}",
+            f"contests:user:{user_id}:*",
+        ]
+    )
+    async def soft_delete_contest(self, contest_id: UUID, user_id: UUID) -> None:
+        """
+        Soft delete a contest.
+
+        Args:
+            contest_id: Contest ID
+            user_id: User ID deleting the contest
+
+        Raises:
+            ContestNotFoundError: If contest not found
+            PermissionDeniedError: If user doesn't have permission
+        """
+        contest = self.db.query(Contest).filter(Contest.id == contest_id).first()
+        if not contest or contest.is_deleted:
+            raise ContestNotFoundError(str(contest_id))
+
+        ContestPermission.can_manage_contest(self.db, user_id=user_id, contest=contest)
+
+        contest.is_deleted = True
+        contest.deleted_at = datetime.now(timezone.utc)
+        contest.deleted_by = user_id
+
+        self.db.flush()
+        logger.info(f"Contest {contest_id} soft deleted by user {user_id}")
+
+    @cache_delete(
+        key_builder=lambda self, contest_id, user_id: [
+            f"contest:{contest_id}",
+            f"contests:user:{user_id}:*",
+        ]
+    )
+    async def restore_contest(self, contest_id: UUID, user_id: UUID) -> ContestResponse:
+        """
+        Restore a soft-deleted contest.
+
+        Args:
+            contest_id: Contest ID
+            user_id: User ID restoring the contest
+
+        Returns:
+            Restored contest object
+
+        Raises:
+            ContestNotFoundError: If contest not found (even if deleted)
+            PermissionDeniedError: If user doesn't have permission
+        """
+        contest = self.db.query(Contest).filter(Contest.id == contest_id).first()
+        # Find the contest, even if it is soft deleted.
+        if not contest:
+            raise ContestNotFoundError(str(contest_id))
+
+        ContestPermission.can_manage_contest(self.db, user_id=user_id, contest=contest)
+
+        if contest.is_deleted:
+            contest.is_deleted = False
+            contest.deleted_at = None
+            contest.deleted_by = None
+            self.db.flush()
+            self.db.refresh(contest)
+            logger.info(f"Contest {contest_id} restored by user {user_id}")
+
+        return ContestResponse.model_validate(contest)
+
+    @cache_get(
+        key_builder=lambda self,
+        user_id,
+        skip=0,
+        limit=100: f"contests:deleted:user:{user_id}:skip:{skip}:limit:{limit}",
+        ttl=300,
+    )
+    async def get_soft_deleted_contests(
+        self, user_id: UUID, skip: int = 0, limit: int = 100
+    ) -> tuple[int, List[ContestSummaryResponse]]:
+        """
+        Get all soft-deleted contests with pagination.
+
+        Args:
+            user_id: User ID
+            skip: Number of records to skip
+            limit: Maximum number of records to return
+
+        Returns:
+            Tuple of (total count, contests list)
+        """
+        base_query = (
+            self.db.query(Contest)
+            .outerjoin(ContestInstructor)
+            .filter(
+                or_(
+                    Contest.created_by == user_id,
+                    ContestInstructor.instructor_id == user_id,
+                )
+            )
+            .filter(Contest.is_deleted.is_(True))
+            .distinct()
+        )
+        total = base_query.count()
+        contests = base_query.offset(skip).limit(limit).all()
+        return total, [
+            ContestSummaryResponse.model_validate(contest) for contest in contests
+        ]

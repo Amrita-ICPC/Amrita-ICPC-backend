@@ -107,6 +107,38 @@ async def get_all_contests(
 
 
 @router.get(
+    "/deleted",
+    response_model=ContestListResponse,
+    summary="Get soft-deleted contests",
+    dependencies=[can_read("contests")],
+)
+async def get_deleted_contests(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    page: int = Query(1, ge=1, description="Page number (starts from 1)"),
+    page_size: int = Query(10, ge=1, le=100, description="Number of contests per page"),
+    db: Session = Depends(get_db),
+    service: ContestService = Depends(get_contest_service),
+):
+    """
+    Get all soft-deleted contests with pagination support.
+
+    Args:
+        page: Page number (starts from 1)
+        page_size: Number of contests per page (max 100)
+        db: Database session
+        service: Contest service instance
+
+    Returns:
+        List of soft-deleted contests and total count
+    """
+    kc_id = current_user.get("sub")
+    user_id = (await UserService.get_user_by_keycloak_id(db, kc_id)).id
+    skip = (page - 1) * page_size
+    total, contests = await service.get_soft_deleted_contests(user_id, skip, page_size)
+    return ContestListResponse(total=total, contests=contests)
+
+
+@router.get(
     "/{contest_id}",
     response_model=ContestResponse,
     summary="Get contest by ID",
@@ -255,6 +287,71 @@ async def delete_contest(
     logger.info(f"Contest with ID {contest_id} deleted by user {user_id}")
 
     return MessageResponse(message="Contest deleted successfully")
+
+
+@router.delete(
+    "/{contest_id}/soft-delete",
+    response_model=MessageResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Soft delete contest",
+    dependencies=[can_delete("contests")],
+)
+async def soft_delete_contest(
+    contest_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    service: ContestService = Depends(get_contest_service),
+):
+    """
+    Soft delete a contest.
+
+    Args:
+        contest_id: Contest ID
+        db: Database session
+        current_user: Current authenticated user
+        service: Contest service instance
+
+    Returns:
+        Success message
+    """
+    kc_id = current_user.get("sub")
+    user_id = (await UserService.get_user_by_keycloak_id(db, kc_id)).id
+    await service.soft_delete_contest(contest_id, user_id)
+    logger.info(f"Contest {contest_id} soft deleted by user {user_id}")
+
+    return MessageResponse(message="Contest soft deleted successfully")
+
+
+@router.post(
+    "/{contest_id}/restore",
+    response_model=ContestResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Restore soft-deleted contest",
+    dependencies=[can_update("contests")],
+)
+async def restore_contest(
+    contest_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    service: ContestService = Depends(get_contest_service),
+):
+    """
+    Restore a soft-deleted contest.
+
+    Args:
+        contest_id: Contest ID
+        db: Database session
+        current_user: Current authenticated user
+        service: Contest service instance
+
+    Returns:
+        Restored contest object
+    """
+    kc_id = current_user.get("sub")
+    user_id = (await UserService.get_user_by_keycloak_id(db, kc_id)).id
+    contest = await service.restore_contest(contest_id, user_id)
+    logger.info(f"Contest {contest_id} restored by user {user_id}")
+    return contest
 
 
 @router.post(
