@@ -158,7 +158,7 @@ def require_admin(user: Dict[str, Any] = Depends(get_current_user)):
 
     if not is_admin:
         logger.warning(
-            f"Unauthorized admin action attempted by user {user.get('preferred_username')} ({user.get('email')})"
+            f"Unauthorized admin action attempted by user {user.get('preferred_username')}"
         )
         raise PermissionDeniedError("Admin privileges required for this operation")
 

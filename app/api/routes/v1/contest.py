@@ -178,6 +178,46 @@ async def update_contest(
     return MessageResponse(message="Contest updated successfully")
 
 
+@router.post(
+    "/{contest_id}/publish",
+    response_model=MessageResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Publish contest",
+    dependencies=[can_update("contests")],
+)
+async def publish_contest(
+    contest_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    service: ContestService = Depends(get_contest_service),
+):
+    """
+    Publish a contest.
+
+    Only users with admin role can publish contests.
+    Publishing a contest sets the published_at timestamp and updates the status.
+
+    Args:
+        contest_id: Contest ID
+        db: Database session
+        current_user: Current authenticated user
+        service: Contest service instance
+
+    Returns:
+        Success message
+
+    Raises:
+        ContestNotFoundError: If contest with given ID not found
+        PermissionDeniedError: If user is not admin
+    """
+    kc_id = current_user.get("sub")
+    user_id = (await UserService.get_user_by_keycloak_id(db, kc_id)).id
+    await service.publish_contest(contest_id, user_id)
+    logger.info(f"Contest with ID {contest_id} published by user {user_id}")
+
+    return MessageResponse(message="Contest published successfully")
+
+
 @router.delete(
     "/{contest_id}",
     response_model=MessageResponse,

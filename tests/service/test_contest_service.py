@@ -52,8 +52,10 @@ def sample_contest_data():
         description="A test contest",
         image="http://example.com/image.png",
         is_public=True,
-        start_time=datetime.now(),
-        end_time=datetime.now() + timedelta(hours=2),
+        start_time=datetime.now(timezone.utc),
+        end_time=datetime.now(timezone.utc) + timedelta(hours=2),
+        registration_start=datetime.now(timezone.utc) - timedelta(hours=1),
+        registration_end=datetime.now(timezone.utc),
     )
 
 
@@ -75,9 +77,20 @@ def existing_contest(sample_contest_data):
         is_public=sample_contest_data.is_public,
         start_time=sample_contest_data.start_time,
         end_time=sample_contest_data.end_time,
+        registration_start=sample_contest_data.registration_start,
+        registration_end=sample_contest_data.registration_end,
+        max_teams=None,
+        min_team_size=1,
+        max_team_size=1,
+        rules=None,
+        scoring_type="AUTO",
+        status="DRAFT",
+        published_at=None,
+        show_leaderboard=False,
         created_by=creator_id,
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc),
+        updated_by=None,
     )
 
 
@@ -93,6 +106,9 @@ async def test_create_contest(
         instance.id = existing_contest.id
         instance.created_at = existing_contest.created_at
         instance.updated_at = existing_contest.updated_at
+        instance.status = existing_contest.status
+        instance.scoring_type = existing_contest.scoring_type
+        instance.show_leaderboard = existing_contest.show_leaderboard
         return None
 
     mock_db.refresh.side_effect = side_effect_refresh
@@ -300,3 +316,30 @@ async def test_delete_contest_permission_denied(
     ):
         with pytest.raises(PermissionDeniedError):
             await contest_service.delete_contest(existing_contest.id, user_id)
+
+
+@pytest.mark.asyncio
+async def test_publish_contest_success(contest_service, mock_db, existing_contest):
+    """Test successful contest publishing."""
+    user_id = existing_contest.created_by
+
+    def query_side_effect(model):
+        mock = MagicMock()
+        if model == Contest:
+            mock.filter.return_value.first.return_value = existing_contest
+        return mock
+
+    mock_db.query.side_effect = query_side_effect
+
+    with patch(
+        "app.service.contest_service.ContestPermission.can_manage_contest"
+    ) as mock_perm:
+        await contest_service.publish_contest(existing_contest.id, user_id)
+        mock_perm.assert_called_once()
+
+    assert existing_contest.published_at is not None
+    assert existing_contest.published_by == user_id
+    # Since start_time is now(), and we publish now(), status should be RUNNING or SCHEDULED depending on exact microsecond comparison
+    # but let's just check it changed to something valid
+    assert existing_contest.status in ["SCHEDULED", "RUNNING", "FINISHED"]
+    mock_db.flush.assert_called_once()

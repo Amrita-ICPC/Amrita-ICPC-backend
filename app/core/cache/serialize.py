@@ -1,4 +1,4 @@
-# app/cache/serialize.py
+# app/core/cache/serialize.py
 import json
 from typing import Any
 
