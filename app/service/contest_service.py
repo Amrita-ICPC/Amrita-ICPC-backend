@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import List
 from uuid import UUID
 
@@ -19,11 +20,13 @@ from app.models.user import User
 from app.schema.contest import (
     ContestCreate,
     ContestResponse,
+    ContestSummaryResponse,
     ContestUpdate,
     InstructorListResponse,
     InstructorManageRequest,
     InstructorResponse,
 )
+from app.utils.enums import ContestStatus
 
 
 class ContestService:
@@ -60,6 +63,13 @@ class ContestService:
             is_public=contest.is_public,
             start_time=contest.start_time,
             end_time=contest.end_time,
+            registration_start=contest.registration_start,
+            registration_end=contest.registration_end,
+            max_teams=contest.max_teams,
+            min_team_size=contest.min_team_size,
+            max_team_size=contest.max_team_size,
+            rules=contest.rules,
+            scoring_type=contest.scoring_type,
             created_by=created_by,
         )
         self.db.add(db_contest)
@@ -68,7 +78,7 @@ class ContestService:
         return ContestResponse.model_validate(db_contest)
 
     @cache_get(
-        key_builder=lambda self, contest_id: f"contest:{contest_id}",
+        key_builder=lambda self, contest_id, user_id: f"contest:{contest_id}",
         ttl=300,
     )
     async def get_contest_by_id(
@@ -105,7 +115,7 @@ class ContestService:
     )
     async def get_all_contests(
         self, user_id: UUID, skip: int = 0, limit: int = 100
-    ) -> tuple[int, List[ContestResponse]]:
+    ) -> tuple[int, List[ContestSummaryResponse]]:
         """
         Get all contests with pagination.
 
@@ -130,7 +140,9 @@ class ContestService:
         )
         total = base_query.count()
         contests = base_query.offset(skip).limit(limit).all()
-        return total, [ContestResponse.model_validate(contest) for contest in contests]
+        return total, [
+            ContestSummaryResponse.model_validate(contest) for contest in contests
+        ]
 
     @cache_delete(
         key_builder=lambda self,
@@ -176,6 +188,8 @@ class ContestService:
 
         for field, value in update_data.items():
             setattr(contest, field, value)
+
+        contest.updated_by = user_id
         self.db.flush()
         self.db.refresh(contest)
         return ContestResponse.model_validate(contest)
@@ -411,3 +425,42 @@ class ContestService:
         return InstructorListResponse(
             total=total, instructors=instructor_responses, creator=creator
         )
+
+    @cache_delete(
+        key_builder=lambda self, contest_id, user_id: [
+            f"contest:{contest_id}",
+            f"contests:user:{user_id}:*",
+        ]
+    )
+    async def publish_contest(self, contest_id: UUID, user_id: UUID) -> None:
+        """
+        Publish a contest.
+
+        Args:
+            contest_id: Contest ID
+            user_id: User ID publishing the contest
+
+        Raises:
+            ContestNotFoundError: If contest not found
+            PermissionDeniedError: If user doesn't have permission
+        """
+        contest = self.db.query(Contest).filter(Contest.id == contest_id).first()
+        if not contest:
+            raise ContestNotFoundError(str(contest_id))
+
+        ContestPermission.can_manage_contest(self.db, user_id=user_id, contest=contest)
+
+        now = datetime.now(timezone.utc)
+        contest.published_at = now
+        contest.published_by = user_id
+
+        # Update status based on start/end times
+        if now < contest.start_time:
+            contest.status = ContestStatus.SCHEDULED
+        elif contest.start_time <= now <= contest.end_time:
+            contest.status = ContestStatus.RUNNING
+        else:
+            contest.status = ContestStatus.FINISHED
+
+        self.db.flush()
+        logger.info(f"Contest {contest_id} published by user {user_id}")

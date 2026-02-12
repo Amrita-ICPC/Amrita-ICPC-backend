@@ -1,7 +1,7 @@
 from typing import Any, Dict, List
 from uuid import UUID
 
-from fastapi import Depends, Query, status, APIRouter
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import (
@@ -14,18 +14,16 @@ from app.auth.dependencies import (
 from app.core.clients.database import get_db
 from app.core.logger import logger
 from app.exceptions.auth import PermissionDeniedError
-from app.exceptions.team import TeamNotFoundError
 from app.schema.team import (
-    TeamCreate,
-    TeamUpdate,
-    TeamResponse,
-    TeamListResponse,
-    UserTeamListResponse,
     AddTeamMemberRequest,
     AddTeamMemberResponse,
     MessageResponse,
     RemoveTeamMemberRequest,
     RemoveTeamMemberResponse,
+    TeamCreate,
+    TeamListResponse,
+    TeamResponse,
+    TeamUpdate,
     UserTeamResponse,
 )
 from app.service.team_service import TeamService
@@ -40,12 +38,13 @@ def get_team_service(db: Session = Depends(get_db)) -> TeamService:
 
 # Student-facing Team Routes
 
+
 @router.post(
     "/{contest_id}/team",
     response_model=MessageResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create a new team for this contest",
-    dependencies=[can_create("teams")]
+    dependencies=[can_create("teams")],
 )
 async def create_team_for_contest(
     contest_id: UUID,
@@ -74,11 +73,13 @@ async def create_team_for_contest(
     keycloak_user_id = current_user.get("sub")
     if not keycloak_user_id:
         raise PermissionDeniedError("Invalid authentication: missing user ID")
-    
+
     user_id = (await UserService.get_user_by_keycloak_id(db, keycloak_user_id)).id
-    
+
     created_team = await service.create_team(team, contest_id, user_id)
-    logger.info(f"Team '{created_team.name}' created in contest {contest_id} by user {user_id}")
+    logger.info(
+        f"Team '{created_team.name}' created in contest {contest_id} by user {user_id}"
+    )
     return MessageResponse(message="Team created successfully")
 
 
@@ -86,7 +87,7 @@ async def create_team_for_contest(
     "/{contest_id}/team",
     response_model=TeamResponse | None,
     summary="Check if current user is already registered in a team",
-    dependencies=[can_read("teams")]
+    dependencies=[can_read("teams")],
 )
 async def get_user_team_in_contest(
     contest_id: UUID,
@@ -112,15 +113,12 @@ async def get_user_team_in_contest(
     """
     kc_id = current_user.get("sub")
     user = await UserService.get_user_by_keycloak_id(db, kc_id)
-    
+
     # Get all teams for user in this contest
     total, teams = await service.get_user_teams(
-        user_id=user.id,
-        contest_id=contest_id,
-        skip=0,
-        limit=1
+        user_id=user.id, contest_id=contest_id, skip=0, limit=1
     )
-    
+
     # Return the first team if found, else None
     return teams[0] if teams else None
 
@@ -129,7 +127,7 @@ async def get_user_team_in_contest(
     "/{contest_id}/teams",
     response_model=TeamListResponse,
     summary="Get all teams in this contest (Leaderboard)",
-    dependencies=[can_read("teams")]
+    dependencies=[can_read("teams")],
 )
 async def get_contest_teams_leaderboard(
     contest_id: UUID,
@@ -159,26 +157,25 @@ async def get_contest_teams_leaderboard(
     """
     skip = (page - 1) * page_size
     total, teams = await service.get_contest_teams(
-        contest_id=contest_id,
-        skip=skip,
-        limit=page_size
+        contest_id=contest_id, skip=skip, limit=page_size
     )
     return TeamListResponse(total=total, teams=teams)
 
 
 # Team Details and Member Management Routes
 
+
 @router.get(
-    "/{contest_id}/team/{team_id}",
+    "/{contest_id}/teams/{team_id}",
     response_model=TeamResponse,
     summary="Get team in contest",
-    dependencies=[can_read("teams")]
+    dependencies=[can_read("teams")],
 )
 async def get_team(
     contest_id: UUID,
     team_id: UUID,
     current_user: Dict[str, Any] = Depends(get_current_user),
-    service: TeamService = Depends(get_team_service)
+    service: TeamService = Depends(get_team_service),
 ):
     """
     Get a specific team in a contest by ID.
@@ -196,7 +193,6 @@ async def get_team(
     """
     team = await service.get_team_by_id(team_id, contest_id)
     return team
-
 
 
 @router.patch(
@@ -233,12 +229,12 @@ async def update_team(
     keycloak_user_id = current_user.get("sub")
     if not keycloak_user_id:
         raise PermissionDeniedError("Invalid authentication: missing user ID")
-    
+
     user_id = (await UserService.get_user_by_keycloak_id(db, keycloak_user_id)).id
-    
+
     await service.update_team(team_id, team_data, contest_id, user_id)
     logger.info(f"Team with ID {team_id} updated by user {user_id}")
-    
+
     return MessageResponse(message="Team updated successfully")
 
 
@@ -246,7 +242,7 @@ async def update_team(
     "/{contest_id}/team/{team_id}",
     response_model=MessageResponse,
     summary="Delete team from contest",
-    dependencies=[can_delete("teams")]
+    dependencies=[can_delete("teams")],
 )
 async def delete_team(
     contest_id: UUID,
@@ -274,22 +270,25 @@ async def delete_team(
     keycloak_user_id = current_user.get("sub")
     if not keycloak_user_id:
         raise PermissionDeniedError("Invalid authentication: missing user ID")
-    
+
     user_id = (await UserService.get_user_by_keycloak_id(db, keycloak_user_id)).id
-    
+
     await service.delete_team(team_id, contest_id, user_id)
-    logger.info(f"Team with ID {team_id} deleted from contest {contest_id} by user {user_id}")
-    
+    logger.info(
+        f"Team with ID {team_id} deleted from contest {contest_id} by user {user_id}"
+    )
+
     return MessageResponse(message="Team deleted successfully")
 
 
 # Team Member Management Routes
 
+
 @router.post(
     "/{contest_id}/team/{team_id}/members",
     response_model=AddTeamMemberResponse,
     summary="Add member to team",
-    dependencies=[can_update("teams")]
+    dependencies=[can_update("teams")],
 )
 async def add_member(
     contest_id: UUID,
@@ -321,18 +320,21 @@ async def add_member(
     keycloak_user_id = current_user.get("sub")
     if not keycloak_user_id:
         raise PermissionDeniedError("Invalid authentication: missing user ID")
-    
-    current_user_id = (await UserService.get_user_by_keycloak_id(db, keycloak_user_id)).id
-    
-    return await service.add_member_to_team(team_id, request.user_id, contest_id, current_user_id)
 
+    current_user_id = (
+        await UserService.get_user_by_keycloak_id(db, keycloak_user_id)
+    ).id
+
+    return await service.add_member_to_team(
+        team_id, request.user_id, contest_id, current_user_id
+    )
 
 
 @router.delete(
     "/{contest_id}/team/{team_id}/members",
     response_model=RemoveTeamMemberResponse,
     summary="Remove member from team",
-    dependencies=[can_update("teams")]
+    dependencies=[can_update("teams")],
 )
 async def remove_member(
     contest_id: UUID,
@@ -364,18 +366,21 @@ async def remove_member(
     keycloak_user_id = current_user.get("sub")
     if not keycloak_user_id:
         raise PermissionDeniedError("Invalid authentication: missing user ID")
-    
-    current_user_id = (await UserService.get_user_by_keycloak_id(db, keycloak_user_id)).id
-    
-    return await service.remove_member_from_team(team_id, request.user_id, contest_id, current_user_id)
 
+    current_user_id = (
+        await UserService.get_user_by_keycloak_id(db, keycloak_user_id)
+    ).id
+
+    return await service.remove_member_from_team(
+        team_id, request.user_id, contest_id, current_user_id
+    )
 
 
 @router.get(
     "/{contest_id}/team/{team_id}/members",
     response_model=List[UserTeamResponse],
     summary="Get team members",
-    dependencies=[can_read("teams")]
+    dependencies=[can_read("teams")],
 )
 async def get_team_members(
     contest_id: UUID,

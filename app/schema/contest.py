@@ -4,6 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.utils.enums import ContestStatus, ScoringType
+
 
 class ContestBase(BaseModel):
     """Base schema for contest with common fields."""
@@ -16,12 +18,39 @@ class ContestBase(BaseModel):
     is_public: bool = Field(default=False, description="Whether contest is public")
     start_time: datetime = Field(..., description="Contest start time (UTC)")
     end_time: datetime = Field(..., description="Contest end time (UTC)")
+    registration_start: Optional[datetime] = Field(
+        None, description="Registration start time (UTC)"
+    )
+    registration_end: Optional[datetime] = Field(
+        None, description="Registration end time (UTC)"
+    )
+    max_teams: Optional[int] = Field(
+        None, description="Maximum number of teams allowed"
+    )
+    min_team_size: int = Field(1, description="Minimum team size")
+    max_team_size: int = Field(1, description="Maximum team size")
+    rules: Optional[str] = Field(None, description="Contest rules")
+    scoring_type: ScoringType = Field(
+        default=ScoringType.AUTO, description="Scoring type"
+    )
 
     @model_validator(mode="after")
-    def validate_end_time(self):
+    def validate_dates(self):
         if self.start_time and self.end_time:
             if self.end_time <= self.start_time:
                 raise ValueError("End time must be after start time")
+
+        if self.registration_start and self.registration_end:
+            if self.registration_end <= self.registration_start:
+                raise ValueError(
+                    "Registration end time must be after registration start time"
+                )
+
+        if self.max_team_size < self.min_team_size:
+            raise ValueError(
+                "Maximum team size must be greater than or equal to minimum team size"
+            )
+
         return self
 
 
@@ -29,8 +58,6 @@ class ContestCreate(ContestBase):
     """Schema for creating a contest."""
 
     model_config = ConfigDict(from_attributes=True)
-
-    pass
 
 
 class ContestUpdate(BaseModel):
@@ -46,32 +73,81 @@ class ContestUpdate(BaseModel):
     is_public: Optional[bool] = Field(None, description="Whether contest is public")
     start_time: Optional[datetime] = Field(None, description="Contest start time (UTC)")
     end_time: Optional[datetime] = Field(None, description="Contest end time (UTC)")
+    registration_start: Optional[datetime] = Field(
+        None, description="Registration start time (UTC)"
+    )
+    registration_end: Optional[datetime] = Field(
+        None, description="Registration end time (UTC)"
+    )
+    max_teams: Optional[int] = Field(
+        None, description="Maximum number of teams allowed"
+    )
+    min_team_size: Optional[int] = Field(None, description="Minimum team size")
+    max_team_size: Optional[int] = Field(None, description="Maximum team size")
+    rules: Optional[str] = Field(None, description="Contest rules")
+    scoring_type: Optional[ScoringType] = Field(None, description="Scoring type")
+    show_leaderboard: Optional[bool] = Field(
+        None, description="Whether to show leaderboard"
+    )
 
     @model_validator(mode="after")
-    def validate_end_time(self):
+    def validate_dates(self):
         if self.start_time and self.end_time:
             if self.end_time <= self.start_time:
                 raise ValueError("End time must be after start time")
+
+        if self.registration_start and self.registration_end:
+            if self.registration_end <= self.registration_start:
+                raise ValueError(
+                    "Registration end time must be after registration start time"
+                )
         return self
 
 
-class ContestResponse(ContestBase):
-    """Schema for contest response."""
+class ContestSummaryResponse(BaseModel):
+    """Schema for contest summary response (List view)."""
 
     id: UUID = Field(..., description="Contest ID")
+    name: str = Field(..., description="Contest name")
+    description: Optional[str] = Field(None, description="Contest description")
+    image: Optional[str] = Field(None, description="Contest image URL")
+    start_time: datetime = Field(..., description="Contest start time (UTC)")
+    end_time: datetime = Field(..., description="Contest end time (UTC)")
+    status: ContestStatus = Field(..., description="Contest status")
+    created_at: datetime = Field(..., description="Contest creation time (UTC)")
+    is_public: bool = Field(..., description="Whether contest is public")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ContestDetailResponse(ContestBase):
+    """Schema for comprehensive contest response (Detail view)."""
+
+    id: UUID = Field(..., description="Contest ID")
+    status: ContestStatus = Field(..., description="Contest status")
     created_by: UUID = Field(..., description="Creator user ID")
     creator: Optional["InstructorResponse"] = Field(None, description="Creator details")
     created_at: datetime = Field(..., description="Contest creation time (UTC)")
     updated_at: datetime = Field(..., description="Last update time (UTC)")
+    updated_by: Optional[UUID] = Field(None, description="User ID who last updated")
+    show_leaderboard: bool = Field(..., description="Whether leaderboard is shown")
+    published_at: Optional[datetime] = Field(None, description="Published time (UTC)")
+    published_by: Optional[UUID] = Field(
+        None, description="User ID who published the contest"
+    )
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# For backward compatibility within module if needed, or aliasing
+ContestResponse = ContestDetailResponse
 
 
 class ContestListResponse(BaseModel):
     """Schema for contest list response."""
 
     total: int = Field(..., description="Total number of contests")
-    contests: List[ContestResponse] = Field(..., description="List of contests")
+    contests: List[ContestSummaryResponse] = Field(..., description="List of contests")
 
 
 class MessageResponse(BaseModel):
