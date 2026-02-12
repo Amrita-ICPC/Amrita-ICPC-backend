@@ -14,6 +14,9 @@ class Team(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
+    contest_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("contest.id", ondelete="CASCADE"), nullable=False
+    )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     logo: Mapped[str | None] = mapped_column(Text)
@@ -26,6 +29,7 @@ class Team(Base):
         onupdate=lambda: datetime.now(timezone.utc)
     )
 
+    contest = relationship("Contest", back_populates="contest_teams")
     members = relationship("TeamUser", back_populates="team")
     contests = relationship("ContestTeam", back_populates="team")
 

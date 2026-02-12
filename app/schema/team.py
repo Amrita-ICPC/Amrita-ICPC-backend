@@ -62,4 +62,12 @@ class MessageResponse(BaseModel):
 
     message: str = Field(..., description="Response message")
 
-    
+class TeamListResponse(BaseModel):
+    """Schema for paginated team list response"""
+    total: int = Field(..., description="Total number of teams")
+    teams: List[TeamResponse] = Field(..., description="List of teams")
+
+class UserTeamListResponse(BaseModel):
+    """Schema for user's team list response"""
+    total: int = Field(..., description="Total number of teams")
+    teams: List[TeamResponse] = Field(..., description="List of teams")
