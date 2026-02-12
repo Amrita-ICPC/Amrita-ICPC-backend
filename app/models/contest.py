@@ -20,6 +20,7 @@ class Contest(Base):
 
     is_public: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    contest_teams = relationship("Team", back_populates="contest")
     questions = relationship("ContestQuestion", back_populates="contest")
     teams = relationship("ContestTeam", back_populates="contest")
     instructors: Mapped[list["ContestInstructor"]] = relationship(
