@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 from unittest.mock import MagicMock
 
 import pytest
@@ -51,7 +52,11 @@ async def test_create_team_success(team_service, mock_db):
     mock_contest.min_team_size = 1
 
     # Robust mocking for query chains
+    query_call_count = 0
+
     def query_side_effect(model):
+        nonlocal query_call_count
+
         if model == Contest:
             # Query for contest: .filter(...).first()
             q = MagicMock()
@@ -65,24 +70,40 @@ async def test_create_team_success(team_service, mock_db):
             return q
 
         if model == ContestTeam:
-            # Query for existing participation: .join(...).filter(...).first()
-            q = MagicMock()
-            q.join.return_value.filter.return_value.first.return_value = None
-            return q
+            query_call_count += 1
 
-        if model == ContestTeam:
-            # Query for existing participation: .join(...).filter(...).first()
-            q = MagicMock()
-            q.join.return_value.filter.return_value.first.return_value = None
-            return q
+            if query_call_count <= 2:
+                # First two queries are permission checks - should return None
+                q = MagicMock()
+                q.join.return_value.filter.return_value.first.return_value = None
+                return q
+            else:
+                # Final query gets the created contest team with relationship
+                mock_team = MagicMock(spec=Team)
+                mock_team.id = uuid.uuid4()
+                mock_team.name = "Test Team"
+                mock_team.description = "Description"
+                mock_team.logo = None
+                mock_team.leader_id = member_id
+                mock_team.created_by = instructor_id
+                mock_team.created_at = datetime.now()
+                mock_team.updated_at = datetime.now()
+
+                mock_contest_team = MagicMock(spec=ContestTeam)
+                mock_contest_team.team = mock_team
+                mock_contest_team.team_status = TeamStatus.DRAFT
+
+                q = MagicMock()
+                q.join.return_value.filter.return_value.first.return_value = (
+                    mock_contest_team
+                )
+                return q
 
         if model == User:
             # Query for user validation: .filter(...).first()
             q = MagicMock()
             q.filter.return_value.first.return_value = MagicMock(spec=User)
             return q
-
-        return MagicMock()
 
         return MagicMock()
 
@@ -256,7 +277,11 @@ async def test_create_team_valid_size_min_draft(team_service, mock_db):
     mock_contest.max_team_size = 3
     mock_contest.min_team_size = 2
 
+    query_call_count = 0
+
     def query_side_effect(model):
+        nonlocal query_call_count
+
         if model == Contest:
             q = MagicMock()
             q.filter.return_value.first.return_value = mock_contest
@@ -266,9 +291,34 @@ async def test_create_team_valid_size_min_draft(team_service, mock_db):
             q.join.return_value.filter.return_value.first.return_value = None
             return q
         if model == ContestTeam:
-            q = MagicMock()
-            q.join.return_value.filter.return_value.first.return_value = None
-            return q
+            query_call_count += 1
+
+            if query_call_count <= 2:
+                # First two queries are permission checks - should return None
+                q = MagicMock()
+                q.join.return_value.filter.return_value.first.return_value = None
+                return q
+            else:
+                # Final query gets the created contest team with relationship
+                mock_team = MagicMock(spec=Team)
+                mock_team.id = uuid.uuid4()
+                mock_team.name = "Team"
+                mock_team.description = None
+                mock_team.logo = None
+                mock_team.leader_id = member_id
+                mock_team.created_by = instructor_id
+                mock_team.created_at = datetime.now()
+                mock_team.updated_at = datetime.now()
+
+                mock_contest_team = MagicMock(spec=ContestTeam)
+                mock_contest_team.team = mock_team
+                mock_contest_team.team_status = TeamStatus.DRAFT
+
+                q = MagicMock()
+                q.join.return_value.filter.return_value.first.return_value = (
+                    mock_contest_team
+                )
+                return q
         if model == User:
             q = MagicMock()
             q.filter.return_value.first.return_value = MagicMock(spec=User)
@@ -350,3 +400,209 @@ async def test_create_team_user_already_in_contest(team_service, mock_db):
 
         with pytest.raises(PermissionDeniedError):
             await team_service.create_team(contest_id, team_data, instructor_id)
+
+
+@pytest.mark.asyncio
+async def test_get_contest_teams(team_service, mock_db):
+    """Test retrieving teams for a contest with filtering."""
+    contest_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+
+    # Mock contest query for permission check
+    mock_contest = MagicMock(spec=Contest)
+
+    # Mock query chain
+    def query_side_effect(model):
+        if model == Contest:
+            q = MagicMock()
+            q.filter.return_value.first.return_value = mock_contest
+            return q
+        if model == ContestTeam:
+            q = MagicMock()
+            mock_join = q.join.return_value
+            mock_filter = mock_join.filter.return_value
+            # Mock pagination count
+            mock_filter.count.return_value = 2
+
+            # Mock results
+            mock_team1 = MagicMock(spec=Team)
+            mock_team1.id = uuid.uuid4()
+            mock_team1.name = "Team A"
+            mock_team1.description = "Description A"
+            mock_team1.logo = None
+            mock_team1.leader_id = uuid.uuid4()
+            mock_team1.created_by = uuid.uuid4()
+            mock_team1.created_at = datetime.now()
+            mock_team1.updated_at = datetime.now()
+            mock_team1.members = []
+
+            mock_ct1 = MagicMock(spec=ContestTeam)
+            mock_ct1.team = mock_team1
+            mock_ct1.team_status = TeamStatus.CONFIRMED
+
+            mock_team2 = MagicMock(spec=Team)
+            mock_team2.id = uuid.uuid4()
+            mock_team2.name = "Team B"
+            mock_team2.description = None
+            mock_team2.logo = "http://logo.com"
+            mock_team2.leader_id = None
+            mock_team2.created_by = uuid.uuid4()
+            mock_team2.created_at = datetime.now()
+            mock_team2.updated_at = datetime.now()
+            mock_team2.members = []
+
+            mock_ct2 = MagicMock(spec=ContestTeam)
+            mock_ct2.team = mock_team2
+            mock_ct2.team_status = TeamStatus.DRAFT
+
+            mock_filter.offset.return_value.limit.return_value.all.return_value = [
+                mock_ct1,
+                mock_ct2,
+            ]
+            return q
+        return MagicMock()
+
+    mock_db.query.side_effect = query_side_effect
+
+    # Mock permission check
+    with pytest.MonkeyPatch.context() as m:
+        m.setattr(
+            "app.core.permissions.ContestPermission.can_read_contest",
+            lambda *args, **kwargs: None,
+        )
+
+        # Test without filters
+        total, teams = await team_service.get_contest_teams(contest_id, user_id)
+
+        assert total == 2
+        assert len(teams) == 2
+        assert teams[0].name == "Team A"
+        assert teams[1].name == "Team B"
+
+        # Test with search
+        await team_service.get_contest_teams(contest_id, user_id, search_term="Team A")
+
+        # Test with status
+        await team_service.get_contest_teams(
+            contest_id, user_id, status=TeamStatus.CONFIRMED
+        )
+
+
+@pytest.mark.asyncio
+async def test_get_team_by_id_success(team_service, mock_db):
+    """Test retrieving a specific team by ID."""
+    contest_id = uuid.uuid4()
+    team_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+
+    mock_contest = MagicMock(spec=Contest)
+
+    mock_team = MagicMock(spec=Team)
+    mock_team.id = team_id
+    mock_team.name = "My Team"
+    mock_team.description = "Desc"
+    mock_team.logo = None
+    mock_team.leader_id = uuid.uuid4()
+    mock_team.created_by = uuid.uuid4()
+    mock_team.created_at = datetime.now()
+    mock_team.updated_at = datetime.now()
+    mock_team.members = []
+
+    mock_ct = MagicMock(spec=ContestTeam)
+    mock_ct.team = mock_team
+    mock_ct.team_status = TeamStatus.CONFIRMED
+
+    # Mock query
+    def query_side_effect(model):
+        if model == Contest:
+            q = MagicMock()
+            q.filter.return_value.first.return_value = mock_contest
+            return q
+        if model == ContestTeam:
+            q = MagicMock()
+            q.filter.return_value.first.return_value = mock_ct
+            return q
+        return MagicMock()
+
+    mock_db.query.side_effect = query_side_effect
+
+    # Mock permission check
+    with pytest.MonkeyPatch.context() as m:
+        m.setattr(
+            "app.core.permissions.ContestPermission.can_read_contest",
+            lambda *args, **kwargs: None,
+        )
+
+        result = await team_service.get_team_by_id(contest_id, team_id, user_id)
+
+        assert result.id == team_id
+        assert result.name == "My Team"
+        assert result.status == TeamStatus.CONFIRMED
+
+
+@pytest.mark.asyncio
+async def test_get_team_by_id_not_found(team_service, mock_db):
+    """Test retrieving a non-existent team raises TeamNotFoundError."""
+    contest_id = uuid.uuid4()
+    team_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+
+    mock_contest = MagicMock(spec=Contest)
+
+    # Mock queries
+    def query_side_effect(model):
+        if model == Contest:
+            q = MagicMock()
+            q.filter.return_value.first.return_value = mock_contest
+            return q
+        if model == ContestTeam:
+            q = MagicMock()
+            q.filter.return_value.first.return_value = None
+            return q
+        return MagicMock()
+
+    mock_db.query.side_effect = query_side_effect
+
+    # Mock permission check
+    with pytest.MonkeyPatch.context() as m:
+        m.setattr(
+            "app.core.permissions.ContestPermission.can_read_contest",
+            lambda *args, **kwargs: None,
+        )
+
+        from app.exceptions.team import TeamNotFoundError
+
+        with pytest.raises(TeamNotFoundError):
+            await team_service.get_team_by_id(contest_id, team_id, user_id)
+
+
+@pytest.mark.asyncio
+async def test_get_contest_teams_permission_denied(team_service, mock_db):
+    """Test retrieving teams raises PermissionDeniedError if access denied."""
+    contest_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+
+    mock_contest = MagicMock(spec=Contest)
+
+    def query_side_effect(model):
+        if model == Contest:
+            q = MagicMock()
+            q.filter.return_value.first.return_value = mock_contest
+            return q
+        return MagicMock()
+
+    mock_db.query.side_effect = query_side_effect
+
+    # Mock permission check to raise error
+    with pytest.MonkeyPatch.context() as m:
+
+        def mock_can_read(*args, **kwargs):
+            raise PermissionDeniedError("Denied")
+
+        m.setattr(
+            "app.core.permissions.ContestPermission.can_read_contest",
+            mock_can_read,
+        )
+
+        with pytest.raises(PermissionDeniedError):
+            await team_service.get_contest_teams(contest_id, user_id)

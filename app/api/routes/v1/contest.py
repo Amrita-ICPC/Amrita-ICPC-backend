@@ -24,6 +24,7 @@ from app.schema.contest import (
 )
 from app.service.contest_service import ContestService
 from app.service.user_service import UserService
+from app.utils.enums import ContestStatus
 
 router = APIRouter()
 
@@ -82,15 +83,23 @@ async def create_contest(
 )
 async def get_all_contests(
     current_user: Dict[str, Any] = Depends(get_current_user),
+    search: str | None = Query(None, description="Search by contest name"),
+    status: ContestStatus | None = Query(None, description="Filter by contest status"),
+    is_public: bool | None = Query(
+        None, description="Filter by visibility (public/private)"
+    ),
     page: int = Query(1, ge=1, description="Page number (starts from 1)"),
     page_size: int = Query(10, ge=1, le=100, description="Number of contests per page"),
     db: Session = Depends(get_db),
     service: ContestService = Depends(get_contest_service),
 ):
     """
-    Get all contests with pagination support.
+    Get all contests with pagination, search, and filtering support.
 
     Args:
+        search: Optional search term for contest name
+        status: Optional status to filter by
+        is_public: Optional visibility filter
         page: Page number (starts from 1)
         page_size: Number of contests per page (max 100)
         db: Database session
@@ -102,7 +111,9 @@ async def get_all_contests(
     kc_id = current_user.get("sub")
     user_id = (await UserService.get_user_by_keycloak_id(db, kc_id)).id
     skip = (page - 1) * page_size
-    total, contests = await service.get_all_contests(user_id, skip, page_size)
+    total, contests = await service.get_all_contests(
+        user_id, search, status, is_public, skip, page_size
+    )
     return ContestListResponse(total=total, contests=contests)
 
 
@@ -114,15 +125,19 @@ async def get_all_contests(
 )
 async def get_deleted_contests(
     current_user: Dict[str, Any] = Depends(get_current_user),
+    search: str | None = Query(None, description="Search by contest name"),
+    status: ContestStatus | None = Query(None, description="Filter by contest status"),
     page: int = Query(1, ge=1, description="Page number (starts from 1)"),
     page_size: int = Query(10, ge=1, le=100, description="Number of contests per page"),
     db: Session = Depends(get_db),
     service: ContestService = Depends(get_contest_service),
 ):
     """
-    Get all soft-deleted contests with pagination support.
+    Get all soft-deleted contests with pagination, search, and filtering support.
 
     Args:
+        search: Optional search term for contest name
+        status: Optional status to filter by
         page: Page number (starts from 1)
         page_size: Number of contests per page (max 100)
         db: Database session
@@ -134,7 +149,9 @@ async def get_deleted_contests(
     kc_id = current_user.get("sub")
     user_id = (await UserService.get_user_by_keycloak_id(db, kc_id)).id
     skip = (page - 1) * page_size
-    total, contests = await service.get_soft_deleted_contests(user_id, skip, page_size)
+    total, contests = await service.get_soft_deleted_contests(
+        user_id, search, status, skip, page_size
+    )
     return ContestListResponse(total=total, contests=contests)
 
 
