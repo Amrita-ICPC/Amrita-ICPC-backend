@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.cache.decorators import cache_delete, cache_get, cache_set
 from app.core.logger import logger
-from app.core.permissions import ContestPermission
+from app.core.permissions import ContestPermission, is_admin
 from app.exceptions.contest import (
     ContestNotFoundError,
     InstructorAlreadyAssignedError,
@@ -130,18 +130,16 @@ class ContestService:
         Returns:
             Tuple of (total count, contests list)
         """
-        base_query = (
-            self.db.query(Contest)
-            .outerjoin(ContestInstructor)
-            .filter(
+        base_query = self.db.query(Contest)
+        if not is_admin(self.db, user_id):
+            base_query = base_query.outerjoin(ContestInstructor).filter(
                 or_(
                     Contest.created_by == user_id,
                     ContestInstructor.instructor_id == user_id,
                 )
             )
-            .filter(Contest.is_deleted.is_(False))
-            .distinct()
-        )
+
+        base_query = base_query.filter(Contest.is_deleted.is_(False)).distinct()
         total = base_query.count()
         contests = base_query.offset(skip).limit(limit).all()
         return total, [
@@ -559,18 +557,16 @@ class ContestService:
         Returns:
             Tuple of (total count, contests list)
         """
-        base_query = (
-            self.db.query(Contest)
-            .outerjoin(ContestInstructor)
-            .filter(
+        base_query = self.db.query(Contest)
+        if not is_admin(self.db, user_id):
+            base_query = base_query.outerjoin(ContestInstructor).filter(
                 or_(
                     Contest.created_by == user_id,
                     ContestInstructor.instructor_id == user_id,
                 )
             )
-            .filter(Contest.is_deleted.is_(True))
-            .distinct()
-        )
+
+        base_query = base_query.filter(Contest.is_deleted.is_(True)).distinct()
         total = base_query.count()
         contests = base_query.offset(skip).limit(limit).all()
         return total, [

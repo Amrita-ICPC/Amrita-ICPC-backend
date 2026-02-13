@@ -175,14 +175,15 @@ async def test_get_all_contests(contest_service, mock_db, existing_contest):
     user_id = uuid4()
 
     # query(Contest).outerjoin().filter().distinct()
-    # query(Contest).outerjoin().filter().distinct()
+    # query(Contest).outerjoin().filter().filter().distinct()
     # query(Contest).outerjoin().filter().filter().distinct()
     mock_db.query.return_value.outerjoin.return_value.filter.return_value.filter.return_value.distinct.return_value.count.return_value = 1
     mock_db.query.return_value.outerjoin.return_value.filter.return_value.filter.return_value.distinct.return_value.offset.return_value.limit.return_value.all.return_value = [
         existing_contest
     ]
 
-    total, contests = await contest_service.get_all_contests(user_id)
+    with patch("app.service.contest_service.is_admin", return_value=False):
+        total, contests = await contest_service.get_all_contests(user_id)
 
     assert total == 1
     assert len(contests) == 1
@@ -435,7 +436,8 @@ async def test_get_soft_deleted_contests(contest_service, mock_db, existing_cont
         existing_contest
     ]
 
-    total, contests = await contest_service.get_soft_deleted_contests(user_id)
+    with patch("app.service.contest_service.is_admin", return_value=False):
+        total, contests = await contest_service.get_soft_deleted_contests(user_id)
 
     assert total == 1
     assert len(contests) == 1
