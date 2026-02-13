@@ -1,12 +1,12 @@
 from uuid import UUID
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.cache.decorators import cache_delete, cache_get, cache_set
 from app.core.permissions import ContestPermission, TeamPermission
 from app.exceptions.contest import ContestNotFoundError
 from app.exceptions.team import (
-    CannotRemoveTeamLeaderError,
+    InvalidLeaderAssignmentError,
     InvalidTeamSizeError,
     MemberAlreadyInTeamError,
     MemberNotInTeamError,
@@ -131,23 +131,21 @@ class TeamService:
                 )
 
         # Validate members existence and permission
-        for member_id in team_data.member_ids:
-            user = self.db.query(User).filter(User.id == member_id).first()
-            if not user:
-                raise UserNotFoundError(str(member_id))
-            TeamPermission.is_student_allowed_for_contest(
-                self.db, user_id=member_id, contest_id=contest_id
-            )
+        users = self.db.query(User).filter(User.id.in_(team_data.member_ids)).all()
+        found_ids = {u.id for u in users}
+        missing = set(team_data.member_ids) - found_ids
+        if missing:
+            raise UserNotFoundError(str(next(iter(missing))))
+
+        TeamPermission.is_student_allowed_for_contest(
+            self.db, user_ids=team_data.member_ids, contest_id=contest_id
+        )
 
         # Validate leader existence if provided (already handled by schema validator, but good for safety)
         if team_data.leader_id:
             user = self.db.query(User).filter(User.id == team_data.leader_id).first()
             if not user:
                 raise UserNotFoundError(str(team_data.leader_id))
-            TeamPermission.is_student_allowed_for_contest(
-                self.db, user_id=team_data.leader_id, contest_id=contest_id
-            )
-
         # Create Team (independent of contest now)
         team = Team(
             name=team_data.name,
@@ -175,9 +173,10 @@ class TeamService:
         self.db.add(progress)
 
         # Add members
-        for member_id in team_data.member_ids:
-            team_user = TeamUser(team_id=team.id, user_id=member_id)
-            self.db.add(team_user)
+        self.db.add_all(
+            TeamUser(team_id=team.id, user_id=member_id)
+            for member_id in team_data.member_ids
+        )
 
         self.db.flush()
         self.db.refresh(team)
@@ -186,7 +185,7 @@ class TeamService:
         # Ensure the relationship is loaded properly
         contest_team_with_team = (
             self.db.query(ContestTeam)
-            .join(Team)
+            .options(joinedload(ContestTeam.team))
             .filter(
                 ContestTeam.contest_id == contest_id, ContestTeam.team_id == team.id
             )
@@ -263,7 +262,7 @@ class TeamService:
         if team_data.name is not None and team_data.name != team.name:
             existing_team = (
                 self.db.query(Team)
-                .join(ContestTeam)
+                .options(joinedload(Team.contest_teams))
                 .filter(
                     ContestTeam.contest_id == contest_id,
                     Team.name == team_data.name,
@@ -306,7 +305,7 @@ class TeamService:
         # Get updated contest team with proper relationship
         updated_contest_team = (
             self.db.query(ContestTeam)
-            .join(Team)
+            .options(joinedload(ContestTeam.team))
             .filter(
                 ContestTeam.contest_id == contest_id, ContestTeam.team_id == team.id
             )
@@ -367,6 +366,7 @@ class TeamService:
         # Execute the query
         base_query = (
             self.db.query(ContestTeam)
+            .options(joinedload(ContestTeam.team))
             .join(Team, ContestTeam.team_id == Team.id)
             .filter(ContestTeam.contest_id == contest_id)
         )
@@ -379,8 +379,6 @@ class TeamService:
 
         total = base_query.count()
         contest_teams = base_query.offset(skip).limit(limit).all()
-
-        from app.schema.team import ContestTeamResponse
 
         return total, [
             ContestTeamResponse.from_contest_team(ct) for ct in contest_teams
@@ -433,8 +431,6 @@ class TeamService:
 
         if not contest_team:
             raise TeamNotFoundError(str(team_id), str(contest_id))
-
-        from app.schema.team import ContestTeamResponse
 
         return ContestTeamResponse.from_contest_team(contest_team)
 
@@ -498,9 +494,12 @@ class TeamService:
         team = contest_team.team
 
         # Get current team member count
-        current_member_count = (
-            self.db.query(TeamUser).filter(TeamUser.team_id == team_id).count()
+        existing_members = (
+            self.db.query(TeamUser).filter(TeamUser.team_id == team_id).all()
         )
+        existing_member_ids = {tu.user_id for tu in existing_members}
+
+        current_member_count = len(existing_members)
 
         # Check if adding new members would exceed team size
         new_member_count = len(member_data.member_ids)
@@ -511,26 +510,20 @@ class TeamService:
                 contest.max_team_size,
             )
 
-        # Validate all members exist and are not already in team
-        existing_member_ids = {
-            tu.user_id
-            for tu in self.db.query(TeamUser).filter(TeamUser.team_id == team_id).all()
-        }
+        # Validate members existence and not already in team
+        users = self.db.query(User).filter(User.id.in_(member_data.member_ids)).all()
+        found_ids = {u.id for u in users}
+        missing = set(member_data.member_ids) - found_ids
+        if missing:
+            raise UserNotFoundError(str(next(iter(missing))))
 
-        for member_id in member_data.member_ids:
-            # Check if user exists
-            user = self.db.query(User).filter(User.id == member_id).first()
-            if not user:
-                raise UserNotFoundError(str(member_id))
+        for user in users:
+            if user.id in existing_member_ids:
+                raise MemberAlreadyInTeamError(str(user.id), team.name)
 
-            # Check if already in team
-            if member_id in existing_member_ids:
-                raise MemberAlreadyInTeamError(str(member_id), team.name)
-
-            # Validate member permissions
-            TeamPermission.is_student_allowed_for_contest(
-                self.db, user_id=member_id, contest_id=contest_id
-            )
+        TeamPermission.is_student_allowed_for_contest(
+            self.db, user_ids=member_data.member_ids, contest_id=contest_id
+        )
 
         # Add new members
         for member_id in member_data.member_ids:
@@ -582,6 +575,7 @@ class TeamService:
             PermissionDeniedError: If user lacks team management permission
             MemberNotInTeamError: If any member is not in the team
             CannotRemoveTeamLeaderError: If removing leader without replacement
+            InvalidLeaderAssignmentError: If new leader is being removed
             InvalidTeamSizeError: If removal would violate minimum team size
         """
         # Check contest and get team
@@ -622,8 +616,6 @@ class TeamService:
 
         # Check if removing leader
         is_removing_leader = team.leader_id in member_data.member_ids
-        if is_removing_leader and not member_data.new_leader_id:
-            raise CannotRemoveTeamLeaderError(team.name)
 
         # Check minimum team size for confirmed teams
         if (
@@ -639,8 +631,8 @@ class TeamService:
         # Validate new leader if specified
         if member_data.new_leader_id:
             if member_data.new_leader_id in member_data.member_ids:
-                raise ValueError(
-                    "New leader cannot be one of the members being removed"
+                raise InvalidLeaderAssignmentError(
+                    str(member_data.new_leader_id), team.name
                 )
             if member_data.new_leader_id not in current_team_users:
                 raise MemberNotInTeamError(str(member_data.new_leader_id), team.name)
@@ -655,7 +647,7 @@ class TeamService:
             if member_data.new_leader_id:
                 team.leader_id = member_data.new_leader_id
             else:
-                # Find remaining member to be leader if any
+                # Auto Assign new leader if current leader is removed and no new leader specified
                 remaining_members = [
                     tu
                     for tu in current_team_users.values()

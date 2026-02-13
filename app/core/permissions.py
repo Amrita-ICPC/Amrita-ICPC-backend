@@ -102,7 +102,7 @@ class TeamPermission:
     def is_student_allowed_for_contest(
         db: Session,
         *,
-        user_id: UUID,
+        user_ids: list[UUID],
         contest_id: UUID,
     ) -> None:
         """
@@ -113,16 +113,16 @@ class TeamPermission:
 
         # Check if user is already in a team for this contest
         existing_participation = (
-            db.query(ContestTeam)
-            .join(TeamUser, ContestTeam.team_id == TeamUser.team_id)
+            db.query(TeamUser.user_id)
+            .join(ContestTeam, ContestTeam.team_id == TeamUser.team_id)
             .filter(
                 ContestTeam.contest_id == contest_id,
-                TeamUser.user_id == user_id,
+                TeamUser.user_id.in_(user_ids),
             )
             .first()
         )
 
         if existing_participation:
             raise PermissionDeniedError(
-                f"User {user_id} is already a member of a team in this contest"
+                f"User {existing_participation} is already a member of a team in this contest"
             )
