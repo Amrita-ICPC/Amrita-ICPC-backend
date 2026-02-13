@@ -8,6 +8,18 @@ from app.models.user import User
 from app.utils.enums import UserRole
 
 
+def is_admin(db: Session, user_id: UUID) -> bool:
+    """
+    Check if the user has admin role.
+    """
+    return (
+        db.query(User.id)
+        .filter(User.id == user_id, User.role == UserRole.admin)
+        .first()
+        is not None
+    )
+
+
 class ContestPermission:
     @staticmethod
     def can_manage_contest(
@@ -24,15 +36,7 @@ class ContestPermission:
         if contest.created_by == user_id:
             return
 
-        # admin allowed
-        is_admin = (
-            db.query(User.id)
-            .filter(User.id == user_id, User.role == UserRole.admin)
-            .first()
-            is not None
-        )
-
-        if is_admin:
+        if is_admin(db, user_id):
             return
 
         # instructor allowed
