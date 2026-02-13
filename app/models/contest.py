@@ -15,7 +15,14 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
-from app.utils.enums import ContestStatus, ScoringType
+from app.models.team import Team
+from app.utils.enums import (
+    ContestStatus,
+    ScoringType,
+    TeamStatus,
+    ViolationSeverity,
+    ViolationType,
+)
 
 
 class Contest(Base):
@@ -73,9 +80,8 @@ class Contest(Base):
     )
     deleter = relationship("User", foreign_keys=[deleted_by])
 
-    contest_teams = relationship(
-        "Team", back_populates="contest", cascade="all, delete-orphan"
-    )
+    deleter = relationship("User", foreign_keys=[deleted_by])
+
     questions = relationship(
         "ContestQuestion", back_populates="contest", cascade="all, delete-orphan"
     )
@@ -109,6 +115,10 @@ class Contest(Base):
     creator = relationship("User", lazy="joined", foreign_keys=[created_by])
     updater = relationship("User", lazy="joined", foreign_keys=[updated_by])
 
+    team_violations = relationship(
+        "ContestTeamViolation", back_populates="contest", cascade="all, delete-orphan"
+    )
+
 
 class ContestInstructor(Base):
     __tablename__ = "contest_instructor"
@@ -141,20 +151,138 @@ class ContestQuestion(Base):
     question = relationship("Question", back_populates="contests")
 
 
+class ContestTeamProgress(Base):
+    """
+    Model representing the progress and status of a team in a contest.
+
+    Attributes:
+        contest_id: generic-uuid foreign key to the contest.
+        team_id: generic-uuid foreign key to the team.
+        score: The team's score in the contest.
+        is_flagged: Boolean indicating if the team is flagged for review.
+        flagged_at: Timestamp when the team was flagged.
+        flagged_by: generic-uuid of the user who flagged the team.
+        flagged_reason: Reason for flagging the team.
+        start_time: Timestamp when the team started the contest.
+        end_time: Timestamp when the team finished the contest.
+    """
+
+    __tablename__ = "contest_team_progress"
+
+    contest_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("contest.id", ondelete="CASCADE"), primary_key=True
+    )
+    team_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey(Team.id, ondelete="CASCADE"), primary_key=True
+    )
+
+    score: Mapped[int] = mapped_column(Integer, default=0)
+    is_flagged: Mapped[bool] = mapped_column(Boolean, default=False)
+    flagged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    flagged_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    flagged_reason: Mapped[str | None] = mapped_column(Text)
+
+    start_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    end_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    contest_team = relationship(
+        "ContestTeam",
+        back_populates="progress",
+        uselist=False,
+        foreign_keys=[contest_id, team_id],
+        primaryjoin="and_(ContestTeamProgress.contest_id==ContestTeam.contest_id, ContestTeamProgress.team_id==ContestTeam.team_id)",
+    )
+    flagger = relationship("User", foreign_keys=[flagged_by])
+
+
 class ContestTeam(Base):
+    """
+    Association model representing a team's participation in a contest.
+
+    Attributes:
+        contest_id: generic-uuid foreign key to the contest.
+        team_id: generic-uuid foreign key to the team.
+        score: The team's score in the contest.
+        enrolled_at: Timestamp when the team enrolled.
+        team_status: The status of the team in the contest (e.g., DRAFT, CONFIRMED).
+        is_flagged: Boolean indicating if the team is flagged for review.
+        flagged_at: Timestamp when the team was flagged.
+        flagged_by: generic-uuid of the user who flagged the team.
+        flagged_reason: Reason for flagging the team.
+    """
+
     __tablename__ = "contest_team"
 
     contest_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("contest.id", ondelete="CASCADE"), primary_key=True
     )
     team_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("team.id", ondelete="CASCADE"), primary_key=True
+        ForeignKey(Team.id, ondelete="CASCADE"), primary_key=True
     )
 
-    score: Mapped[int] = mapped_column(Integer, default=0)
     enrolled_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
     )
+    team_status: Mapped[TeamStatus] = mapped_column(
+        Enum(TeamStatus), nullable=False, default=TeamStatus.DRAFT, name="team_status"
+    )
 
-    contest = relationship("Contest", back_populates="teams")
-    team = relationship("Team", back_populates="contests")
+    contest = relationship("Contest", back_populates="teams", foreign_keys=[contest_id])
+    team = relationship("Team", back_populates="team_contests", foreign_keys=[team_id])
+    progress = relationship(
+        "ContestTeamProgress",
+        back_populates="contest_team",
+        uselist=False,
+        cascade="all, delete-orphan",
+        foreign_keys="[ContestTeamProgress.contest_id, ContestTeamProgress.team_id]",
+        primaryjoin="and_(ContestTeam.contest_id==ContestTeamProgress.contest_id, ContestTeam.team_id==ContestTeamProgress.team_id)",
+    )
+
+
+class ContestTeamViolation(Base):
+    """
+    Model representing a violation recorded for a team in a contest.
+
+    Attributes:
+        id: Unique identifier for the violation.
+        contest_id: generic-uuid foreign key to the contest.
+        team_id: generic-uuid foreign key to the team.
+        violation_type: Type of the violation (e.g., CHEATING).
+        violation_severity: Severity of the violation (e.g., LOW, CRITICAL).
+        violation_at: Timestamp when the violation occurred.
+        violated_by: generic-uuid of the user who committed the violation.
+        violation_reason: detailed description or reason for the violation.
+    """
+
+    __tablename__ = "contest_team_violation"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+
+    contest_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("contest.id", ondelete="CASCADE"), nullable=False
+    )
+    team_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey(Team.id, ondelete="CASCADE"), nullable=False
+    )
+
+    violation_type: Mapped[ViolationType] = mapped_column(
+        Enum(ViolationType), nullable=False
+    )
+    violation_severity: Mapped[ViolationSeverity] = mapped_column(
+        Enum(ViolationSeverity), nullable=False
+    )
+    violation_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.utcnow
+    )
+    violated_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+    violation_reason: Mapped[str] = mapped_column(Text, nullable=False)
+
+    contest = relationship("Contest", back_populates="team_violations")
+    team = relationship("Team", back_populates="contest_violations")
+    violator = relationship("User", foreign_keys=[violated_by])

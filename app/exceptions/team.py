@@ -1,34 +1,23 @@
-from fastapi import status
-from uuid import UUID
 from app.exceptions.base import AppBaseException
 
-class TeamNotFoundError(AppBaseException):
-    """Exception raise when team is not found"""
-    def __init__(self,team_id:str):
-        super().__init__(
-                message=f"Team with ID {team_id} not found",
-                status_code=status.HTTP_404_NOT_FOUND,)
-    
-class UserNotFoundError(AppBaseException):
-    """Exception raise when user is not found"""
-    def __init__(self,user_id:str):
-        super().__init__(
-                       message=f"User with ID {user_id} not found",
-                       status_code=status.HTTP_404_NOT_FOUND,)
-        
 
-class UserAlreadyInTeamError(AppBaseException):
-    """Exception raised when the particular user is already present in the team"""
-    def __init__(self,team_id:str,user_id:str):
+class TeamAlreadyExistsError(AppBaseException):
+    """Raised when a team with the same name already exists in the contest."""
+
+    def __init__(self, name: str, contest_id: str):
         super().__init__(
-            message=f"User with ID: {user_id} is already present in the team :{team_id}",
-            status_code=status.HTTP_409_CONFLICT
+            message=f"Team '{name}' already exists in contest {contest_id}",
+            status_code=409,
+            detail=f"Team with name '{name}' already exists in contest {contest_id}",
         )
 
-class UserNotInTeamError(AppBaseException):
-    """Exception raised when the particular user is not present in the given team id"""
-    def __init__(self,team_id:str,user_id:str):
+
+class InvalidTeamSizeError(AppBaseException):
+    """Raised when the team size violates contest rules."""
+
+    def __init__(self, size: int, min_size: int, max_size: int):
         super().__init__(
-            message=f"User with Id:{user_id} doesn't exists in team:{team_id}",
-            status_code=status.HTTP_404_NOT_FOUND
+            message=f"Invalid team size: {size}. Must be between {min_size} and {max_size}.",
+            status_code=400,
+            detail=f"Team size {size} is invalid. Allowed range: {min_size}-{max_size}.",
         )

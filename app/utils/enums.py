@@ -82,3 +82,31 @@ class ScoringType(str, enum.Enum):
     AUTO = "AUTO"
     MANUAL = "MANUAL"
     HYBRID = "HYBRID"
+
+
+class TeamStatus(str, enum.Enum):
+    """
+    Enumeration of team statuses.
+
+    Attributes:
+        ACTIVE: The team is active and participating.
+        INACTIVE: The team is inactive.
+        PENDING: The team is pending approval or activation.
+    """
+
+    DRAFT = "DRAFT"
+    CONFIRMED = "CONFIRMED"
+
+
+class ViolationType(str, enum.Enum):
+    CHEATING = "cheating"
+    MULTIPLE_ACCOUNTS = "multiple_accounts"
+    LATE_SUBMISSION = "late_submission"
+    RULE_VIOLATION = "rule_violation"
+
+
+class ViolationSeverity(str, enum.Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"

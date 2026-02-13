@@ -486,3 +486,5 @@ async def get_contest_instructors(
     )
 
     return result
+
+    return MessageResponse(message="Instructors removed successfully")

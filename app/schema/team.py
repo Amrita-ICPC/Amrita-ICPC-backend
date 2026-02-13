@@ -1,73 +1,64 @@
 from typing import List, Optional
 from uuid import UUID
-from datetime import datetime
-from pydantic import BaseModel, Field, ConfigDict
 
-class TeamBase(BaseModel):
-    """Base schema for team"""
-    name: str = Field(..., min_length=1, max_length=255, description="Team name")
-    description: Optional[str] = Field(None, description="Team description")
-    logo: Optional[str] = Field(None, description="Team logo URL or data")
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    model_validator,
+)
 
-class TeamCreate(TeamBase):
-    """Schema for creating a new team"""
-    pass
+from app.utils.enums import TeamStatus
 
-class TeamUpdate(BaseModel):
-    """Schema for updating a team"""
-    name: Optional[str] = Field(None, min_length=1, max_length=255)
+
+class TeamCreate(BaseModel):
+    """
+    Schema for creating a new team.
+
+    Attributes:
+        name: Name of the team.
+        description: Description of the team.
+        logo: URL or path to the team logo.
+        member_ids: List of user IDs to include in the team.
+        status: Status of the team (default: DRAFT).
+    """
+
+    name: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = None
     logo: Optional[str] = None
+    member_ids: List[UUID] = Field(default_factory=list)
+    leader_id: Optional[UUID] = None
+    status: TeamStatus = Field(default=TeamStatus.DRAFT)
 
-class TeamResponse(TeamBase):
-    """Schema for team response"""
+    @model_validator(mode="after")
+    def validate_leader(self) -> "TeamCreate":
+        member_ids = self.member_ids
+        leader_id = self.leader_id
+
+        if member_ids and leader_id is None:
+            raise ValueError("Leader ID is required when there are members.")
+
+        if leader_id and leader_id not in member_ids:
+            raise ValueError("Leader must be one of the members.")
+
+        return self
+
+
+class TeamResponse(BaseModel):
+    """
+    Schema for team response.
+
+    Attributes:
+        id: Unique identifier for the team.
+        name: Name of the team.
+        description: Description of the team.
+        logo: Team logo.
+        status: Team status.
+    """
+
     id: UUID
-    created_at: datetime = Field(..., description="Team creation timestamp")
-    updated_at: datetime = Field(..., description="Team last update timestamp")
-    
-    model_config = ConfigDict(from_attributes=True)
-
-class UserTeamResponse(BaseModel):
-    """Schema for user in team context"""
-    id: UUID
-    email: str
-    name: Optional[str] = None
+    name: str
+    description: Optional[str]
+    logo: Optional[str]
 
     model_config = ConfigDict(from_attributes=True)
-
-class AddTeamMemberRequest(BaseModel):
-    """Schema for adding a member to the team"""
-    user_id: UUID = Field(..., description="User ID to add to team")
-
-class RemoveTeamMemberRequest(BaseModel):
-    """Schema for removing a member from the team"""
-    user_id: UUID = Field(..., description="User ID to remove from team")
-
-class AddTeamMemberResponse(BaseModel):
-    """Response after adding member to team"""
-    message: str
-    user_id: UUID
-    team_id: UUID
-    added_at: datetime
-
-class RemoveTeamMemberResponse(BaseModel):
-    """Response after removing member from team"""
-    message: str
-    user_id: UUID
-    team_id: UUID
-    removed_at: datetime
-
-class MessageResponse(BaseModel):
-    """Schema for message response."""
-
-    message: str = Field(..., description="Response message")
-
-class TeamListResponse(BaseModel):
-    """Schema for paginated team list response"""
-    total: int = Field(..., description="Total number of teams")
-    teams: List[TeamResponse] = Field(..., description="List of teams")
-
-class UserTeamListResponse(BaseModel):
-    """Schema for user's team list response"""
-    total: int = Field(..., description="Total number of teams")
-    teams: List[TeamResponse] = Field(..., description="List of teams")

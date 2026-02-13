@@ -15,7 +15,10 @@ from app.exceptions.contest import (
     InvalidContestError,
 )
 from app.exceptions.user import UserNotFoundError
-from app.models.contest import Contest, ContestInstructor
+from app.models.contest import (
+    Contest,
+    ContestInstructor,
+)
 from app.models.user import User
 from app.schema.contest import (
     ContestCreate,
