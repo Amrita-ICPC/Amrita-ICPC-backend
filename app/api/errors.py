@@ -32,9 +32,27 @@ def setup_exception_handlers(app: FastAPI) -> None:
         request: Request, exc: RequestValidationError
     ):
         logger.error(f"Validation error: {exc}")
+        errors = exc.errors()
+        # Sanitize errors to ensure JSON serializability
+        sanitized_errors = []
+        for error in errors:
+            sanitized_error = error.copy()
+            if "ctx" in sanitized_error:
+                # Remove or convert non-serializable objects in ctx
+                # For example, ValueError is not serializable
+                ctx = sanitized_error["ctx"]
+                new_ctx = {}
+                for k, v in ctx.items():
+                    if isinstance(v, Exception):
+                        new_ctx[k] = str(v)
+                    else:
+                        new_ctx[k] = v
+                sanitized_error["ctx"] = new_ctx
+            sanitized_errors.append(sanitized_error)
+
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            content={"detail": exc.errors(), "message": "Validation error"},
+            content={"detail": sanitized_errors, "message": "Validation error"},
         )
 
     @app.exception_handler(SQLAlchemyError)

@@ -14,24 +14,35 @@ class Team(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    contest_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("contest.id", ondelete="CASCADE"), nullable=False
-    )
+
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     logo: Mapped[str | None] = mapped_column(Text)
+
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
+    leader_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc)
+        onupdate=lambda: datetime.now(timezone.utc),
     )
 
-    contest = relationship("Contest", back_populates="contest_teams")
+    creator = relationship("User", foreign_keys=[created_by])
+    leader = relationship("User", foreign_keys=[leader_id])
     members = relationship("TeamUser", back_populates="team")
-    contests = relationship("ContestTeam", back_populates="team")
+    team_contests = relationship("ContestTeam", back_populates="team")
+    contest_violations = relationship(
+        "ContestTeamViolation", back_populates="team", cascade="all, delete-orphan"
+    )
 
 
 class TeamUser(Base):
