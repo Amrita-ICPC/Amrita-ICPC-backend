@@ -32,3 +32,36 @@ class TeamNotFoundError(AppBaseException):
             status_code=404,
             detail=f"Team {team_id} not found in this contest.",
         )
+
+
+class MemberAlreadyInTeamError(AppBaseException):
+    """Raised when trying to add a member who is already in the team."""
+
+    def __init__(self, user_id: str, team_name: str):
+        super().__init__(
+            message=f"User {user_id} is already a member of team '{team_name}'",
+            status_code=409,
+            detail=f"User {user_id} is already in this team.",
+        )
+
+
+class MemberNotInTeamError(AppBaseException):
+    """Raised when trying to remove a member who is not in the team."""
+
+    def __init__(self, user_id: str, team_name: str):
+        super().__init__(
+            message=f"User {user_id} is not a member of team '{team_name}'",
+            status_code=404,
+            detail=f"User {user_id} is not in this team.",
+        )
+
+
+class CannotRemoveTeamLeaderError(AppBaseException):
+    """Raised when trying to remove the team leader without specifying a new leader."""
+
+    def __init__(self, team_name: str):
+        super().__init__(
+            message=f"Cannot remove team leader from '{team_name}' without assigning a new leader",
+            status_code=400,
+            detail="A new leader must be specified when removing the current team leader.",
+        )

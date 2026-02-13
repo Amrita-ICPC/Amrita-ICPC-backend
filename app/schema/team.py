@@ -45,6 +45,26 @@ class TeamCreate(BaseModel):
         return self
 
 
+class TeamUpdate(BaseModel):
+    """
+    Schema for updating an existing team.
+
+    Only allows updating basic team information.
+    Members management should be handled through separate endpoints.
+
+    Attributes:
+        name: Updated name of the team.
+        description: Updated description of the team.
+        logo: Updated URL or path to the team logo.
+        status: Updated status of the team in the contest.
+    """
+
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    description: Optional[str] = None
+    logo: Optional[str] = None
+    status: Optional[TeamStatus] = None
+
+
 class TeamResponse(BaseModel):
     """
     Schema for team response.
@@ -132,11 +152,24 @@ class ContestTeamResponse(BaseModel):
 class TeamMemberResponse(BaseModel):
     """
     Schema for team member response.
+
+    Represents a user who is part of a team with essential information.
+
+    Attributes:
+        id: Unique identifier for the user.
+        user_id: External user identifier (e.g., student ID).
+        name: Full name of the user.
+        email: Email address of the user.
+        role: Role of the user in the system.
+        is_leader: Whether this member is the team leader.
     """
 
     id: UUID
+    user_id: str
     name: str
     email: str
+    role: str
+    is_leader: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -179,7 +212,12 @@ class ContestTeamDetailResponse(TeamResponse):
         # Map members
         members = [
             TeamMemberResponse(
-                id=member.user.id, name=member.user.name, email=member.user.email
+                id=member.user.id,
+                user_id=member.user.user_id,
+                name=member.user.name,
+                email=member.user.email,
+                role=member.user.role.value,
+                is_leader=(team.leader_id == member.user.id),
             )
             for member in team.members
         ]
@@ -209,3 +247,57 @@ class TeamListResponse(BaseModel):
 
     total: int
     teams: List[ContestTeamResponse]
+
+
+class TeamMemberAdd(BaseModel):
+    """
+    Schema for adding members to a team.
+
+    Attributes:
+        member_ids: List of user IDs to add to the team.
+        leader_id: Optional new leader ID (must be one of the members).
+    """
+
+    member_ids: List[UUID] = Field(
+        ..., min_length=1, description="List of user IDs to add"
+    )
+    leader_id: Optional[UUID] = Field(
+        None, description="New team leader (must be existing or new member)"
+    )
+
+    @model_validator(mode="after")
+    def validate_leader_in_members(self) -> "TeamMemberAdd":
+        if self.leader_id and self.leader_id not in self.member_ids:
+            raise ValueError("Leader must be one of the members being added")
+        return self
+
+
+class TeamMemberRemove(BaseModel):
+    """
+    Schema for removing members from a team.
+
+    Attributes:
+        member_ids: List of user IDs to remove from the team.
+        new_leader_id: Optional new leader if removing current leader.
+    """
+
+    member_ids: List[UUID] = Field(
+        ..., min_length=1, description="List of user IDs to remove from team"
+    )
+    new_leader_id: Optional[UUID] = Field(
+        None, description="New leader if removing current leader"
+    )
+
+
+class TeamMembersResponse(BaseModel):
+    """
+    Schema for team members list response with pagination.
+
+    Attributes:
+        total: Total number of members in the team.
+        members: List of team members for current page.
+        team_info: Basic team information.
+    """
+
+    total: int
+    members: List[TeamMemberResponse]
