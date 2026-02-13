@@ -3,13 +3,16 @@ import enum
 
 class UserRole(str, enum.Enum):
     """
-    Enumeration of user roles within the system.
+    Enumeration of user roles within the ICPC backend system.
+
+    Defines the hierarchical roles that control access permissions
+    and determine what actions users can perform.
 
     Attributes:
-        student: Role for student users.
-        instructor: Role for instructor users.
-        admin: Role for system administrators.
-        manager: Role for managers.
+        student: Regular students who can participate in contests and join teams.
+        instructor: Instructors who can create and manage contests for their courses.
+        admin: System administrators with full access to all system features.
+        manager: Organizational managers with elevated permissions across contests.
     """
 
     student = "student"
@@ -20,12 +23,15 @@ class UserRole(str, enum.Enum):
 
 class QuestionDifficulty(str, enum.Enum):
     """
-    Enumeration of question difficulty levels.
+    Enumeration of question difficulty levels for contest problems.
+
+    Used to categorize problems by their complexity and expected
+    solving time to help with contest balancing and participant preparation.
 
     Attributes:
-        EASY: Represents an easy difficulty level.
-        MEDIUM: Represents a medium difficulty level.
-        HARD: Represents a hard difficulty level.
+        EASY: Basic problems suitable for beginners, typically solvable in 15-30 minutes.
+        MEDIUM: Intermediate problems requiring algorithmic thinking, 30-60 minutes.
+        HARD: Advanced problems demanding complex algorithms, 60+ minutes.
     """
 
     EASY = "EASY"
@@ -37,10 +43,13 @@ class BankPermission(str, enum.Enum):
     """
     Enumeration of permissions for question banks.
 
+    Controls access levels for question banks, allowing fine-grained
+    permission management for collaborative question management.
+
     Attributes:
-        read: Permission to view the bank.
-        edit: Permission to modify the bank.
-        owner: Full control over the bank.
+        read: Permission to view questions and bank metadata only.
+        edit: Permission to modify questions and bank content.
+        owner: Full control including permission management and deletion.
     """
 
     read = "read"
@@ -50,15 +59,18 @@ class BankPermission(str, enum.Enum):
 
 class ContestStatus(str, enum.Enum):
     """
-    Enumeration of contest statuses.
+    Enumeration of contest lifecycle statuses.
+
+    Tracks the current state of a contest from creation through completion,
+    controlling participant access and available operations.
 
     Attributes:
-        DRAFT: The contest is being created and not yet visible.
-        SCHEDULED: The contest is set to start at a future time.
-        RUNNING: The contest is currently active.
-        PAUSED: The contest has been temporarily halted.
-        FINISHED: The contest has concluded.
-        CANCELLED: The contest has been cancelled.
+        DRAFT: Contest is being configured and not visible to participants.
+        SCHEDULED: Contest is published and scheduled for future start.
+        RUNNING: Contest is currently active and accepting submissions.
+        PAUSED: Contest is temporarily halted, submissions disabled.
+        FINISHED: Contest has concluded, final results available.
+        CANCELLED: Contest has been cancelled and will not proceed.
     """
 
     DRAFT = "DRAFT"
@@ -71,12 +83,15 @@ class ContestStatus(str, enum.Enum):
 
 class ScoringType(str, enum.Enum):
     """
-    Enumeration of scoring types for contests.
+    Enumeration of scoring methods for contest evaluation.
+
+    Determines how submissions are evaluated and scored during contests,
+    affecting the judging workflow and result calculation.
 
     Attributes:
-        AUTO: Automatic scoring.
-        MANUAL: Manual scoring.
-        HYBRID: Hybrid scoring.
+        AUTO: Fully automatic scoring using predefined test cases and judges.
+        MANUAL: Human-reviewed scoring for subjective or complex evaluation.
+        HYBRID: Combined automatic and manual scoring for comprehensive assessment.
     """
 
     AUTO = "AUTO"
@@ -86,12 +101,11 @@ class ScoringType(str, enum.Enum):
 
 class TeamStatus(str, enum.Enum):
     """
-    Enumeration of team statuses.
+    Enumeration of team statuses within a contest.
 
     Attributes:
-        ACTIVE: The team is active and participating.
-        INACTIVE: The team is inactive.
-        PENDING: The team is pending approval or activation.
+        DRAFT: Team is being formed and can still be modified.
+        CONFIRMED: Team is finalized and ready for contest participation.
     """
 
     DRAFT = "DRAFT"
@@ -99,6 +113,16 @@ class TeamStatus(str, enum.Enum):
 
 
 class ViolationType(str, enum.Enum):
+    """
+    Enumeration of violation types that can occur during contests.
+
+    Attributes:
+        CHEATING: Unauthorized collaboration or assistance during contest.
+        MULTIPLE_ACCOUNTS: Using multiple accounts to gain unfair advantage.
+        LATE_SUBMISSION: Submitting solutions after the deadline.
+        RULE_VIOLATION: General violation of contest rules and regulations.
+    """
+
     CHEATING = "cheating"
     MULTIPLE_ACCOUNTS = "multiple_accounts"
     LATE_SUBMISSION = "late_submission"
@@ -106,6 +130,16 @@ class ViolationType(str, enum.Enum):
 
 
 class ViolationSeverity(str, enum.Enum):
+    """
+    Enumeration of violation severity levels.
+
+    Attributes:
+        LOW: Minor infractions with minimal impact.
+        MEDIUM: Moderate violations requiring attention.
+        HIGH: Serious violations affecting contest integrity.
+        CRITICAL: Severe violations requiring immediate action.
+    """
+
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
