@@ -21,3 +21,14 @@ class InvalidTeamSizeError(AppBaseException):
             status_code=400,
             detail=f"Team size {size} is invalid. Allowed range: {min_size}-{max_size}.",
         )
+
+
+class TeamNotFoundError(AppBaseException):
+    """Raised when a team is not found."""
+
+    def __init__(self, team_id: str, contest_id: str):
+        super().__init__(
+            message=f"Team {team_id} not found in contest {contest_id}",
+            status_code=404,
+            detail=f"Team {team_id} not found in this contest.",
+        )

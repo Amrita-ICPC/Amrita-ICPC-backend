@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
@@ -53,12 +54,158 @@ class TeamResponse(BaseModel):
         name: Name of the team.
         description: Description of the team.
         logo: Team logo.
-        status: Team status.
+        status: Status of the team.
+        leader_id: ID of the team leader.
+        created_by: ID of the user who created the team.
+        created_at: Timestamp when the team was created.
+        updated_at: Timestamp when the team was last updated.
     """
 
     id: UUID
     name: str
     description: Optional[str]
     logo: Optional[str]
+    status: TeamStatus
+    leader_id: Optional[UUID]
+    created_by: Optional[UUID]
+    created_at: datetime
+    updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ContestTeamResponse(BaseModel):
+    """
+    Schema for contest team response without member details.
+    Used for team listings and basic team information.
+
+    Attributes:
+        id: Unique identifier for the team.
+        name: Name of the team.
+        description: Description of the team.
+        logo: Team logo.
+        status: Status of the team in the contest.
+        leader_id: ID of the team leader.
+        created_by: ID of the user who created the team.
+        created_at: Timestamp when the team was created.
+        updated_at: Timestamp when the team was last updated.
+    """
+
+    id: UUID
+    name: str
+    description: Optional[str]
+    logo: Optional[str]
+    status: TeamStatus
+    leader_id: Optional[UUID]
+    created_by: Optional[UUID]
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+    @classmethod
+    def from_contest_team(cls, contest_team) -> "ContestTeamResponse":
+        """
+        Create ContestTeamResponse from ContestTeam ORM object.
+
+        Args:
+            contest_team: ContestTeam ORM object
+
+        Returns:
+            ContestTeamResponse with basic team data (no members)
+        """
+        team = contest_team.team
+
+        return cls(
+            id=team.id,
+            name=team.name,
+            description=team.description,
+            logo=team.logo,
+            status=contest_team.team_status,
+            leader_id=team.leader_id,
+            created_by=team.created_by,
+            created_at=team.created_at,
+            updated_at=team.updated_at,
+        )
+
+
+class TeamMemberResponse(BaseModel):
+    """
+    Schema for team member response.
+    """
+
+    id: UUID
+    name: str
+    email: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ContestTeamDetailResponse(TeamResponse):
+    """
+    Detailed schema for team response within a contest context.
+
+    Attributes:
+        status: Status of the team in the contest.
+        members: List of team members.
+        leader_id: ID of the team leader.
+        created_by: ID of the user who created the team.
+        created_at: Timestamp when the team was created.
+        updated_at: Timestamp when the team was last updated.
+    """
+
+    status: TeamStatus
+    members: List[TeamMemberResponse]
+    leader_id: Optional[UUID]
+    created_by: Optional[UUID]
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+    @classmethod
+    def from_contest_team(cls, contest_team) -> "ContestTeamDetailResponse":
+        """
+        Create ContestTeamDetailResponse from ContestTeam ORM object.
+
+        Args:
+            contest_team: ContestTeam ORM object
+
+        Returns:
+            ContestTeamDetailResponse with mapped data
+        """
+        team = contest_team.team
+
+        # Map members
+        members = [
+            TeamMemberResponse(
+                id=member.user.id, name=member.user.name, email=member.user.email
+            )
+            for member in team.members
+        ]
+
+        return cls(
+            id=team.id,
+            name=team.name,
+            description=team.description,
+            logo=team.logo,
+            status=contest_team.team_status,
+            members=members,
+            leader_id=team.leader_id,
+            created_by=team.created_by,
+            created_at=team.created_at,
+            updated_at=team.updated_at,
+        )
+
+
+class TeamListResponse(BaseModel):
+    """
+    Schema for list of teams response.
+
+    Attributes:
+        total: Total number of teams.
+        teams: List of teams without member details.
+    """
+
+    total: int
+    teams: List[ContestTeamResponse]

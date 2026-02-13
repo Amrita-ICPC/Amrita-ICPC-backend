@@ -39,7 +39,7 @@ class ContestService:
         self.db = db
 
     @cache_delete(
-        key_builder=lambda self, contest, created_by: f"contests:user:{created_by}:*",
+        key_builder=lambda self, contest, created_by: "contests:*",
     )
     @cache_set(
         key_builder=lambda result: f"contest:{result.id}",
@@ -112,18 +112,30 @@ class ContestService:
     @cache_get(
         key_builder=lambda self,
         user_id,
+        search_term=None,
+        status=None,
+        is_public=None,
         skip=0,
-        limit=100: f"contests:user:{user_id}:skip:{skip}:limit:{limit}",
+        limit=100: f"contests:user:{user_id}:search:{search_term}:status:{status}:public:{is_public}:skip:{skip}:limit:{limit}",
         ttl=300,
     )
     async def get_all_contests(
-        self, user_id: UUID, skip: int = 0, limit: int = 100
+        self,
+        user_id: UUID,
+        search_term: str | None = None,
+        status: ContestStatus | None = None,
+        is_public: bool | None = None,
+        skip: int = 0,
+        limit: int = 100,
     ) -> tuple[int, List[ContestSummaryResponse]]:
         """
-        Get all contests with pagination.
+        Get all contests with pagination, search, and filtering.
 
         Args:
             user_id: User ID
+            search_term: Optional search term for contest name
+            status: Optional status to filter by
+            is_public: Optional visibility filter
             skip: Number of records to skip
             limit: Maximum number of records to return
 
@@ -139,7 +151,19 @@ class ContestService:
                 )
             )
 
-        base_query = base_query.filter(Contest.is_deleted.is_(False)).distinct()
+        base_query = base_query.filter(Contest.is_deleted.is_(False))
+
+        # Apply filters
+        if search_term:
+            base_query = base_query.filter(Contest.name.ilike(f"%{search_term}%"))
+
+        if status:
+            base_query = base_query.filter(Contest.status == status)
+
+        if is_public is not None:
+            base_query = base_query.filter(Contest.is_public == is_public)
+
+        base_query = base_query.distinct()
         total = base_query.count()
         contests = base_query.offset(skip).limit(limit).all()
         return total, [
@@ -147,10 +171,7 @@ class ContestService:
         ]
 
     @cache_delete(
-        key_builder=lambda self,
-        contest_id,
-        contest_data,
-        user_id: f"contests:user:{user_id}:*",
+        key_builder=lambda self, contest_id, contest_data, user_id: "contests:*",
     )
     @cache_set(
         key_builder=lambda result: f"contest:{result.id}",
@@ -199,7 +220,7 @@ class ContestService:
     @cache_delete(
         key_builder=lambda self, contest_id, user_id: [
             f"contest:{contest_id}",
-            f"contests:user:{user_id}:*",
+            "contests:*",
         ]
     )
     async def delete_contest(self, contest_id: UUID, user_id: UUID) -> ContestResponse:
@@ -232,11 +253,7 @@ class ContestService:
     @cache_delete(
         key_builder=lambda self, contest_id, request, user_id: [
             f"contest:{contest_id}:instructors:*",
-            f"contests:user:{user_id}:*",
-            *[
-                f"contests:user:{instructor_id}:*"
-                for instructor_id in request.instructor_ids
-            ],
+            "contests:*",
         ]
     )
     async def assign_instructors_to_contest(
@@ -305,11 +322,7 @@ class ContestService:
     @cache_delete(
         key_builder=lambda self, contest_id, request, user_id: [
             f"contest:{contest_id}:instructors:*",
-            f"contests:user:{user_id}:*",
-            *[
-                f"contests:user:{instructor_id}:*"
-                for instructor_id in request.instructor_ids
-            ],
+            "contests:*",
         ]
     )
     async def remove_instructors_from_contest(
@@ -431,7 +444,7 @@ class ContestService:
     @cache_delete(
         key_builder=lambda self, contest_id, user_id: [
             f"contest:{contest_id}",
-            f"contests:user:{user_id}:*",
+            "contests:*",
         ]
     )
     async def publish_contest(self, contest_id: UUID, user_id: UUID) -> None:
@@ -470,7 +483,7 @@ class ContestService:
     @cache_delete(
         key_builder=lambda self, contest_id, user_id: [
             f"contest:{contest_id}",
-            f"contests:user:{user_id}:*",
+            "contests:*",
         ]
     )
     async def soft_delete_contest(self, contest_id: UUID, user_id: UUID) -> None:
@@ -501,7 +514,7 @@ class ContestService:
     @cache_delete(
         key_builder=lambda self, contest_id, user_id: [
             f"contest:{contest_id}",
-            f"contests:user:{user_id}:*",
+            "contests:*",
         ]
     )
     async def restore_contest(self, contest_id: UUID, user_id: UUID) -> ContestResponse:
@@ -539,18 +552,27 @@ class ContestService:
     @cache_get(
         key_builder=lambda self,
         user_id,
+        search_term=None,
+        status=None,
         skip=0,
-        limit=100: f"contests:deleted:user:{user_id}:skip:{skip}:limit:{limit}",
+        limit=100: f"contests:deleted:user:{user_id}:search:{search_term}:status:{status}:skip:{skip}:limit:{limit}",
         ttl=300,
     )
     async def get_soft_deleted_contests(
-        self, user_id: UUID, skip: int = 0, limit: int = 100
+        self,
+        user_id: UUID,
+        search_term: str | None = None,
+        status: ContestStatus | None = None,
+        skip: int = 0,
+        limit: int = 100,
     ) -> tuple[int, List[ContestSummaryResponse]]:
         """
-        Get all soft-deleted contests with pagination.
+        Get all soft-deleted contests with pagination, search, and filtering.
 
         Args:
             user_id: User ID
+            search_term: Optional search term for contest name
+            status: Optional status to filter by
             skip: Number of records to skip
             limit: Maximum number of records to return
 
@@ -566,7 +588,16 @@ class ContestService:
                 )
             )
 
-        base_query = base_query.filter(Contest.is_deleted.is_(True)).distinct()
+        base_query = base_query.filter(Contest.is_deleted.is_(True))
+
+        # Apply filters
+        if search_term:
+            base_query = base_query.filter(Contest.name.ilike(f"%{search_term}%"))
+
+        if status:
+            base_query = base_query.filter(Contest.status == status)
+
+        base_query = base_query.distinct()
         total = base_query.count()
         contests = base_query.offset(skip).limit(limit).all()
         return total, [

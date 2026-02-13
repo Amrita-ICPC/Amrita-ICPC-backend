@@ -55,6 +55,47 @@ class ContestPermission:
 
         raise PermissionDeniedError("You do not have permission to manage this contest")
 
+    @staticmethod
+    def can_read_contest(
+        db: Session,
+        *,
+        user_id: UUID,
+        contest: Contest,
+    ) -> None:
+        """
+        Raises PermissionDeniedError if user cannot read contest.
+        """
+        # Public contests are readable by everyone
+        if contest.is_public:
+            return
+
+        # Creator always allowed
+        if contest.created_by == user_id:
+            return
+
+        # Admins allowed
+        if is_admin(db, user_id):
+            return
+
+        # Instructors allowed
+        is_instructor = (
+            db.query(ContestInstructor)
+            .filter(
+                ContestInstructor.contest_id == contest.id,
+                ContestInstructor.instructor_id == user_id,
+            )
+            .first()
+            is not None
+        )
+        if is_instructor:
+            return
+
+        # TODO: checking participation (TeamUser)
+        # For now, we restrict private contests to managers.
+        # If participants need access, we should query ContestTeam -> Team -> TeamUser.
+
+        raise PermissionDeniedError("You do not have permission to view this contest")
+
 
 class TeamPermission:
     @staticmethod
