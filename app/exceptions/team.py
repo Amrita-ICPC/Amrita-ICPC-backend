@@ -65,3 +65,14 @@ class CannotRemoveTeamLeaderError(AppBaseException):
             status_code=400,
             detail="A new leader must be specified when removing the current team leader.",
         )
+
+
+class InvalidLeaderAssignmentError(AppBaseException):
+    """Raised when trying to assign a leader who is being removed from the team."""
+
+    def __init__(self, leader_id: str, team_name: str):
+        super().__init__(
+            message=f"Cannot assign user {leader_id} as leader of team '{team_name}' - user is being removed",
+            status_code=400,
+            detail="New leader cannot be one of the members being removed from the team.",
+        )

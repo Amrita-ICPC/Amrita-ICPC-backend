@@ -127,11 +127,11 @@ async def test_assign_instructors_to_contest_success(
     # Setup query mocks
     def query_side_effect(model):
         mock = MagicMock()
-        if model == Contest:
+        if model is Contest:
             mock.filter.return_value.first.return_value = mock_contest
-        elif model == User:
+        elif model is User:
             mock.filter.return_value.first.return_value = mock_instructor
-        elif model == ContestInstructor:
+        elif model is ContestInstructor:
             # No existing assignment
             mock.filter.return_value.first.return_value = None
         return mock
@@ -162,7 +162,7 @@ async def test_assign_instructors_to_contest_not_found(
     # Mock contest not found
     def query_side_effect(model):
         mock = MagicMock()
-        if model == Contest:
+        if model is Contest:
             mock.filter.return_value.first.return_value = None
         return mock
 
@@ -186,9 +186,9 @@ async def test_assign_instructors_instructor_not_found(
     # Setup query mocks
     def query_side_effect(model):
         mock = MagicMock()
-        if model == Contest:
+        if model is Contest:
             mock.filter.return_value.first.return_value = mock_contest
-        elif model == User:
+        elif model is User:
             mock.filter.return_value.first.return_value = None  # User not found
         return mock
 
@@ -215,11 +215,11 @@ async def test_assign_instructors_already_assigned(
     # Setup query mocks
     def query_side_effect(model):
         mock = MagicMock()
-        if model == Contest:
+        if model is Contest:
             mock.filter.return_value.first.return_value = mock_contest
-        elif model == User:
+        elif model is User:
             mock.filter.return_value.first.return_value = mock_instructor
-        elif model == ContestInstructor:
+        elif model is ContestInstructor:
             mock.filter.return_value.first.return_value = existing_assignment
         return mock
 
@@ -243,7 +243,7 @@ async def test_assign_instructors_permission_denied(
     # Setup query mocks
     def query_side_effect(model):
         mock = MagicMock()
-        if model == Contest:
+        if model is Contest:
             mock.filter.return_value.first.return_value = mock_contest
         return mock
 
@@ -273,9 +273,9 @@ async def test_remove_instructors_from_contest_success(
     # Setup query mocks
     def query_side_effect(model):
         mock = MagicMock()
-        if model == Contest:
+        if model is Contest:
             mock.filter.return_value.first.return_value = mock_contest
-        elif model == ContestInstructor:
+        elif model is ContestInstructor:
             mock.filter.return_value.first.return_value = existing_assignment
         return mock
 
@@ -304,9 +304,9 @@ async def test_remove_instructors_not_assigned(
     # Setup query mocks
     def query_side_effect(model):
         mock = MagicMock()
-        if model == Contest:
+        if model is Contest:
             mock.filter.return_value.first.return_value = mock_contest
-        elif model == ContestInstructor:
+        elif model is ContestInstructor:
             mock.filter.return_value.first.return_value = None  # No assignment
         return mock
 
@@ -332,9 +332,9 @@ async def test_get_contest_instructors_success(
     # Setup query mocks
     def query_side_effect(model):
         mock = MagicMock()
-        if model == Contest:
+        if model is Contest:
             mock.filter.return_value.first.return_value = mock_contest
-        elif model == User:
+        elif model is User:
             # Mock for instructor join query
             mock.join.return_value.filter.return_value.count.return_value = 1
             mock.join.return_value.filter.return_value.offset.return_value.limit.return_value.all.return_value = [
@@ -370,7 +370,7 @@ async def test_get_contest_instructors_contest_not_found(
     # Mock contest not found
     def query_side_effect(model):
         mock = MagicMock()
-        if model == Contest:
+        if model is Contest:
             mock.filter.return_value.first.return_value = None
         return mock
 

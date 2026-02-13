@@ -296,7 +296,6 @@ class TeamMembersResponse(BaseModel):
     Attributes:
         total: Total number of members in the team.
         members: List of team members for current page.
-        team_info: Basic team information.
     """
 
     total: int

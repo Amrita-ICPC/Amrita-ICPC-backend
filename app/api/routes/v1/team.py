@@ -332,7 +332,7 @@ async def remove_team_member(
 
     result = await service.remove_team_member(contest_id, team_id, member_data, user_id)
     logger.info(
-        f"Removed {len(member_data.member_ids)} members {member_data.member_ids} from team {team_id} "
+        f"Removed {len(member_data.member_ids)} members from team {team_id} "
         f"in contest {contest_id} by user {user_id}"
     )
     return result

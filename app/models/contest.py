@@ -80,8 +80,6 @@ class Contest(Base):
     )
     deleter = relationship("User", foreign_keys=[deleted_by])
 
-    deleter = relationship("User", foreign_keys=[deleted_by])
-
     questions = relationship(
         "ContestQuestion", back_populates="contest", cascade="all, delete-orphan"
     )
@@ -223,7 +221,7 @@ class ContestTeam(Base):
     )
 
     enrolled_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.utcnow
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
     team_status: Mapped[TeamStatus] = mapped_column(
         Enum(TeamStatus), nullable=False, default=TeamStatus.DRAFT, name="team_status"
@@ -276,7 +274,7 @@ class ContestTeamViolation(Base):
         Enum(ViolationSeverity), nullable=False
     )
     violation_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.utcnow
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
     violated_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False

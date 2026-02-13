@@ -282,7 +282,6 @@ class ContestService:
         # Check permissions
         ContestPermission.can_manage_contest(self.db, user_id=user_id, contest=contest)
 
-        # Validate instructors
         for instructor_id in request.instructor_ids:
             # Check if user exists
             instructor = self.db.query(User).filter(User.id == instructor_id).first()
