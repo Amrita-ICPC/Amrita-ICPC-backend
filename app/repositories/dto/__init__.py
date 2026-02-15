@@ -1,3 +1,8 @@
+from app.repositories.dto.contest import (
+    ContestFilters,
+    CreateContestData,
+    UpdateContestData,
+)
 from app.repositories.dto.pagination import PaginatedResult, PaginationParams
 from app.repositories.dto.team import CreateTeamData, TeamFilters, UpdateTeamData
 
@@ -7,4 +12,7 @@ __all__ = [
     "CreateTeamData",
     "UpdateTeamData",
     "TeamFilters",
+    "ContestFilters",
+    "CreateContestData",
+    "UpdateContestData",
 ]

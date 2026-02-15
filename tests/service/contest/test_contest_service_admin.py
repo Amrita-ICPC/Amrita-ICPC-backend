@@ -16,7 +16,40 @@ def mock_db():
 
 
 @pytest.fixture
-def contest_service(mock_db):
+def mock_contest_repository():
+    from app.repositories.contest import ContestRepository
+
+    mock = MagicMock(spec=ContestRepository)
+    # Add db attribute for is_admin checks
+    mock.db = MagicMock(spec=Session)
+    return mock
+
+
+@pytest.fixture
+def mock_user_repository():
+    from app.repositories.user import UserRepository
+
+    return MagicMock(spec=UserRepository)
+
+
+@pytest.fixture
+def mock_guard():
+    from app.core.guards.contest import ContestOperationGuard
+
+    return MagicMock(spec=ContestOperationGuard)
+
+
+@pytest.fixture
+def mock_validator():
+    from app.validators.contest import ContestValidator
+
+    return MagicMock(spec=ContestValidator)
+
+
+@pytest.fixture
+def contest_service(
+    mock_contest_repository, mock_user_repository, mock_guard, mock_validator
+):
     # Patch the cache decorators to avoid redis connection issues
     with (
         patch(
@@ -34,7 +67,9 @@ def contest_service(mock_db):
     ):
         from app.service.contest_service import ContestService
 
-        service = ContestService(mock_db)
+        service = ContestService(
+            mock_contest_repository, mock_user_repository, mock_guard, mock_validator
+        )
         yield service
 
 
@@ -77,46 +112,61 @@ def existing_contest():
 
 
 @pytest.mark.asyncio
-async def test_get_all_contests_admin(contest_service, mock_db, existing_contest):
+async def test_get_all_contests_admin(
+    contest_service, mock_contest_repository, mock_user_repository, existing_contest
+):
     """Test retrieving all contests for admin user."""
 
     admin_id = uuid4()
 
-    # Mock is_admin to return True
-    with patch("app.service.contest_service.is_admin", return_value=True):
-        # Setup contest query
-        mock_query = mock_db.query.return_value
-        mock_query.filter.return_value.distinct.return_value.count.return_value = 1
-        mock_query.filter.return_value.distinct.return_value.offset.return_value.limit.return_value.all.return_value = [
-            existing_contest
-        ]
+    # Mock repository to return paginated result
+    from app.repositories.dto import PaginatedResult
 
-        total, contests = await contest_service.get_all_contests(admin_id)
+    mock_contest_repository.get_contests_with_filters.return_value = PaginatedResult(
+        total=1, items=[existing_contest]
+    )
+
+    # Mock user repository to return admin user
+    from app.utils.enums import UserRole
+
+    mock_admin_user = MagicMock()
+    mock_admin_user.role = UserRole.admin
+    mock_user_repository.get_user_by_id.return_value = mock_admin_user
+
+    total, contests = await contest_service.get_all_contests(admin_id)
 
     assert total == 1
     assert len(contests) == 1
     assert contests[0].id == existing_contest.id
+    mock_contest_repository.get_contests_with_filters.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_get_soft_deleted_contests_admin(
-    contest_service, mock_db, existing_contest
+    contest_service, mock_contest_repository, mock_user_repository, existing_contest
 ):
     """Test retrieving soft-deleted contests for admin user."""
 
     admin_id = uuid4()
     existing_contest.is_deleted = True
 
-    # Mock is_admin to return True
-    with patch("app.service.contest_service.is_admin", return_value=True):
-        mock_query = mock_db.query.return_value
-        mock_query.filter.return_value.distinct.return_value.count.return_value = 1
-        mock_query.filter.return_value.distinct.return_value.offset.return_value.limit.return_value.all.return_value = [
-            existing_contest
-        ]
+    # Mock repository to return paginated result
+    from app.repositories.dto import PaginatedResult
 
-        total, contests = await contest_service.get_soft_deleted_contests(admin_id)
+    mock_contest_repository.get_soft_deleted_contests.return_value = PaginatedResult(
+        total=1, items=[existing_contest]
+    )
+
+    # Mock user repository to return admin user
+    from app.utils.enums import UserRole
+
+    mock_admin_user = MagicMock()
+    mock_admin_user.role = UserRole.admin
+    mock_user_repository.get_user_or_raise.return_value = mock_admin_user
+
+    total, contests = await contest_service.get_soft_deleted_contests(admin_id)
 
     assert total == 1
     assert len(contests) == 1
     assert contests[0].id == existing_contest.id
+    mock_contest_repository.get_soft_deleted_contests.assert_called_once()
