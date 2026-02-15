@@ -10,7 +10,9 @@ from app.auth.dependencies import (
     get_current_user,
 )
 from app.core.clients.database import get_db
+from app.core.guards.team import TeamOperationGuard
 from app.core.logger import logger
+from app.repositories.team import TeamRepository
 from app.schema.contest import MessageResponse
 from app.schema.team import (
     ContestTeamResponse,
@@ -24,12 +26,18 @@ from app.schema.team import (
 from app.service.team_service import TeamService
 from app.service.user_service import UserService
 from app.utils.enums import TeamStatus
+from app.validators.team import TeamValidator
 
 router = APIRouter()
 
 
 def get_team_service(db: Session = Depends(get_db)) -> TeamService:
-    return TeamService(db)
+    return TeamService(
+        db=db,
+        repository=TeamRepository(db),
+        guard=TeamOperationGuard(db),
+        validator=TeamValidator(),
+    )
 
 
 @router.post(
