@@ -199,7 +199,7 @@ async def test_assign_instructors_to_contest_not_found(
 
     # Mock contest not found
     mock_contest_repository.get_contest_or_raise.side_effect = ContestNotFoundError(
-        contest_id
+        str(contest_id)
     )
 
     with pytest.raises(ContestNotFoundError):
@@ -218,13 +218,17 @@ async def test_assign_instructors_instructor_not_found(
 ):
     """Test assigning non-existent instructor to contest."""
     instructor_id = uuid4()
-    InstructorManageRequest(instructor_ids=[instructor_id])
+    request = InstructorManageRequest(instructor_ids=[instructor_id])
 
     # Mock contest found but instructor not found
     mock_contest_repository.get_contest_or_raise.return_value = mock_contest
     mock_user_repository.get_users_or_raise.side_effect = UserNotFoundError(
         instructor_id
     )
+    with pytest.raises(UserNotFoundError):
+        await contest_service.assign_instructors_to_contest(
+            mock_contest.id, request, mock_contest.created_by
+        )
 
 
 @pytest.mark.asyncio
@@ -390,7 +394,7 @@ async def test_get_contest_instructors_contest_not_found(
 
     # Mock contest not found
     mock_contest_repository.get_contest_or_raise.side_effect = ContestNotFoundError(
-        contest_id
+        str(contest_id)
     )
 
     with pytest.raises(ContestNotFoundError):

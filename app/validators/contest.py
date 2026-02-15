@@ -6,6 +6,7 @@ from app.exceptions.contest import (
     InstructorNotAssignedError,
     InvalidContestError,
 )
+from app.models.contest import ContestInstructor
 
 
 class ContestValidator:
@@ -54,11 +55,6 @@ class ContestValidator:
         Raises:
             InvalidContestError: If end_time <= start_time
         """
-        if start_time is None and end_time is not None:
-            raise InvalidContestError(
-                "start_time must be provided if end_time is provided"
-            )
-
         if end_time <= start_time:
             raise InvalidContestError("end_time must be after start_time")
 
@@ -157,7 +153,7 @@ class ContestValidator:
         """
         already_assigned = set(instructor_ids).intersection(set(new_instructor_ids))
         if already_assigned:
-            raise InstructorAlreadyAssignedError(str(already_assigned), "Contest")
+            raise InstructorAlreadyAssignedError(str(next(already_assigned)), "Contest")
 
     @staticmethod
     def validate_instructors_in_contest(
@@ -175,4 +171,29 @@ class ContestValidator:
         """
         not_assigned = set(instructor_ids).difference(set(existing_instructor_ids))
         if not_assigned:
-            raise InstructorNotAssignedError(str(not_assigned), "Contest")
+            raise InstructorNotAssignedError(str(next(iter(not_assigned))), "Contest")
+
+    @staticmethod
+    def validate_instructors_assigned(
+        contest_id: UUID,
+        instructor_ids: list[UUID],
+        assignments: list[ContestInstructor],
+    ) -> None:
+        """
+        Validate that all given instructors are assigned to the contest.
+
+        Args:
+            contest_id: ID of the contest
+            instructor_ids: List of instructor IDs to validate
+            assignments: List of ContestInstructor objects representing current assignments
+
+        Raises:
+            InstructorNotAssignedError: If any instructor is not assigned to the contest
+        """
+        found_instructor_ids = {assignment.instructor_id for assignment in assignments}
+        missing_instructor_ids = set(instructor_ids) - found_instructor_ids
+
+        if missing_instructor_ids:
+            # Raise exception for the first missing instructor ID
+            missing_id = next(iter(missing_instructor_ids))
+            raise InstructorNotAssignedError(str(missing_id), str(contest_id))

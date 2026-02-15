@@ -64,7 +64,7 @@ class TeamOperationGuard:
     ):
         """
         Validates:
-        - User has contest management permission or is the team leader
+        - User has contest management permission
         """
         ContestPermission.can_manage_contest(self.db, user_id=user_id, contest=contest)
 
@@ -99,14 +99,9 @@ class TeamOperationGuard:
         self,
         user_id: UUID,
         contest: Contest,
-        member_ids: list[UUID],
     ):
         """
         Validates:
         - User has contest management permission
-        - All new members are eligible students for the contest
         """
         ContestPermission.can_manage_contest(self.db, user_id=user_id, contest=contest)
-        TeamPermission.is_student_allowed_for_contest(
-            self.db, user_ids=member_ids, contest_id=contest.id
-        )

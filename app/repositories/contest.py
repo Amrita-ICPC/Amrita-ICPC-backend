@@ -4,7 +4,7 @@ from uuid import UUID
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app.exceptions.contest import ContestNotFoundError
+from app.exceptions.contest import ContestNotFoundError, InstructorNotAssignedError
 from app.models.contest import Contest, ContestInstructor
 from app.models.user import User
 from app.repositories.dto import (
@@ -14,6 +14,7 @@ from app.repositories.dto import (
     PaginationParams,
     UpdateContestData,
 )
+from app.utils.enums import ContestStatus
 
 
 class ContestRepository:
@@ -295,11 +296,11 @@ class ContestRepository:
 
         # Update status based on start/end times
         if now < contest.start_time:
-            contest.status = "SCHEDULED"
+            contest.status = ContestStatus.SCHEDULED
         elif contest.start_time <= now <= contest.end_time:
-            contest.status = "RUNNING"
+            contest.status = ContestStatus.RUNNING
         else:
-            contest.status = "FINISHED"
+            contest.status = ContestStatus.FINISHED
 
         self.db.flush()
 
@@ -348,11 +349,11 @@ class ContestRepository:
 
     def assign_instructor(self, contest_id: UUID, instructor_ids: list[UUID]) -> None:
         """
-        Assign a single instructor to a contest.
+        Assign instructors to a contest.
 
         Args:
             contest_id: ID of the contest
-            instructor_id: ID of the instructor to assign
+            instructor_ids: List of instructor IDs to assign
         """
         instructors = [
             ContestInstructor(contest_id=contest_id, instructor_id=instructor_id)
@@ -361,25 +362,37 @@ class ContestRepository:
         self.db.add_all(instructors)
         self.db.flush()
 
-    def remove_instructor(self, contest_id: UUID, instructor_id: UUID) -> None:
+    def remove_instructor(self, contest_id: UUID, instructor_ids: list[UUID]) -> None:
         """
-        Remove a single instructor from a contest.
+        Remove instructors from a contest.
 
         Args:
             contest_id: ID of the contest
-            instructor_id: ID of the instructor to remove
+            instructor_ids: List of instructor IDs to remove
         """
-        assignment = (
+        assignments = (
             self.db.query(ContestInstructor)
             .filter(
                 ContestInstructor.contest_id == contest_id,
-                ContestInstructor.instructor_id == instructor_id,
+                ContestInstructor.instructor_id.in_(instructor_ids),
             )
-            .first()
+            .all()
         )
-        if assignment:
+
+        # Check if all instructors were found
+        found_instructor_ids = {assignment.instructor_id for assignment in assignments}
+        missing_instructor_ids = set(instructor_ids) - found_instructor_ids
+
+        if missing_instructor_ids:
+            # Raise exception for the first missing instructor ID
+            missing_id = next(iter(missing_instructor_ids))
+            raise InstructorNotAssignedError(str(missing_id), str(contest_id))
+
+        # Delete all assignments
+        for assignment in assignments:
             self.db.delete(assignment)
-            self.db.flush()
+
+        self.db.flush()
 
     def is_instructor_assigned(self, contest_id: UUID, instructor_id: UUID) -> bool:
         """

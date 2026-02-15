@@ -127,6 +127,7 @@ class TeamPermission:
                 f"User {existing_participation} is already a member of a team in this contest"
             )
 
+    @staticmethod
     def can_update_team(
         self,
         db: Session,
@@ -142,3 +143,4 @@ class TeamPermission:
         """
         if user_id == team_leader_id:
             return
+        ContestPermission.can_manage_contest(self.db, user_id=user_id, contest=contest)

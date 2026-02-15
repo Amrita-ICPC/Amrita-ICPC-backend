@@ -236,10 +236,12 @@ class TeamService:
             team_data.status == TeamStatus.CONFIRMED
             and contest_team.team_status == TeamStatus.DRAFT
         ):
-            team_meber_count = self.repository.get_team_members_count_or_raise(team_id)
+            team_member_count = self.repository.get_team_members_count_or_raise(
+                team_id, contest_id
+            )
 
             self.validator.validate_team_size(
-                team_meber_count, contest, team_data.status
+                team_member_count, contest, team_data.status
             )
         updated_contest_team = self.repository.update_team(
             UpdateTeamData(
@@ -426,7 +428,9 @@ class TeamService:
         )
 
         # Validate team size
-        team_members_count = self.repository.get_team_members_count_or_raise(team_id)
+        team_members_count = self.repository.get_team_members_count_or_raise(
+            team_id, contest_id
+        )
         new_members_count = len(member_data.member_ids)
         self.validator.validate_team_size(
             team_members_count + new_members_count, contest, contest_team.team_status
@@ -498,7 +502,8 @@ class TeamService:
         self.guard.check_remove_team_members(
             user_id=updated_by, contest=contest, member_ids=member_data.member_ids
         )
-        team = self.repository.get_team_or_raise(team_id)
+        team = self.repository.get_team_or_raise(team_id, contest_id)
+        contest_team = self.repository.get_contest_team_or_raise(contest_id, team_id)
         team_members = self.repository.get_all_team_members(team_id=team_id)
         team_member_ids = {tm.user_id for tm in team_members}
         self.validator.validate_members_in_team(
@@ -506,17 +511,21 @@ class TeamService:
         )
         un_removed_ids: set = set(team_member_ids) - set(member_data.member_ids)
         self.validator.validate_team_size(
-            len(un_removed_ids), contest, team.team_status
+            len(un_removed_ids), contest, contest_team.team_status
         )
         self.validator.validate_leader_change(
-            team_member_ids, member_data.new_leader_id, team.leader_id
+            member_data.member_ids, member_data.new_leader_id, team.leader_id
         )
+        # Remove members using repository
         self.repository.remove_team_members(
             team_id=team_id, member_ids=member_data.member_ids
         )
-        self.repository.update_team(
-            team_id=team_id, leader_id=member_data.new_leader_id, updated_by=updated_by
+
+        # Update team leader (always call to handle leader changes)
+        update_data = UpdateTeamData(
+            team_id=team_id, leader_id=member_data.new_leader_id
         )
+        self.repository.update_team(update_data, team, contest_team)
         return await self.get_team_members(contest_id, team_id, updated_by)
 
     @cache_get(

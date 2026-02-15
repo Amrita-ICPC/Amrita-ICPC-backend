@@ -52,7 +52,7 @@ class UserRepository:
         """
         user = self.db.query(User).filter(User.id == user_id).first()
         if not user:
-            raise UserNotFoundError(user_id)
+            raise UserNotFoundError(str(user_id))
         return user
 
     def get_users_or_raise(self, user_ids: list[UUID]) -> list[User]:
@@ -66,7 +66,8 @@ class UserRepository:
         Raises:
             UserNotFoundError: If any user with the given IDs does not exist.
         """
-        users = self.db.query(User).filter(User.id.in_(user_ids)).all()
+        unique_user_ids = set(user_ids)
+        users = self.db.query(User).filter(User.id.in_(unique_user_ids)).all()
         if len(users) != len(user_ids):
             found_user_ids = {user.id for user in users}
             missing_user_ids = set(user_ids) - found_user_ids

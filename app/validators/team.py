@@ -1,4 +1,4 @@
-# app/validators/team_validator.py
+# app/validators/team.py
 from uuid import UUID
 
 from app.exceptions.team import (
@@ -78,14 +78,14 @@ class TeamValidator:
 
     @staticmethod
     def validate_leader_assignment(
-        leader_id: UUID,
+        leader_id: UUID | None,
         member_ids: list[UUID],
     ):
         """
         Raises if:
         - leader_id is not in member_ids when member_ids is not empty
         """
-        if member_ids and leader_id not in member_ids:
+        if leader_id is not None and member_ids and leader_id not in member_ids:
             raise InvalidLeaderAssignmentError("Leader must be one of the members.")
 
     @staticmethod
@@ -140,7 +140,7 @@ class TeamValidator:
 
     @staticmethod
     def validate_leader_change(
-        team_members_ids: list[UUID],
+        members_ids_to_remove: list[UUID],
         new_leader_id: UUID | None,
         current_leader_id: UUID,
     ) -> None:
@@ -155,12 +155,11 @@ class TeamValidator:
             InvalidLeaderAssignmentError: If the new leader is not in the team
         """
 
-        if current_leader_id in team_members_ids and new_leader_id is None:
+        if current_leader_id in members_ids_to_remove and new_leader_id is None:
             raise InvalidLeaderAssignmentError(
-                "Leader cannot be removed from the team."
+                "Current leader is being removed without a new leader assigned."
             )
-
-        if new_leader_id not in team_members_ids:
+        if new_leader_id is not None and new_leader_id in members_ids_to_remove:
             raise InvalidLeaderAssignmentError(
-                "New leader must be a member of the team."
+                "New leader cannot be one of the members being removed."
             )

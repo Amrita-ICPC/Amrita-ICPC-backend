@@ -1,4 +1,4 @@
-# app/domain/pagination.py
+# app/repositories/dto/pagination.py
 from dataclasses import dataclass
 
 
