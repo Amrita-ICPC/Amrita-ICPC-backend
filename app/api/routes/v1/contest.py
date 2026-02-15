@@ -136,7 +136,9 @@ async def get_all_contests(
 async def get_deleted_contests(
     current_user: Dict[str, Any] = Depends(get_current_user),
     search: str | None = Query(None, description="Search by contest name"),
-    status: ContestStatus | None = Query(None, description="Filter by contest status"),
+    contest_status: ContestStatus | None = Query(
+        None, description="Filter by contest status"
+    ),
     page: int = Query(1, ge=1, description="Page number (starts from 1)"),
     page_size: int = Query(10, ge=1, le=100, description="Number of contests per page"),
     db: Session = Depends(get_db),
@@ -147,7 +149,7 @@ async def get_deleted_contests(
 
     Args:
         search: Optional search term for contest name
-        status: Optional status to filter by
+        contest_status: Optional status to filter by
         page: Page number (starts from 1)
         page_size: Number of contests per page (max 100)
         db: Database session
@@ -160,7 +162,7 @@ async def get_deleted_contests(
     user_id = (await UserService.get_user_by_keycloak_id(db, kc_id)).id
     skip = (page - 1) * page_size
     total, contests = await service.get_soft_deleted_contests(
-        user_id, search, status, skip, page_size
+        user_id, search, contest_status, skip, page_size
     )
     return ContestListResponse(total=total, contests=contests)
 

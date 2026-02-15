@@ -153,7 +153,9 @@ class ContestValidator:
         """
         already_assigned = set(instructor_ids).intersection(set(new_instructor_ids))
         if already_assigned:
-            raise InstructorAlreadyAssignedError(str(next(already_assigned)), "Contest")
+            raise InstructorAlreadyAssignedError(
+                str(next(iter(already_assigned))), "Contest"
+            )
 
     @staticmethod
     def validate_instructors_in_contest(

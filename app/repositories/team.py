@@ -96,10 +96,11 @@ class TeamRepository:
         Raises:
             UserNotFoundError: If any user with the given IDs does not exist.
         """
-        users = self.db.query(User).filter(User.id.in_(user_ids)).all()
+        unique_ids = set(user_ids)
+        users = self.db.query(User).filter(User.id.in_(unique_ids)).all()
         if len(users) != len(user_ids):
             found_user_ids = {user.id for user in users}
-            missing_user_ids = set(user_ids) - found_user_ids
+            missing_user_ids = unique_ids - found_user_ids
             raise UserNotFoundError(str(next(iter(missing_user_ids))))
         return users
 
@@ -139,7 +140,7 @@ class TeamRepository:
         team = self.db.query(Team).filter(Team.id == team_id).first()
         if not team:
             raise TeamNotFoundError(
-                str(team_id), str(contest_id) if contest_id else None
+                str(team_id), str(contest_id) if contest_id else "unknown"
             )
         return team
 
@@ -186,7 +187,7 @@ class TeamRepository:
         team = self.db.query(Team).filter(Team.id == team_id).first()
         if not team:
             raise TeamNotFoundError(
-                str(team_id), str(contest_id) if contest_id else None
+                str(team_id), str(contest_id) if contest_id else "unknown"
             )
         members = (
             self.db.query(User)
@@ -213,7 +214,7 @@ class TeamRepository:
         team = self.db.query(Team).filter(Team.id == team_id).first()
         if not team:
             raise TeamNotFoundError(
-                str(team_id), str(contest_id) if contest_id else None
+                str(team_id), str(contest_id) if contest_id else "unknown"
             )
         member_count = (
             self.db.query(TeamUser).filter(TeamUser.team_id == team_id).count()

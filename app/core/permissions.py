@@ -129,7 +129,6 @@ class TeamPermission:
 
     @staticmethod
     def can_update_team(
-        self,
         db: Session,
         *,
         user_id: UUID,
@@ -143,4 +142,4 @@ class TeamPermission:
         """
         if user_id == team_leader_id:
             return
-        ContestPermission.can_manage_contest(self.db, user_id=user_id, contest=contest)
+        ContestPermission.can_manage_contest(db, user_id=user_id, contest=contest)

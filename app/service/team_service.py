@@ -499,15 +499,13 @@ class TeamService:
         """
         # Check permission and get team
         contest = self.repository.get_contest_or_raise(contest_id)
-        self.guard.check_remove_team_members(
-            user_id=updated_by, contest=contest, member_ids=member_data.member_ids
-        )
+        self.guard.check_remove_team_members(user_id=updated_by, contest=contest)
         team = self.repository.get_team_or_raise(team_id, contest_id)
         contest_team = self.repository.get_contest_team_or_raise(contest_id, team_id)
         team_members = self.repository.get_all_team_members(team_id=team_id)
         team_member_ids = {tm.user_id for tm in team_members}
         self.validator.validate_members_in_team(
-            team_member_ids, member_data.member_ids, team.name
+            team_member_ids, set(member_data.member_ids), team.name
         )
         un_removed_ids: set = set(team_member_ids) - set(member_data.member_ids)
         self.validator.validate_team_size(

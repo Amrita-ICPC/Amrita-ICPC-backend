@@ -349,7 +349,7 @@ class TestRemoveTeamMemberPermissions:
             )
 
         mock_guard.check_remove_team_members.assert_called_once_with(
-            user_id=user_id, contest=mock_contest, member_ids=member_ids
+            user_id=user_id, contest=mock_contest
         )
 
 
@@ -427,7 +427,7 @@ class TestRemoveTeamMemberMemberValidation:
             )
 
         mock_validator.validate_members_in_team.assert_called_once_with(
-            {existing_member, member_to_remove}, [member_to_remove], "Team Alpha"
+            {existing_member, member_to_remove}, {member_to_remove}, "Team Alpha"
         )
 
 
@@ -482,6 +482,7 @@ class TestRemoveTeamMemberSizeValidation:
         mock_repository,
         mock_validator,
         mock_contest,
+        mock_contest_team,
         mock_team,
         contest_id,
         user_id,
@@ -503,9 +504,6 @@ class TestRemoveTeamMemberSizeValidation:
 
         mock_repository.get_contest_or_raise.return_value = mock_contest
         mock_repository.get_team_or_raise.return_value = mock_team
-        mock_contest_team = MagicMock()
-        mock_contest_team.team_status = TeamStatus.DRAFT
-        mock_contest_team.team = mock_team
         mock_repository.get_contest_team_or_raise.return_value = mock_contest_team
         mock_repository.get_all_team_members.return_value = existing_members
 
