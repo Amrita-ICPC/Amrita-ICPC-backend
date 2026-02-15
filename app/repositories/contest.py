@@ -355,12 +355,27 @@ class ContestRepository:
             contest_id: ID of the contest
             instructor_ids: List of instructor IDs to assign
         """
+        existing_assignments = (
+            self.db.query(ContestInstructor)
+            .filter(
+                ContestInstructor.contest_id == contest_id,
+                ContestInstructor.instructor_id.in_(instructor_ids),
+            )
+            .all()
+        )
+        existing_instructor_ids = {
+            assignment.instructor_id for assignment in existing_assignments
+        }
+        new_instructor_ids = [
+            iid for iid in instructor_ids if iid not in existing_instructor_ids
+        ]
         instructors = [
             ContestInstructor(contest_id=contest_id, instructor_id=instructor_id)
-            for instructor_id in instructor_ids
+            for instructor_id in new_instructor_ids
         ]
-        self.db.add_all(instructors)
-        self.db.flush()
+        if instructors:
+            self.db.add_all(instructors)
+            self.db.flush()
 
     def remove_instructor(self, contest_id: UUID, instructor_ids: list[UUID]) -> None:
         """

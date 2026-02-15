@@ -129,7 +129,9 @@ class ContestService:
         return ContestResponse.model_validate(db_contest)
 
     @cache_get(
-        key_builder=lambda self, contest_id, user_id: f"contest:{contest_id}",
+        key_builder=lambda self,
+        contest_id,
+        user_id: f"contest:{contest_id}:user:{user_id}",
         ttl=300,
     )
     async def get_contest_by_id(
@@ -244,27 +246,33 @@ class ContestService:
 
         # Validate dates if being updated
         new_start = (
-            contest_data.start_time if contest_data.start_time else contest.start_time
+            contest_data.start_time
+            if contest_data.start_time is not None
+            else contest.start_time
         )
-        new_end = contest_data.end_time if contest_data.end_time else contest.end_time
+        new_end = (
+            contest_data.end_time
+            if contest_data.end_time is not None
+            else contest.end_time
+        )
         new_reg_start = (
             contest_data.registration_start
-            if contest_data.registration_start
+            if contest_data.registration_start is not None
             else contest.registration_start
         )
         new_reg_end = (
             contest_data.registration_end
-            if contest_data.registration_end
+            if contest_data.registration_end is not None
             else contest.registration_end
         )
         new_min_size = (
             contest_data.min_team_size
-            if contest_data.min_team_size
+            if contest_data.min_team_size is not None
             else contest.min_team_size
         )
         new_max_size = (
             contest_data.max_team_size
-            if contest_data.max_team_size
+            if contest_data.max_team_size is not None
             else contest.max_team_size
         )
 
@@ -497,7 +505,7 @@ class ContestService:
 
         # Publish contest
         self.repository.publish_contest(contest, user_id)
-        logger.info(f"Contest {contest_id} published by user {user_id}")
+        logger.info(f"Contest {contest_id} published ")
 
     @cache_delete(
         key_builder=lambda self, contest_id, user_id: [
@@ -521,8 +529,6 @@ class ContestService:
 
         # Check if already soft-deleted
         if contest.is_deleted:
-            from app.exceptions.contest import ContestNotFoundError
-
             raise ContestNotFoundError(str(contest_id))
 
         # Check permissions
@@ -530,7 +536,7 @@ class ContestService:
 
         # Soft delete contest
         self.repository.soft_delete_contest(contest, user_id)
-        logger.info(f"Contest {contest_id} soft deleted by user {user_id}")
+        logger.info(f"Contest {contest_id} soft deleted")
 
     @cache_delete(
         key_builder=lambda self, contest_id, user_id: [
@@ -561,7 +567,7 @@ class ContestService:
         # Restore contest if it was soft-deleted
         if contest.is_deleted:
             restored_contest = self.repository.restore_contest(contest)
-            logger.info(f"Contest {contest_id} restored by user {user_id}")
+            logger.info(f"Contest {contest_id} restored")
             return ContestResponse.model_validate(restored_contest)
 
         return ContestResponse.model_validate(contest)
