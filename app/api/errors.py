@@ -14,6 +14,9 @@ from app.exceptions.contest import (
     InstructorNotFoundError,
     InvalidContestError,
 )
+from app.exceptions.team import (
+    TeamNotFoundError,
+)
 
 
 def setup_exception_handlers(app: FastAPI) -> None:
@@ -146,6 +149,14 @@ def setup_exception_handlers(app: FastAPI) -> None:
         request: Request, exc: InstructorNotFoundError
     ):
         logger.warning(f"Instructor not found: {exc.message}")
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail, "message": exc.message},
+        )
+
+    @app.exception_handler(TeamNotFoundError)
+    async def team_not_found_handler(request: Request, exc: TeamNotFoundError):
+        logger.warning(f"Team not found: {exc.message}")
         return JSONResponse(
             status_code=exc.status_code,
             content={"detail": exc.detail, "message": exc.message},
