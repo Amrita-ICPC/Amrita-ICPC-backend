@@ -1,25 +1,18 @@
-from datetime import datetime, timezone
 from typing import List
 from uuid import UUID
 
-from sqlalchemy import or_
-from sqlalchemy.orm import Session
-
 from app.core.cache.decorators import cache_delete, cache_get, cache_set
+from app.core.guards.contest import ContestOperationGuard
 from app.core.logger import logger
-from app.core.permissions import ContestPermission, is_admin
-from app.exceptions.contest import (
-    ContestNotFoundError,
-    InstructorAlreadyAssignedError,
-    InstructorNotAssignedError,
-    InvalidContestError,
+from app.exceptions.contest import ContestNotFoundError
+from app.repositories.contest import ContestRepository
+from app.repositories.dto import (
+    ContestFilters,
+    CreateContestData,
+    PaginationParams,
+    UpdateContestData,
 )
-from app.exceptions.user import UserNotFoundError
-from app.models.contest import (
-    Contest,
-    ContestInstructor,
-)
-from app.models.user import User
+from app.repositories.user import UserRepository
 from app.schema.contest import (
     ContestCreate,
     ContestResponse,
@@ -29,14 +22,56 @@ from app.schema.contest import (
     InstructorManageRequest,
     InstructorResponse,
 )
-from app.utils.enums import ContestStatus
+from app.utils.enums import ContestStatus, UserRole
+from app.validators.contest import ContestValidator
 
 
 class ContestService:
-    """Service for contest database operations."""
+    """Service layer for contest management operations.
 
-    def __init__(self, db: Session):
-        self.db = db
+    This service orchestrates contest-related business logic by coordinating between
+    the repository layer (data access), guard layer (permissions), and validator
+    layer (business rules). It implements a clean architecture pattern with clear
+    separation of concerns.
+
+    Architecture:
+        - Repository Pattern: All database operations delegated to ContestRepository
+        - Guard Pattern: Permission checks centralized in ContestOperationGuard
+        - Validator Pattern: Business rule validation in ContestValidator
+        - No direct database access: Service layer remains database-agnostic
+
+    Key Responsibilities:
+        - Orchestrate contest CRUD operations (create, read, update, delete)
+        - Manage contest lifecycle (publish, soft delete, restore)
+        - Manage contest instructors (assign, remove, list)
+        - Enforce permission checks before operations
+        - Validate business rules (dates, team sizes, etc.)
+        - Transform repository data to API response schemas
+        - Coordinate cache invalidation for contest-related data
+
+    Dependencies:
+        - ContestRepository: Handles all database queries and mutations
+        - UserRepository: Handles user-related database queries
+        - ContestOperationGuard: Validates user permissions for operations
+        - ContestValidator: Enforces business rules and constraints
+
+    Cache Strategy:
+        - Contest data cached with TTL of 300 seconds
+        - Cache keys include user_id for permission-aware caching
+        - Cache invalidated on contest mutations (create, update, delete)
+    """
+
+    def __init__(
+        self,
+        repository: ContestRepository,
+        user_repository: UserRepository,
+        guard: ContestOperationGuard,
+        validator: ContestValidator,
+    ):
+        self.repository = repository
+        self.user_repository = user_repository
+        self.guard = guard
+        self.validator = validator
 
     @cache_delete(
         key_builder=lambda self, contest, created_by: "contests:*",
@@ -58,8 +93,15 @@ class ContestService:
 
         Returns:
             Created contest object
+
+        Raises:
+            InvalidContestError: If contest data is invalid
         """
-        db_contest = Contest(
+        # Validate contest data
+        self.validator.validate_contest_dates(contest.start_time, contest.end_time)
+
+        # Create contest data DTO
+        contest_data = CreateContestData(
             name=contest.name,
             description=contest.description,
             image=contest.image,
@@ -75,9 +117,9 @@ class ContestService:
             scoring_type=contest.scoring_type,
             created_by=created_by,
         )
-        self.db.add(db_contest)
-        self.db.flush()
-        self.db.refresh(db_contest)
+
+        # Create contest via repository
+        db_contest = self.repository.create_contest(contest_data)
         return ContestResponse.model_validate(db_contest)
 
     @cache_get(
@@ -98,14 +140,16 @@ class ContestService:
 
         Raises:
             ContestNotFoundError: If contest not found
+            PermissionDeniedError: If user lacks read permission
         """
-        contest = self.db.query(Contest).filter(Contest.id == contest_id).first()
-        if not contest or contest.is_deleted:
+        contest = self.repository.get_contest_or_raise(contest_id)
+
+        # Check if contest is soft-deleted
+        if contest.is_deleted:
             raise ContestNotFoundError(str(contest_id))
 
-        ContestPermission.can_manage_contest(
-            self.db, user_id=user_id, contest=contest
-        )  # Permission check for contest details
+        # Check permissions
+        self.guard.check_read_contest(user_id=user_id, contest=contest)
 
         return ContestResponse.model_validate(contest)
 
@@ -142,32 +186,23 @@ class ContestService:
         Returns:
             Tuple of (total count, contests list)
         """
-        base_query = self.db.query(Contest)
-        if not is_admin(self.db, user_id):
-            base_query = base_query.outerjoin(ContestInstructor).filter(
-                or_(
-                    Contest.created_by == user_id,
-                    ContestInstructor.instructor_id == user_id,
-                )
-            )
+        # Check if user is admin
+        user_is_admin = (
+            self.user_repository.get_user_by_id(user_id).role == UserRole.admin
+        )
+        # Create filter and pagination objects
+        filters = ContestFilters(
+            search_term=search_term, status=status, is_public=is_public
+        )
+        pagination = PaginationParams(skip=skip, limit=limit)
 
-        base_query = base_query.filter(Contest.is_deleted.is_(False))
+        # Get contests from repository
+        result = self.repository.get_contests_with_filters(
+            user_id, user_is_admin, filters, pagination
+        )
 
-        # Apply filters
-        if search_term:
-            base_query = base_query.filter(Contest.name.ilike(f"%{search_term}%"))
-
-        if status:
-            base_query = base_query.filter(Contest.status == status)
-
-        if is_public is not None:
-            base_query = base_query.filter(Contest.is_public == is_public)
-
-        base_query = base_query.distinct()
-        total = base_query.count()
-        contests = base_query.offset(skip).limit(limit).all()
-        return total, [
-            ContestSummaryResponse.model_validate(contest) for contest in contests
+        return result.total, [
+            ContestSummaryResponse.model_validate(contest) for contest in result.items
         ]
 
     @cache_delete(
@@ -197,25 +232,38 @@ class ContestService:
             PermissionDeniedError: If user doesn't have permission
             InvalidContestError: If update data is invalid
         """
-        contest = self.db.query(Contest).filter(Contest.id == contest_id).first()
-        if not contest:
-            raise ContestNotFoundError(str(contest_id))
+        contest = self.repository.get_contest_or_raise(contest_id)
 
-        ContestPermission.can_manage_contest(self.db, user_id=user_id, contest=contest)
+        # Check permissions
+        self.guard.check_manage_contest(user_id=user_id, contest=contest)
 
-        update_data = contest_data.model_dump(exclude_unset=True)
-        new_start = update_data.get("start_time", contest.start_time)
-        new_end = update_data.get("end_time", contest.end_time)
-        if new_end <= new_start:
-            raise InvalidContestError("end_time must be after start_time")
+        # Validate dates if being updated
+        new_start = (
+            contest_data.start_time if contest_data.start_time else contest.start_time
+        )
+        new_end = contest_data.end_time if contest_data.end_time else contest.end_time
+        self.validator.validate_contest_dates(new_start, new_end)
 
-        for field, value in update_data.items():
-            setattr(contest, field, value)
+        # Create update data DTO with manual field mapping
+        update_data = UpdateContestData(
+            name=contest_data.name,
+            description=contest_data.description,
+            image=contest_data.image,
+            is_public=contest_data.is_public,
+            start_time=contest_data.start_time,
+            end_time=contest_data.end_time,
+            registration_start=contest_data.registration_start,
+            registration_end=contest_data.registration_end,
+            max_teams=contest_data.max_teams,
+            min_team_size=contest_data.min_team_size,
+            max_team_size=contest_data.max_team_size,
+            rules=contest_data.rules,
+            scoring_type=contest_data.scoring_type,
+        )
 
-        contest.updated_by = user_id
-        self.db.flush()
-        self.db.refresh(contest)
-        return ContestResponse.model_validate(contest)
+        # Update contest via repository
+        updated_contest = self.repository.update_contest(contest, update_data, user_id)
+        return ContestResponse.model_validate(updated_contest)
 
     @cache_delete(
         key_builder=lambda self, contest_id, user_id: [
@@ -238,15 +286,13 @@ class ContestService:
             ContestNotFoundError: If contest not found
             PermissionDeniedError: If user doesn't have permission
         """
-        contest = self.db.query(Contest).filter(Contest.id == contest_id).first()
-        if not contest:
-            raise ContestNotFoundError(str(contest_id))
+        contest = self.repository.get_contest_or_raise(contest_id)
 
-        ContestPermission.can_manage_contest(self.db, user_id=user_id, contest=contest)
+        # Check permissions
+        self.guard.check_manage_contest(user_id=user_id, contest=contest)
 
         response = ContestResponse.model_validate(contest)
-        self.db.delete(contest)
-        self.db.flush()
+        self.repository.delete_contest(contest)
 
         return response
 
@@ -273,50 +319,31 @@ class ContestService:
             InstructorAlreadyAssignedError: If any instructor is already assigned
             PermissionDeniedError: If user doesn't have permission
         """
-        # Check if contest exists
-        contest = self.db.query(Contest).filter(Contest.id == contest_id).first()
-        if not contest:
-            logger.error(f"Contest {contest_id} not found")
-            raise ContestNotFoundError(str(contest_id))
+        # Check if contest exists and user has permission
+        contest = self.repository.get_contest_or_raise(contest_id)
+        self.user_repository.get_users_or_raise(
+            request.instructor_ids
+        )  # Validate instructor IDs
+        self.guard.check_assign_instructors(
+            user_id=user_id, contest=contest, instructor_ids=request.instructor_ids
+        )
 
-        # Check permissions
-        ContestPermission.can_manage_contest(self.db, user_id=user_id, contest=contest)
+        # Validate instructors and assign
+        existing_instructors = self.repository.get_all_instructors_for_contest(
+            contest_id
+        )
+        existing_instructor_ids = [instructor.id for instructor in existing_instructors]
 
-        for instructor_id in request.instructor_ids:
-            # Check if user exists
-            instructor = self.db.query(User).filter(User.id == instructor_id).first()
-            if not instructor:
-                logger.error(f"Instructor {instructor_id} not found")
-                raise UserNotFoundError(str(instructor_id))
-
-            # Check if instructor is already assigned
-            existing_assignment = (
-                self.db.query(ContestInstructor)
-                .filter(
-                    ContestInstructor.contest_id == contest_id,
-                    ContestInstructor.instructor_id == instructor_id,
-                )
-                .first()
-            )
-            if existing_assignment:
-                logger.warning(
-                    f"Instructor {instructor_id} is already assigned to contest {contest_id}"
-                )
-                raise InstructorAlreadyAssignedError(
-                    str(instructor_id), str(contest_id)
-                )
+        self.validator.validate_instructors_not_in_contest(
+            existing_instructor_ids, request.instructor_ids
+        )
 
         # Assign instructors
-        for instructor_id in request.instructor_ids:
-            assignment = ContestInstructor(
-                contest_id=contest_id, instructor_id=instructor_id
-            )
-            self.db.add(assignment)
-            logger.info(
-                f"Assigned instructor {instructor_id} to contest {contest_id} by user {user_id}"
-            )
-
-        self.db.flush()
+        self.repository.assign_instructor(contest_id, request.instructor_ids)
+        logger.info(
+            f"Assigned {len(request.instructor_ids)} instructor(s) to contest {contest_id} "
+            f"by user {user_id}: {request.instructor_ids}"
+        )
 
     @cache_delete(
         key_builder=lambda self, contest_id, request, user_id: [
@@ -340,37 +367,29 @@ class ContestService:
             InstructorNotAssignedError: If any instructor is not assigned to the contest
             PermissionDeniedError: If user doesn't have permission
         """
-        # Check if contest exists
-        contest = self.db.query(Contest).filter(Contest.id == contest_id).first()
-        if not contest:
-            logger.error(f"Contest {contest_id} not found")
-            raise ContestNotFoundError(str(contest_id))
+        # Check if contest exists and user has permission
+        contest = self.repository.get_contest_or_raise(contest_id)
+        self.guard.check_remove_instructors(
+            user_id=user_id, contest=contest, instructor_ids=request.instructor_ids
+        )
 
-        # Check permissions
-        ContestPermission.can_manage_contest(self.db, user_id=user_id, contest=contest)
+        self.user_repository.get_users_or_raise(
+            request.instructor_ids
+        )  # Validate instructor IDs
 
         # Validate assignments and remove
-        for instructor_id in request.instructor_ids:
-            assignment = (
-                self.db.query(ContestInstructor)
-                .filter(
-                    ContestInstructor.contest_id == contest_id,
-                    ContestInstructor.instructor_id == instructor_id,
-                )
-                .first()
-            )
-            if not assignment:
-                logger.error(
-                    f"Instructor {instructor_id} is not assigned to contest {contest_id}"
-                )
-                raise InstructorNotAssignedError(str(instructor_id), str(contest_id))
+        instructors = self.repository.get_all_instructors_for_contest(contest_id)
+        existing_instructor_ids = {instructor.id for instructor in instructors}
 
-            self.db.delete(assignment)
-            logger.info(
-                f"Removed instructor {instructor_id} from contest {contest_id} by user {user_id}"
-            )
-
-        self.db.flush()
+        self.validator.validate_instructors_in_contest(
+            set(request.instructor_ids), existing_instructor_ids
+        )
+        # Remove instructors
+        self.repository.remove_instructor(contest_id, request.instructor_ids)
+        logger.info(
+            f"Removed {len(request.instructor_ids)} instructor(s) from contest {contest_id} "
+            f"by user {user_id}: {request.instructor_ids}"
+        )
 
     @cache_get(
         key_builder=lambda self,
@@ -399,25 +418,14 @@ class ContestService:
             ContestNotFoundError: If contest not found
             PermissionDeniedError: If user cannot manage the contest
         """
-        # Check if contest exists
-        contest = self.db.query(Contest).filter(Contest.id == contest_id).first()
-        if not contest:
-            logger.error(f"Contest {contest_id} not found")
-            raise ContestNotFoundError(str(contest_id))
-
-        ContestPermission.can_manage_contest(
-            self.db, user_id=user_id, contest=contest
-        )  # Permission check for instructors list
+        # Check if contest exists and user has permission
+        contest = self.repository.get_contest_or_raise(contest_id)
+        self.guard.check_manage_contest(user_id=user_id, contest=contest)
 
         # Get instructors with pagination
-        base_query = (
-            self.db.query(User)
-            .join(ContestInstructor, User.id == ContestInstructor.instructor_id)
-            .filter(ContestInstructor.contest_id == contest_id)
+        total, instructors = self.repository.get_contest_instructors_paginated(
+            contest_id, skip, limit
         )
-
-        total = base_query.count()
-        instructors = base_query.offset(skip).limit(limit).all()
 
         instructor_responses = [
             InstructorResponse.model_validate(instructor) for instructor in instructors
@@ -426,9 +434,7 @@ class ContestService:
         # Get creator information
         creator = None
         if contest.created_by:
-            creator_user = (
-                self.db.query(User).filter(User.id == contest.created_by).first()
-            )
+            creator_user = self.repository.get_creator(contest.created_by)
             if creator_user:
                 creator = InstructorResponse.model_validate(creator_user)
 
@@ -458,25 +464,13 @@ class ContestService:
             ContestNotFoundError: If contest not found
             PermissionDeniedError: If user doesn't have permission
         """
-        contest = self.db.query(Contest).filter(Contest.id == contest_id).first()
-        if not contest:
-            raise ContestNotFoundError(str(contest_id))
+        contest = self.repository.get_contest_or_raise(contest_id)
 
-        ContestPermission.can_manage_contest(self.db, user_id=user_id, contest=contest)
+        # Check permissions
+        self.guard.check_manage_contest(user_id=user_id, contest=contest)
 
-        now = datetime.now(timezone.utc)
-        contest.published_at = now
-        contest.published_by = user_id
-
-        # Update status based on start/end times
-        if now < contest.start_time:
-            contest.status = ContestStatus.SCHEDULED
-        elif contest.start_time <= now <= contest.end_time:
-            contest.status = ContestStatus.RUNNING
-        else:
-            contest.status = ContestStatus.FINISHED
-
-        self.db.flush()
+        # Publish contest
+        self.repository.publish_contest(contest, user_id)
         logger.info(f"Contest {contest_id} published by user {user_id}")
 
     @cache_delete(
@@ -497,17 +491,19 @@ class ContestService:
             ContestNotFoundError: If contest not found
             PermissionDeniedError: If user doesn't have permission
         """
-        contest = self.db.query(Contest).filter(Contest.id == contest_id).first()
-        if not contest or contest.is_deleted:
+        contest = self.repository.get_contest_or_raise(contest_id)
+
+        # Check if already soft-deleted
+        if contest.is_deleted:
+            from app.exceptions.contest import ContestNotFoundError
+
             raise ContestNotFoundError(str(contest_id))
 
-        ContestPermission.can_manage_contest(self.db, user_id=user_id, contest=contest)
+        # Check permissions
+        self.guard.check_manage_contest(user_id=user_id, contest=contest)
 
-        contest.is_deleted = True
-        contest.deleted_at = datetime.now(timezone.utc)
-        contest.deleted_by = user_id
-
-        self.db.flush()
+        # Soft delete contest
+        self.repository.soft_delete_contest(contest, user_id)
         logger.info(f"Contest {contest_id} soft deleted by user {user_id}")
 
     @cache_delete(
@@ -531,20 +527,16 @@ class ContestService:
             ContestNotFoundError: If contest not found (even if deleted)
             PermissionDeniedError: If user doesn't have permission
         """
-        contest = self.db.query(Contest).filter(Contest.id == contest_id).first()
-        # Find the contest, even if it is soft deleted.
-        if not contest:
-            raise ContestNotFoundError(str(contest_id))
+        contest = self.repository.get_contest_or_raise(contest_id)
 
-        ContestPermission.can_manage_contest(self.db, user_id=user_id, contest=contest)
+        # Check permissions
+        self.guard.check_manage_contest(user_id=user_id, contest=contest)
 
+        # Restore contest if it was soft-deleted
         if contest.is_deleted:
-            contest.is_deleted = False
-            contest.deleted_at = None
-            contest.deleted_by = None
-            self.db.flush()
-            self.db.refresh(contest)
+            restored_contest = self.repository.restore_contest(contest)
             logger.info(f"Contest {contest_id} restored by user {user_id}")
+            return ContestResponse.model_validate(restored_contest)
 
         return ContestResponse.model_validate(contest)
 
@@ -578,27 +570,19 @@ class ContestService:
         Returns:
             Tuple of (total count, contests list)
         """
-        base_query = self.db.query(Contest)
-        if not is_admin(self.db, user_id):
-            base_query = base_query.outerjoin(ContestInstructor).filter(
-                or_(
-                    Contest.created_by == user_id,
-                    ContestInstructor.instructor_id == user_id,
-                )
-            )
+        # Check if user is admin
+        user = self.user_repository.get_user_or_raise(user_id)
+        user_is_admin = user.role == UserRole.admin
 
-        base_query = base_query.filter(Contest.is_deleted.is_(True))
+        # Create filter and pagination objects
+        filters = ContestFilters(search_term=search_term, status=status)
+        pagination = PaginationParams(skip=skip, limit=limit)
 
-        # Apply filters
-        if search_term:
-            base_query = base_query.filter(Contest.name.ilike(f"%{search_term}%"))
+        # Get soft-deleted contests from repository
+        result = self.repository.get_soft_deleted_contests(
+            user_id, user_is_admin, filters, pagination
+        )
 
-        if status:
-            base_query = base_query.filter(Contest.status == status)
-
-        base_query = base_query.distinct()
-        total = base_query.count()
-        contests = base_query.offset(skip).limit(limit).all()
-        return total, [
-            ContestSummaryResponse.model_validate(contest) for contest in contests
+        return result.total, [
+            ContestSummaryResponse.model_validate(contest) for contest in result.items
         ]

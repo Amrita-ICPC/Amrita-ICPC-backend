@@ -15,8 +15,6 @@ from app.exceptions.contest import (
 from app.exceptions.user import UserNotFoundError
 
 # Models imported to ensure SQLAlchemy mapper registry is populated
-from app.models.contest import Contest, ContestInstructor
-from app.models.user import User
 from app.schema.contest import InstructorManageRequest
 from app.utils.enums import UserRole
 
@@ -30,7 +28,40 @@ def mock_db():
 
 
 @pytest.fixture
-def contest_service(mock_db):
+def mock_contest_repository():
+    from app.repositories.contest import ContestRepository
+
+    mock = MagicMock(spec=ContestRepository)
+    # Add db attribute for is_admin checks
+    mock.db = MagicMock(spec=Session)
+    return mock
+
+
+@pytest.fixture
+def mock_user_repository():
+    from app.repositories.user import UserRepository
+
+    return MagicMock(spec=UserRepository)
+
+
+@pytest.fixture
+def mock_guard():
+    from app.core.guards.contest import ContestOperationGuard
+
+    return MagicMock(spec=ContestOperationGuard)
+
+
+@pytest.fixture
+def mock_validator():
+    from app.validators.contest import ContestValidator
+
+    return MagicMock(spec=ContestValidator)
+
+
+@pytest.fixture
+def contest_service(
+    mock_contest_repository, mock_user_repository, mock_guard, mock_validator
+):
     # Patch the cache decorators to avoid redis connection issues
     with (
         patch(
@@ -48,7 +79,9 @@ def contest_service(mock_db):
     ):
         from app.service.contest_service import ContestService
 
-        service = ContestService(mock_db)
+        service = ContestService(
+            mock_contest_repository, mock_user_repository, mock_guard, mock_validator
+        )
         yield service
 
 
@@ -118,41 +151,46 @@ def mock_creator():
 
 @pytest.mark.asyncio
 async def test_assign_instructors_to_contest_success(
-    contest_service: "ContestService", mock_db, mock_contest, mock_instructor
+    contest_service: "ContestService",
+    mock_contest_repository,
+    mock_user_repository,
+    mock_guard,
+    mock_validator,
+    mock_contest,
+    mock_instructor,
 ):
     """Test successful assignment of instructors to contest."""
     user_id = mock_contest.created_by
     request = InstructorManageRequest(instructor_ids=[mock_instructor.id])
 
-    # Setup query mocks
-    def query_side_effect(model):
-        mock = MagicMock()
-        if model is Contest:
-            mock.filter.return_value.first.return_value = mock_contest
-        elif model is User:
-            mock.filter.return_value.first.return_value = mock_instructor
-        elif model is ContestInstructor:
-            # No existing assignment
-            mock.filter.return_value.first.return_value = None
-        return mock
+    # Mock repository methods
+    mock_contest_repository.get_contest_or_raise.return_value = mock_contest
+    mock_user_repository.get_users_or_raise.return_value = [mock_instructor]
+    mock_contest_repository.get_all_instructors_for_contest.return_value = []
+    mock_validator.validate_instructors_not_in_contest.return_value = None
 
-    mock_db.query.side_effect = query_side_effect
+    await contest_service.assign_instructors_to_contest(
+        mock_contest.id, request, user_id
+    )
 
-    with patch(
-        "app.service.contest_service.ContestPermission.can_manage_contest"
-    ) as mock_perm:
-        await contest_service.assign_instructors_to_contest(
-            mock_contest.id, request, user_id
-        )
-        mock_perm.assert_called_once()
-
-    mock_db.add.assert_called_once()
-    mock_db.flush.assert_called_once()
+    mock_guard.check_assign_instructors.assert_called_once()
+    mock_user_repository.get_users_or_raise.assert_called_once_with(
+        [mock_instructor.id]
+    )
+    mock_contest_repository.get_all_instructors_for_contest.assert_called_once_with(
+        mock_contest.id
+    )
+    mock_validator.validate_instructors_not_in_contest.assert_called_once_with(
+        [], [mock_instructor.id]
+    )
+    mock_contest_repository.assign_instructor.assert_called_once_with(
+        mock_contest.id, [mock_instructor.id]
+    )
 
 
 @pytest.mark.asyncio
 async def test_assign_instructors_to_contest_not_found(
-    contest_service: "ContestService", mock_db, mock_instructor
+    contest_service: "ContestService", mock_contest_repository, mock_instructor
 ):
     """Test assigning instructors to non-existent contest."""
     contest_id = uuid4()
@@ -160,13 +198,9 @@ async def test_assign_instructors_to_contest_not_found(
     request = InstructorManageRequest(instructor_ids=[mock_instructor.id])
 
     # Mock contest not found
-    def query_side_effect(model):
-        mock = MagicMock()
-        if model is Contest:
-            mock.filter.return_value.first.return_value = None
-        return mock
-
-    mock_db.query.side_effect = query_side_effect
+    mock_contest_repository.get_contest_or_raise.side_effect = ContestNotFoundError(
+        contest_id
+    )
 
     with pytest.raises(ContestNotFoundError):
         await contest_service.assign_instructors_to_contest(
@@ -176,183 +210,169 @@ async def test_assign_instructors_to_contest_not_found(
 
 @pytest.mark.asyncio
 async def test_assign_instructors_instructor_not_found(
-    contest_service: "ContestService", mock_db, mock_contest
+    contest_service: "ContestService",
+    mock_contest_repository,
+    mock_user_repository,
+    mock_guard,
+    mock_contest,
 ):
     """Test assigning non-existent instructor to contest."""
-    user_id = mock_contest.created_by
     instructor_id = uuid4()
-    request = InstructorManageRequest(instructor_ids=[instructor_id])
+    InstructorManageRequest(instructor_ids=[instructor_id])
 
-    # Setup query mocks
-    def query_side_effect(model):
-        mock = MagicMock()
-        if model is Contest:
-            mock.filter.return_value.first.return_value = mock_contest
-        elif model is User:
-            mock.filter.return_value.first.return_value = None  # User not found
-        return mock
-
-    mock_db.query.side_effect = query_side_effect
-
-    with patch("app.service.contest_service.ContestPermission.can_manage_contest"):
-        with pytest.raises(UserNotFoundError):
-            await contest_service.assign_instructors_to_contest(
-                mock_contest.id, request, user_id
-            )
+    # Mock contest found but instructor not found
+    mock_contest_repository.get_contest_or_raise.return_value = mock_contest
+    mock_user_repository.get_users_or_raise.side_effect = UserNotFoundError(
+        instructor_id
+    )
 
 
 @pytest.mark.asyncio
 async def test_assign_instructors_already_assigned(
-    contest_service: "ContestService", mock_db, mock_contest, mock_instructor
+    contest_service: "ContestService",
+    mock_contest_repository,
+    mock_user_repository,
+    mock_guard,
+    mock_validator,
+    mock_contest,
+    mock_instructor,
 ):
     """Test assigning instructor who is already assigned to contest."""
     user_id = mock_contest.created_by
     request = InstructorManageRequest(instructor_ids=[mock_instructor.id])
-    existing_assignment = MockContestInstructor(
-        contest_id=mock_contest.id, instructor_id=mock_instructor.id
+
+    # Mock repository methods
+    mock_contest_repository.get_contest_or_raise.return_value = mock_contest
+    mock_user_repository.get_users_or_raise.return_value = [mock_instructor]
+    mock_contest_repository.get_all_instructors_for_contest.return_value = [
+        mock_instructor
+    ]
+    mock_validator.validate_instructors_not_in_contest.side_effect = (
+        InstructorAlreadyAssignedError(str(mock_instructor.id), str(mock_contest.id))
     )
 
-    # Setup query mocks
-    def query_side_effect(model):
-        mock = MagicMock()
-        if model is Contest:
-            mock.filter.return_value.first.return_value = mock_contest
-        elif model is User:
-            mock.filter.return_value.first.return_value = mock_instructor
-        elif model is ContestInstructor:
-            mock.filter.return_value.first.return_value = existing_assignment
-        return mock
-
-    mock_db.query.side_effect = query_side_effect
-
-    with patch("app.service.contest_service.ContestPermission.can_manage_contest"):
-        with pytest.raises(InstructorAlreadyAssignedError):
-            await contest_service.assign_instructors_to_contest(
-                mock_contest.id, request, user_id
-            )
+    with pytest.raises(InstructorAlreadyAssignedError):
+        await contest_service.assign_instructors_to_contest(
+            mock_contest.id, request, user_id
+        )
 
 
 @pytest.mark.asyncio
 async def test_assign_instructors_permission_denied(
-    contest_service: "ContestService", mock_db, mock_contest, mock_instructor
+    contest_service: "ContestService",
+    mock_contest_repository,
+    mock_guard,
+    mock_contest,
+    mock_instructor,
 ):
     """Test assigning instructors without permission."""
     user_id = uuid4()  # Different user
     request = InstructorManageRequest(instructor_ids=[mock_instructor.id])
 
-    # Setup query mocks
-    def query_side_effect(model):
-        mock = MagicMock()
-        if model is Contest:
-            mock.filter.return_value.first.return_value = mock_contest
-        return mock
+    # Mock repository methods
+    mock_contest_repository.get_contest_or_raise.return_value = mock_contest
+    mock_guard.check_assign_instructors.side_effect = PermissionDeniedError(
+        "Permission denied"
+    )
 
-    mock_db.query.side_effect = query_side_effect
-
-    with patch(
-        "app.service.contest_service.ContestPermission.can_manage_contest",
-        side_effect=PermissionDeniedError("Permission denied"),
-    ):
-        with pytest.raises(PermissionDeniedError):
-            await contest_service.assign_instructors_to_contest(
-                mock_contest.id, request, user_id
-            )
+    with pytest.raises(PermissionDeniedError):
+        await contest_service.assign_instructors_to_contest(
+            mock_contest.id, request, user_id
+        )
 
 
 @pytest.mark.asyncio
 async def test_remove_instructors_from_contest_success(
-    contest_service: "ContestService", mock_db, mock_contest, mock_instructor
+    contest_service: "ContestService",
+    mock_contest_repository,
+    mock_guard,
+    mock_validator,
+    mock_contest,
+    mock_instructor,
+    mock_user_repository,
 ):
     """Test successful removal of instructors from contest."""
     user_id = mock_contest.created_by
     request = InstructorManageRequest(instructor_ids=[mock_instructor.id])
-    existing_assignment = MockContestInstructor(
-        contest_id=mock_contest.id, instructor_id=mock_instructor.id
+
+    # Mock repository methods
+    mock_contest_repository.get_contest_or_raise.return_value = mock_contest
+    mock_user_repository.get_users_or_raise.return_value = [mock_instructor]
+    mock_contest_repository.get_all_instructors_for_contest.return_value = [
+        mock_instructor
+    ]
+    mock_validator.validate_instructors_in_contest.return_value = None
+
+    await contest_service.remove_instructors_from_contest(
+        mock_contest.id, request, user_id
     )
 
-    # Setup query mocks
-    def query_side_effect(model):
-        mock = MagicMock()
-        if model is Contest:
-            mock.filter.return_value.first.return_value = mock_contest
-        elif model is ContestInstructor:
-            mock.filter.return_value.first.return_value = existing_assignment
-        return mock
-
-    mock_db.query.side_effect = query_side_effect
-
-    with patch(
-        "app.service.contest_service.ContestPermission.can_manage_contest"
-    ) as mock_perm:
-        await contest_service.remove_instructors_from_contest(
-            mock_contest.id, request, user_id
-        )
-        mock_perm.assert_called_once()
-
-    mock_db.delete.assert_called_once_with(existing_assignment)
-    mock_db.flush.assert_called_once()
+    mock_guard.check_remove_instructors.assert_called_once()
+    mock_user_repository.get_users_or_raise.assert_called_once_with(
+        [mock_instructor.id]
+    )
+    mock_contest_repository.get_all_instructors_for_contest.assert_called_once_with(
+        mock_contest.id
+    )
+    mock_validator.validate_instructors_in_contest.assert_called_once_with(
+        {mock_instructor.id}, {mock_instructor.id}
+    )
+    mock_contest_repository.remove_instructor.assert_called_once_with(
+        mock_contest.id, [mock_instructor.id]
+    )
 
 
 @pytest.mark.asyncio
 async def test_remove_instructors_not_assigned(
-    contest_service: "ContestService", mock_db, mock_contest, mock_instructor
+    contest_service: "ContestService",
+    mock_contest_repository,
+    mock_guard,
+    mock_validator,
+    mock_contest,
+    mock_instructor,
+    mock_user_repository,
 ):
     """Test removing instructor who is not assigned to contest."""
     user_id = mock_contest.created_by
     request = InstructorManageRequest(instructor_ids=[mock_instructor.id])
 
-    # Setup query mocks
-    def query_side_effect(model):
-        mock = MagicMock()
-        if model is Contest:
-            mock.filter.return_value.first.return_value = mock_contest
-        elif model is ContestInstructor:
-            mock.filter.return_value.first.return_value = None  # No assignment
-        return mock
+    # Mock repository methods
+    mock_contest_repository.get_contest_or_raise.return_value = mock_contest
+    mock_user_repository.get_users_or_raise.return_value = [mock_instructor]
+    mock_contest_repository.get_all_instructors_for_contest.return_value = []  # No instructors assigned
+    mock_validator.validate_instructors_in_contest.side_effect = (
+        InstructorNotAssignedError(str(mock_instructor.id), str(mock_contest.id))
+    )
 
-    mock_db.query.side_effect = query_side_effect
-
-    with patch("app.service.contest_service.ContestPermission.can_manage_contest"):
-        with pytest.raises(InstructorNotAssignedError):
-            await contest_service.remove_instructors_from_contest(
-                mock_contest.id, request, user_id
-            )
+    with pytest.raises(InstructorNotAssignedError):
+        await contest_service.remove_instructors_from_contest(
+            mock_contest.id, request, user_id
+        )
 
 
 @pytest.mark.asyncio
 async def test_get_contest_instructors_success(
     contest_service: "ContestService",
-    mock_db,
+    mock_contest_repository,
+    mock_guard,
     mock_contest,
     mock_instructor,
     mock_creator,
 ):
     """Test getting instructors for a contest."""
-
-    # Setup query mocks
-    def query_side_effect(model):
-        mock = MagicMock()
-        if model is Contest:
-            mock.filter.return_value.first.return_value = mock_contest
-        elif model is User:
-            # Mock for instructor join query
-            mock.join.return_value.filter.return_value.count.return_value = 1
-            mock.join.return_value.filter.return_value.offset.return_value.limit.return_value.all.return_value = [
-                mock_instructor
-            ]
-            # Mock for creator query
-            mock.filter.return_value.first.return_value = mock_creator
-        return mock
-
-    mock_db.query.side_effect = query_side_effect
-
     user_id = mock_contest.created_by  # Use creator as user for permission
-    with patch(
-        "app.service.contest_service.ContestPermission.can_manage_contest"
-    ) as mock_perm:
-        result = await contest_service.get_contest_instructors(mock_contest.id, user_id)
-        mock_perm.assert_called_once()
 
+    # Mock repository methods
+    mock_contest_repository.get_contest_or_raise.return_value = mock_contest
+    mock_contest_repository.get_contest_instructors_paginated.return_value = (
+        1,
+        [mock_instructor],
+    )
+    mock_contest_repository.get_creator.return_value = mock_creator
+
+    result = await contest_service.get_contest_instructors(mock_contest.id, user_id)
+
+    mock_guard.check_manage_contest.assert_called_once()
     assert result.total == 1
     assert len(result.instructors) == 1
     assert result.instructors[0].id == mock_instructor.id
@@ -362,22 +382,17 @@ async def test_get_contest_instructors_success(
 
 @pytest.mark.asyncio
 async def test_get_contest_instructors_contest_not_found(
-    contest_service: "ContestService", mock_db
+    contest_service: "ContestService", mock_contest_repository
 ):
     """Test getting instructors for non-existent contest."""
     contest_id = uuid4()
+    user_id = uuid4()
 
     # Mock contest not found
-    def query_side_effect(model):
-        mock = MagicMock()
-        if model is Contest:
-            mock.filter.return_value.first.return_value = None
-        return mock
+    mock_contest_repository.get_contest_or_raise.side_effect = ContestNotFoundError(
+        contest_id
+    )
 
-    mock_db.query.side_effect = query_side_effect
-
-    contest_id = uuid4()
-    user_id = uuid4()
     with pytest.raises(ContestNotFoundError):
         await contest_service.get_contest_instructors(contest_id, user_id)
 

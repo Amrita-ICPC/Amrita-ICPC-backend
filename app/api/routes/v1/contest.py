@@ -12,7 +12,10 @@ from app.auth.dependencies import (
     get_current_user,
 )
 from app.core.clients.database import get_db
+from app.core.guards.contest import ContestOperationGuard
 from app.core.logger import logger
+from app.repositories.contest import ContestRepository
+from app.repositories.user import UserRepository
 from app.schema.contest import (
     ContestCreate,
     ContestListResponse,
@@ -25,12 +28,17 @@ from app.schema.contest import (
 from app.service.contest_service import ContestService
 from app.service.user_service import UserService
 from app.utils.enums import ContestStatus
+from app.validators.contest import ContestValidator
 
 router = APIRouter()
 
 
 def get_contest_service(db: Session = Depends(get_db)) -> ContestService:
-    return ContestService(db)
+    contest_repository = ContestRepository(db)
+    user_repository = UserRepository(db)
+    guard = ContestOperationGuard(db)
+    validator = ContestValidator()
+    return ContestService(contest_repository, user_repository, guard, validator)
 
 
 @router.post(
@@ -472,6 +480,7 @@ async def get_contest_instructors(
     page_size: int = Query(
         10, ge=1, le=100, description="Number of instructors per page"
     ),
+    db: Session = Depends(get_db),
     service: ContestService = Depends(get_contest_service),
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
@@ -495,7 +504,7 @@ async def get_contest_instructors(
         PermissionDeniedError: If user cannot manage the contest
     """
     kc_id = current_user.get("sub")
-    user_id = (await UserService.get_user_by_keycloak_id(service.db, kc_id)).id
+    user_id = (await UserService.get_user_by_keycloak_id(db, kc_id)).id
     skip = (page - 1) * page_size
     result = await service.get_contest_instructors(contest_id, user_id, skip, page_size)
     logger.info(

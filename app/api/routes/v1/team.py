@@ -142,6 +142,7 @@ async def get_contest_teams(
     status: TeamStatus | None = Query(None, description="Filter by team status"),
     page: int = Query(1, ge=1, description="Page number (starts from 1)"),
     page_size: int = Query(10, ge=1, le=100, description="Number of teams per page"),
+    db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_current_user),
     service: TeamService = Depends(get_team_service),
 ):
@@ -161,7 +162,7 @@ async def get_contest_teams(
         List of teams and total count
     """
     kc_id = current_user.get("sub")
-    user_id = (await UserService.get_user_by_keycloak_id(service.db, kc_id)).id
+    user_id = (await UserService.get_user_by_keycloak_id(db, kc_id)).id
     skip = (page - 1) * page_size
     total, teams = await service.get_contest_teams(
         contest_id, user_id, search, status, skip, page_size
@@ -178,6 +179,7 @@ async def get_contest_teams(
 async def get_team(
     contest_id: UUID,
     team_id: UUID,
+    db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_current_user),
     service: TeamService = Depends(get_team_service),
 ):
@@ -198,7 +200,7 @@ async def get_team(
         TeamNotFoundError: If team not found in contest
     """
     kc_id = current_user.get("sub")
-    user_id = (await UserService.get_user_by_keycloak_id(service.db, kc_id)).id
+    user_id = (await UserService.get_user_by_keycloak_id(db, kc_id)).id
     return await service.get_team_by_id(contest_id, team_id, user_id)
 
 
@@ -214,6 +216,7 @@ async def get_team_members(
     search: str | None = Query(None, description="Search by member name or email"),
     page: int = Query(1, ge=1, description="Page number (starts from 1)"),
     page_size: int = Query(10, ge=1, le=100, description="Number of members per page"),
+    db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_current_user),
     service: TeamService = Depends(get_team_service),
 ):
@@ -241,7 +244,7 @@ async def get_team_members(
         PermissionDeniedError: If user lacks read permission on contest
     """
     kc_id = current_user.get("sub")
-    user_id = (await UserService.get_user_by_keycloak_id(service.db, kc_id)).id
+    user_id = (await UserService.get_user_by_keycloak_id(db, kc_id)).id
     skip = (page - 1) * page_size
 
     return await service.get_team_members(
@@ -259,6 +262,7 @@ async def add_team_members(
     contest_id: UUID,
     team_id: UUID,
     member_data: TeamMemberAdd,
+    db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_current_user),
     service: TeamService = Depends(get_team_service),
 ):
@@ -287,7 +291,7 @@ async def add_team_members(
         InvalidTeamSizeError: If adding would exceed team size limit
     """
     kc_id = current_user.get("sub")
-    user_id = (await UserService.get_user_by_keycloak_id(service.db, kc_id)).id
+    user_id = (await UserService.get_user_by_keycloak_id(db, kc_id)).id
 
     result = await service.add_team_members(contest_id, team_id, member_data, user_id)
     logger.info(
@@ -307,6 +311,7 @@ async def remove_team_member(
     contest_id: UUID,
     team_id: UUID,
     member_data: TeamMemberRemove,
+    db: Session = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_current_user),
     service: TeamService = Depends(get_team_service),
 ):
@@ -335,7 +340,7 @@ async def remove_team_member(
         InvalidTeamSizeError: If removal would violate minimum team size
     """
     kc_id = current_user.get("sub")
-    user_id = (await UserService.get_user_by_keycloak_id(service.db, kc_id)).id
+    user_id = (await UserService.get_user_by_keycloak_id(db, kc_id)).id
 
     result = await service.remove_team_member(contest_id, team_id, member_data, user_id)
     logger.info(
