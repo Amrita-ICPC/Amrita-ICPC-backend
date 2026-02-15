@@ -33,7 +33,6 @@ router = APIRouter()
 
 def get_team_service(db: Session = Depends(get_db)) -> TeamService:
     return TeamService(
-        db=db,
         repository=TeamRepository(db),
         guard=TeamOperationGuard(db),
         validator=TeamValidator(),
@@ -167,7 +166,7 @@ async def get_contest_teams(
     total, teams = await service.get_contest_teams(
         contest_id, user_id, search, status, skip, page_size
     )
-    return TeamListResponse(total=total, teams=teams)
+    return TeamListResponse(total=total, page=page, page_size=page_size, teams=teams)
 
 
 @router.get(

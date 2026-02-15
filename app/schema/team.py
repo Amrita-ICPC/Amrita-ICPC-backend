@@ -57,12 +57,14 @@ class TeamUpdate(BaseModel):
         description: Updated description of the team.
         logo: Updated URL or path to the team logo.
         status: Updated status of the team in the contest.
+        leader_id: Updated leader ID for the team.
     """
 
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = None
     logo: Optional[str] = None
     status: Optional[TeamStatus] = None
+    leader_id: Optional[UUID] = None
 
 
 class TeamResponse(BaseModel):
@@ -238,14 +240,18 @@ class ContestTeamDetailResponse(TeamResponse):
 
 class TeamListResponse(BaseModel):
     """
-    Schema for list of teams response.
+    Schema for list of teams response with pagination.
 
     Attributes:
-        total: Total number of teams.
-        teams: List of teams without member details.
+        total: Total number of teams matching the filters.
+        page: Current page number (1-indexed).
+        page_size: Number of teams per page.
+        teams: List of teams without member details for the current page.
     """
 
     total: int
+    page: int
+    page_size: int
     teams: List[ContestTeamResponse]
 
 
@@ -295,8 +301,12 @@ class TeamMembersResponse(BaseModel):
 
     Attributes:
         total: Total number of members in the team.
+        page: Current page number (1-indexed).
+        page_size: Number of items per page.
         members: List of team members for current page.
     """
 
     total: int
+    page: int
+    page_size: int
     members: List[TeamMemberResponse]

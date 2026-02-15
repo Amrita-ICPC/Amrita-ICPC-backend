@@ -41,7 +41,10 @@ def mock_repository():
     Returns:
         MagicMock: Mock TeamRepository instance
     """
-    return MagicMock(spec=TeamRepository)
+    mock = MagicMock(spec=TeamRepository)
+    # Add remove_team_members method (not yet in actual repository)
+    mock.remove_team_members = MagicMock()
+    return mock
 
 
 @pytest.fixture
@@ -71,14 +74,13 @@ def mock_validator():
 
 
 @pytest.fixture
-def team_service(mock_db, mock_repository, mock_guard, mock_validator):
+def team_service(mock_repository, mock_guard, mock_validator):
     """TeamService instance with all dependencies mocked.
 
     Provides a fully configured TeamService with mocked dependencies,
     ready for testing business logic without database operations.
 
     Args:
-        mock_db: Mock database session
         mock_repository: Mock TeamRepository
         mock_guard: Mock TeamOperationGuard
         mock_validator: Mock TeamValidator
@@ -87,7 +89,6 @@ def team_service(mock_db, mock_repository, mock_guard, mock_validator):
         TeamService: Service instance with mocked dependencies
     """
     return TeamService(
-        db=mock_db,
         repository=mock_repository,
         guard=mock_guard,
         validator=mock_validator,

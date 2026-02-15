@@ -4,6 +4,7 @@ from uuid import UUID
 from app.exceptions.team import (
     InvalidLeaderAssignmentError,
     InvalidTeamSizeError,
+    MemberNotInTeamError,
     TeamAlreadyExistsError,
 )
 from app.models.contest import Contest
@@ -12,6 +13,39 @@ from app.utils.enums import TeamStatus
 
 
 class TeamValidator:
+    """Validator for team business rules and constraints.
+
+    This class implements the Validator Pattern, centralizing all business rule
+    validation for team operations. It ensures data integrity and enforces
+    domain-specific constraints before operations are executed.
+
+    Responsibilities:
+        - Validate team name uniqueness within contests
+        - Enforce team size constraints (min/max, status-dependent)
+        - Validate leader assignment rules
+        - Check member existence in teams
+        - Validate member eligibility
+
+    Design Principles:
+        - Single Responsibility: Only handles business rule validation
+        - Stateless: All methods are static (no instance state)
+        - Fail Fast: Raises domain exceptions immediately on violation
+        - Reusable: Called by service layer before state changes
+
+    Validation Methods:
+        - validate_name_unique: Ensures team name is unique in contest
+        - validate_team_size: Enforces min/max size constraints
+        - validate_leader_assignment: Validates leader is a team member
+        - validate_members_not_in_team: Prevents duplicate memberships
+        - validate_members_in_team: Ensures members exist for removal
+        - validate_leader_change: Validates leader reassignment rules
+
+    Exception Strategy:
+        - Raises domain-specific exceptions (InvalidTeamSizeError, etc.)
+        - Provides clear error messages with context
+        - Never modifies state (validation only)
+    """
+
     @staticmethod
     def validate_name_unique(
         contest_id: UUID,
@@ -53,3 +87,80 @@ class TeamValidator:
         """
         if member_ids and leader_id not in member_ids:
             raise InvalidLeaderAssignmentError("Leader must be one of the members.")
+
+    @staticmethod
+    def validate_members_not_in_team(
+        existing_member_ids: set[UUID], new_member_ids: list[UUID], team_name: str
+    ):
+        """
+        Validates that new members are not already in the team.
+
+        Used when adding members to ensure no duplicate memberships.
+
+        Args:
+            existing_member_ids: Set of user IDs currently in the team
+            new_member_ids: List of user IDs to be added
+            team_name: Name of the team (for error message)
+
+        Raises:
+            MemberAlreadyInTeamError: If any new member is already in the team
+        """
+        from app.exceptions.team import MemberAlreadyInTeamError
+
+        new_ids_set = set(new_member_ids)
+        already_members = existing_member_ids.intersection(new_ids_set)
+
+        if already_members:
+            # Raise error for the first duplicate found
+            duplicate_id = next(iter(already_members))
+            raise MemberAlreadyInTeamError(str(duplicate_id), team_name)
+
+    @staticmethod
+    def validate_members_in_team(
+        existing_member_ids: set[UUID], member_ids_to_check: set[UUID], team_name: str
+    ):
+        """
+        Validates that specified members are currently in the team.
+
+        Used when removing members to ensure they exist in the team.
+
+        Args:
+            existing_member_ids: Set of user IDs currently in the team
+            member_ids_to_check: Set of user IDs to validate
+            team_name: Name of the team (for error message)
+
+        Raises:
+            MemberNotInTeamError: If any member is not in the team
+        """
+        missing_members = member_ids_to_check - existing_member_ids
+        if missing_members:
+            # Raise error for the first missing member found
+            missing_id = next(iter(missing_members))
+            raise MemberNotInTeamError(str(missing_id), team_name)
+
+    @staticmethod
+    def validate_leader_change(
+        team_members_ids: list[UUID],
+        new_leader_id: UUID | None,
+        current_leader_id: UUID,
+    ) -> None:
+        """
+        Validates that the leader change is valid.
+
+        Args:
+            team: The team being updated
+            new_leader_id: The new leader ID
+
+        Raises:
+            InvalidLeaderAssignmentError: If the new leader is not in the team
+        """
+
+        if current_leader_id in team_members_ids and new_leader_id is None:
+            raise InvalidLeaderAssignmentError(
+                "Leader cannot be removed from the team."
+            )
+
+        if new_leader_id not in team_members_ids:
+            raise InvalidLeaderAssignmentError(
+                "New leader must be a member of the team."
+            )

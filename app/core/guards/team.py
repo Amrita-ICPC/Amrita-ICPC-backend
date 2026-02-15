@@ -8,6 +8,36 @@ from app.models.contest import Contest
 
 
 class TeamOperationGuard:
+    """Guard for team operation permission validation.
+
+    This class implements the Guard Pattern, centralizing all permission checks
+    for team-related operations. It ensures users have appropriate permissions
+    before allowing operations to proceed.
+
+    Responsibilities:
+        - Validate contest management permissions
+        - Validate team read/write permissions
+        - Check student eligibility for team membership
+        - Enforce role-based access control
+
+    Design Principles:
+        - Single Responsibility: Only handles permission validation
+        - Fail Fast: Raises PermissionDeniedError immediately on failure
+        - Centralized Logic: All permission checks in one place
+        - Reusable: Called by service layer before operations
+
+    Guard Methods:
+        - check_create_team: Validates team creation permissions
+        - check_update_team: Validates team modification permissions
+        - check_read_team: Validates team read permissions
+        - check_add_team_members: Validates member addition permissions
+        - check_remove_team_members: Validates member removal permissions
+
+    Exception Strategy:
+        - Raises PermissionDeniedError when user lacks permission
+        - Provides clear error messages for debugging
+    """
+
     def __init__(self, db: Session):
         self.db = db
 
@@ -37,3 +67,46 @@ class TeamOperationGuard:
         - User has contest management permission or is the team leader
         """
         ContestPermission.can_manage_contest(self.db, user_id=user_id, contest=contest)
+
+    def check_read_team(
+        self,
+        user_id: UUID,
+        contest: Contest,
+    ):
+        """
+        Validates:
+        - User has read permission on the contest
+        """
+        ContestPermission.can_read_contest(self.db, user_id=user_id, contest=contest)
+
+    def check_add_team_members(
+        self,
+        user_id: UUID,
+        contest: Contest,
+        member_ids: list[UUID],
+    ):
+        """
+        Validates:
+        - User has contest management permission
+        - All new members are eligible students for the contest
+        """
+        ContestPermission.can_manage_contest(self.db, user_id=user_id, contest=contest)
+        TeamPermission.is_student_allowed_for_contest(
+            self.db, user_ids=member_ids, contest_id=contest.id
+        )
+
+    def check_remove_team_members(
+        self,
+        user_id: UUID,
+        contest: Contest,
+        member_ids: list[UUID],
+    ):
+        """
+        Validates:
+        - User has contest management permission
+        - All new members are eligible students for the contest
+        """
+        ContestPermission.can_manage_contest(self.db, user_id=user_id, contest=contest)
+        TeamPermission.is_student_allowed_for_contest(
+            self.db, user_ids=member_ids, contest_id=contest.id
+        )
