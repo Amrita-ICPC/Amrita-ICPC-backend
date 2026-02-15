@@ -1,25 +1,8 @@
 from uuid import UUID
 
-from sqlalchemy.orm import Session, joinedload
-
 from app.core.cache.decorators import cache_delete, cache_get, cache_set
 from app.core.guards.team import TeamOperationGuard
-from app.core.permissions import ContestPermission, TeamPermission
-from app.exceptions.contest import ContestNotFoundError
-from app.exceptions.team import (
-    InvalidLeaderAssignmentError,
-    InvalidTeamSizeError,
-    MemberAlreadyInTeamError,
-    MemberNotInTeamError,
-    TeamNotFoundError,
-)
-from app.exceptions.user import UserNotFoundError
-from app.models.contest import (
-    Contest,
-    ContestTeam,
-)
-from app.models.team import Team, TeamUser
-from app.models.user import User
+from app.repositories.dto import PaginationParams, TeamFilters
 from app.repositories.team import CreateTeamData, TeamRepository, UpdateTeamData
 from app.schema.team import (
     ContestTeamResponse,
@@ -48,29 +31,44 @@ def get_team_key(team_id: UUID) -> str:
 
 
 class TeamService:
-    """
-    Service layer for team management operations.
+    """Service layer for team management operations.
 
-    Handles all team-related business logic including creation, updates,
-    retrieval, and validation. Manages relationships between teams, contests,
-    and users while enforcing business rules and permissions.
+    This service orchestrates team-related business logic by coordinating between
+    the repository layer (data access), guard layer (permissions), and validator
+    layer (business rules). It implements a clean architecture pattern with clear
+    separation of concerns.
 
-    Features:
-    - Team creation with member validation and permission checks
-    - Team updates with conflict detection and size validation
-    - Team retrieval with search, filtering, and pagination
-    - Cache management for performance optimization
-    - Permission enforcement at the service level
+    Architecture:
+        - Repository Pattern: All database operations delegated to TeamRepository
+        - Guard Pattern: Permission checks centralized in TeamOperationGuard
+        - Validator Pattern: Business rule validation in TeamValidator
+        - No direct database access: Service layer remains database-agnostic
+
+    Key Responsibilities:
+        - Orchestrate team CRUD operations (create, read, update, delete)
+        - Manage team membership (add/remove members, update leader)
+        - Enforce permission checks before operations
+        - Validate business rules (team size, member eligibility, etc.)
+        - Transform repository data to API response schemas
+        - Coordinate cache invalidation for team-related data
+
+    Dependencies:
+        - TeamRepository: Handles all database queries and mutations
+        - TeamOperationGuard: Validates user permissions for operations
+        - TeamValidator: Enforces business rules and constraints
+
+    Cache Strategy:
+        - Team data cached with TTL of 300 seconds
+        - Cache keys include user_id for permission-aware caching
+        - Cache invalidated on team mutations (create, update, delete)
     """
 
     def __init__(
         self,
-        db: Session,
         repository: TeamRepository,
         guard: TeamOperationGuard,
         validator: TeamValidator,
     ):
-        self.db = db
         self.repository = repository
         self.guard = guard
         self.validator = validator
@@ -278,8 +276,14 @@ class TeamService:
         """
         Retrieve all teams in a contest with optional search and filtering.
 
-        Supports pagination, text search by team name, and status filtering.
-        Automatically enforces read permissions on the contest.
+        Uses repository pattern for database queries and guard pattern for
+        permission validation. Supports pagination, text search by team name,
+        and status filtering.
+
+        Implementation:
+        - Validates read permissions via TeamOperationGuard
+        - Delegates query execution to TeamRepository with filters and pagination
+        - Returns paginated results with total count
 
         Args:
             contest_id: UUID of the contest to get teams from
@@ -298,32 +302,19 @@ class TeamService:
             ContestNotFoundError: If the contest does not exist
             PermissionDeniedError: If user lacks read permission on contest
         """
-        # Check permission
-        contest = self.db.query(Contest).filter(Contest.id == contest_id).first()
-        if not contest:
-            raise ContestNotFoundError(str(contest_id))
+        # Check permission using guard
+        contest = self.repository.get_contest_or_raise(contest_id)
+        self.guard.check_read_team(user_id=user_id, contest=contest)
 
-        ContestPermission.can_read_contest(self.db, user_id=user_id, contest=contest)
+        # Create filter and pagination objects
+        filters = TeamFilters(search_term=search_term, status=status)
+        pagination = PaginationParams(skip=skip, limit=limit)
 
-        # Execute the query
-        base_query = (
-            self.db.query(ContestTeam)
-            .options(joinedload(ContestTeam.team))
-            .join(Team, ContestTeam.team_id == Team.id)
-            .filter(ContestTeam.contest_id == contest_id)
-        )
+        # Delegate to repository
+        result = self.repository.get_contest_teams(contest_id, filters, pagination)
 
-        if search_term:
-            base_query = base_query.filter(Team.name.ilike(f"%{search_term}%"))
-
-        if status:
-            base_query = base_query.filter(ContestTeam.team_status == status)
-
-        total = base_query.count()
-        contest_teams = base_query.offset(skip).limit(limit).all()
-
-        return total, [
-            ContestTeamResponse.from_contest_team(ct) for ct in contest_teams
+        return result.total, [
+            ContestTeamResponse.from_contest_team(ct) for ct in result.items
         ]
 
     @cache_get(
@@ -339,8 +330,14 @@ class TeamService:
         """
         Retrieve a specific team by its ID within a contest.
 
-        Enforces read permissions on the contest before returning team data.
-        Used for getting detailed information about a single team.
+        Uses guard pattern for permission validation and repository pattern
+        for database queries. Enforces read permissions before returning team data.
+
+        Implementation:
+        - Validates contest exists via TeamRepository
+        - Validates read permissions via TeamOperationGuard
+        - Retrieves team data via TeamRepository with eager loading
+        - Returns formatted response with team details
 
         Args:
             contest_id: UUID of the contest where the team is registered
@@ -355,24 +352,12 @@ class TeamService:
             TeamNotFoundError: If the team is not found in the contest
             PermissionDeniedError: If user lacks read permission on contest
         """
-        # Check permission
-        contest = self.db.query(Contest).filter(Contest.id == contest_id).first()
-        if not contest:
-            raise ContestNotFoundError(str(contest_id))
+        # Check permission using guard
+        contest = self.repository.get_contest_or_raise(contest_id)
+        self.guard.check_read_team(user_id=user_id, contest=contest)
 
-        ContestPermission.can_read_contest(self.db, user_id=user_id, contest=contest)
-
-        # Get the team
-        contest_team = (
-            self.db.query(ContestTeam)
-            .filter(
-                ContestTeam.contest_id == contest_id, ContestTeam.team_id == team_id
-            )
-            .first()
-        )
-
-        if not contest_team:
-            raise TeamNotFoundError(str(team_id), str(contest_id))
+        # Delegate to repository
+        contest_team = self.repository.get_team_by_id(contest_id, team_id)
 
         return ContestTeamResponse.from_contest_team(contest_team)
 
@@ -393,8 +378,24 @@ class TeamService:
         """
         Add members to an existing team in a contest.
 
-        Validates member eligibility, team size constraints, and handles
-        leader assignment if specified. Prevents duplicate memberships.
+        Uses guard pattern for permission validation, validator for business rules,
+        and repository pattern for database operations. Performs comprehensive
+        validation before adding members.
+
+        Validation Flow:
+        1. Validates user has contest management permission (via guard)
+        2. Validates all new members are eligible students for contest (via guard)
+        3. Validates team exists in contest (via repository)
+        4. Validates team size won't exceed maximum after adding members
+        5. Validates all new member user IDs exist in database
+        6. Validates no duplicate memberships
+        7. Validates leader assignment if specified (leader must be existing or new member)
+
+        Implementation:
+        - Uses TeamOperationGuard for permission and eligibility checks
+        - Uses TeamValidator for business rule validation
+        - Delegates database operations to TeamRepository
+        - Returns updated member list via get_team_members
 
         Args:
             contest_id: UUID of the contest containing the team
@@ -408,76 +409,48 @@ class TeamService:
         Raises:
             ContestNotFoundError: If the contest does not exist
             TeamNotFoundError: If the team is not found in the contest
-            PermissionDeniedError: If user lacks team management permission
+            PermissionDeniedError: If user lacks contest management permission
             UserNotFoundError: If any specified member does not exist
-            MemberAlreadyInTeamError: If member is already in the team
+            MemberAlreadyInTeamError: If any member is already in the team
             InvalidTeamSizeError: If adding members would exceed team size limit
+            InvalidLeaderAssignmentError: If leader is not in combined member list
         """
-        # Check contest and get team
-        contest = self.db.query(Contest).filter(Contest.id == contest_id).first()
-        if not contest:
-            raise ContestNotFoundError(str(contest_id))
-
-        ContestPermission.can_manage_contest(
-            self.db, user_id=updated_by, contest=contest
+        # Check permissions and validate members
+        contest = self.repository.get_contest_or_raise(contest_id)
+        self.guard.check_add_team_members(
+            user_id=updated_by, contest=contest, member_ids=member_data.member_ids
         )
 
-        contest_team = (
-            self.db.query(ContestTeam)
-            .filter(
-                ContestTeam.contest_id == contest_id, ContestTeam.team_id == team_id
-            )
-            .first()
+        contest_team = self.repository.get_contest_team_or_raise(
+            contest_id=contest_id, team_id=team_id
         )
 
-        if not contest_team:
-            raise TeamNotFoundError(str(team_id), str(contest_id))
-
-        team = contest_team.team
-
-        # Get current team member count
-        existing_members = (
-            self.db.query(TeamUser).filter(TeamUser.team_id == team_id).all()
-        )
-        existing_member_ids = {tu.user_id for tu in existing_members}
-
-        current_member_count = len(existing_members)
-
-        # Check if adding new members would exceed team size
-        new_member_count = len(member_data.member_ids)
-        if current_member_count + new_member_count > contest.max_team_size:
-            raise InvalidTeamSizeError(
-                current_member_count + new_member_count,
-                contest.min_team_size,
-                contest.max_team_size,
-            )
-
-        # Validate members existence and not already in team
-        users = self.db.query(User).filter(User.id.in_(member_data.member_ids)).all()
-        found_ids = {u.id for u in users}
-        missing = set(member_data.member_ids) - found_ids
-        if missing:
-            raise UserNotFoundError(str(next(iter(missing))))
-
-        for user in users:
-            if user.id in existing_member_ids:
-                raise MemberAlreadyInTeamError(str(user.id), team.name)
-
-        TeamPermission.is_student_allowed_for_contest(
-            self.db, user_ids=member_data.member_ids, contest_id=contest_id
+        # Validate team size
+        team_members_count = self.repository.get_team_members_count_or_raise(team_id)
+        new_members_count = len(member_data.member_ids)
+        self.validator.validate_team_size(
+            team_members_count + new_members_count, contest, contest_team.team_status
         )
 
-        # Add new members
-        for member_id in member_data.member_ids:
-            team_user = TeamUser(team_id=team_id, user_id=member_id)
-            self.db.add(team_user)
+        # Validate users exist
+        self.repository.get_users_or_raise(user_ids=member_data.member_ids)
 
-        # Update leader if specified
-        if member_data.leader_id:
-            team.leader_id = member_data.leader_id
-
-        self.db.flush()
-        self.db.refresh(team)
+        # Validate members are not already in team
+        existing_team_members = self.repository.get_all_team_members(team_id)
+        existing_member_ids = {tu.user_id for tu in existing_team_members}
+        self.validator.validate_members_not_in_team(
+            existing_member_ids, member_data.member_ids, contest_team.team.name
+        )
+        self.validator.validate_leader_assignment(
+            member_data.leader_id,
+            list(set(member_data.member_ids) | set(existing_member_ids)),
+        )
+        # Add members using repository
+        self.repository.add_team_members(
+            team_id=team_id,
+            member_ids=member_data.member_ids,
+            leader_id=member_data.leader_id,
+        )
 
         # Return updated member list
         return await self.get_team_members(contest_id, team_id, updated_by)
@@ -520,89 +493,30 @@ class TeamService:
             InvalidLeaderAssignmentError: If new leader is being removed
             InvalidTeamSizeError: If removal would violate minimum team size
         """
-        # Check contest and get team
-        contest = self.db.query(Contest).filter(Contest.id == contest_id).first()
-        if not contest:
-            raise ContestNotFoundError(str(contest_id))
-
-        ContestPermission.can_manage_contest(
-            self.db, user_id=updated_by, contest=contest
+        # Check permission and get team
+        contest = self.repository.get_contest_or_raise(contest_id)
+        self.guard.check_remove_team_members(
+            user_id=updated_by, contest=contest, member_ids=member_data.member_ids
         )
-
-        contest_team = (
-            self.db.query(ContestTeam)
-            .filter(
-                ContestTeam.contest_id == contest_id, ContestTeam.team_id == team_id
-            )
-            .first()
+        team = self.repository.get_team_or_raise(team_id)
+        team_members = self.repository.get_all_team_members(team_id=team_id)
+        team_member_ids = {tm.user_id for tm in team_members}
+        self.validator.validate_members_in_team(
+            team_member_ids, member_data.member_ids, team.name
         )
-
-        if not contest_team:
-            raise TeamNotFoundError(str(team_id), str(contest_id))
-
-        team = contest_team.team
-
-        # Get current team members to validate
-        current_team_users = {
-            tu.user_id: tu
-            for tu in self.db.query(TeamUser).filter(TeamUser.team_id == team_id).all()
-        }
-
-        current_member_count = len(current_team_users)
-        members_to_remove = len(member_data.member_ids)
-
-        # Validate all members are in team
-        for member_id in member_data.member_ids:
-            if member_id not in current_team_users:
-                raise MemberNotInTeamError(str(member_id), team.name)
-
-        # Check if removing leader
-        is_removing_leader = team.leader_id in member_data.member_ids
-
-        # Check minimum team size for confirmed teams
-        if (
-            contest_team.team_status == TeamStatus.CONFIRMED
-            and current_member_count - members_to_remove < contest.min_team_size
-        ):
-            raise InvalidTeamSizeError(
-                current_member_count - members_to_remove,
-                contest.min_team_size,
-                contest.max_team_size,
-            )
-
-        # Validate new leader if specified
-        if member_data.new_leader_id:
-            if member_data.new_leader_id in member_data.member_ids:
-                raise InvalidLeaderAssignmentError(
-                    str(member_data.new_leader_id), team.name
-                )
-            if member_data.new_leader_id not in current_team_users:
-                raise MemberNotInTeamError(str(member_data.new_leader_id), team.name)
-
-        # Remove all specified members
-        for member_id in member_data.member_ids:
-            team_user = current_team_users[member_id]
-            self.db.delete(team_user)
-
-        # Update leader if needed
-        if is_removing_leader:
-            if member_data.new_leader_id:
-                team.leader_id = member_data.new_leader_id
-            else:
-                # Auto Assign new leader if current leader is removed and no new leader specified
-                remaining_members = [
-                    tu
-                    for tu in current_team_users.values()
-                    if tu.user_id not in member_data.member_ids
-                ]
-                team.leader_id = (
-                    remaining_members[0].user_id if remaining_members else None
-                )
-
-        self.db.flush()
-        self.db.refresh(team)
-
-        # Return updated member list
+        un_removed_ids: set = set(team_member_ids) - set(member_data.member_ids)
+        self.validator.validate_team_size(
+            len(un_removed_ids), contest, team.team_status
+        )
+        self.validator.validate_leader_change(
+            team_member_ids, member_data.new_leader_id, team.leader_id
+        )
+        self.repository.remove_team_members(
+            team_id=team_id, member_ids=member_data.member_ids
+        )
+        self.repository.update_team(
+            team_id=team_id, leader_id=member_data.new_leader_id, updated_by=updated_by
+        )
         return await self.get_team_members(contest_id, team_id, updated_by)
 
     @cache_get(
@@ -627,8 +541,14 @@ class TeamService:
         """
         Retrieve all members of a team with optional search and pagination.
 
-        Supports text search by member name or email and includes team context
-        information in the response.
+        Uses guard pattern for permission validation and repository pattern
+        for database queries. Supports text search by member name or email.
+
+        Implementation:
+        - Validates contest exists via TeamRepository
+        - Validates read permissions via TeamOperationGuard
+        - Delegates paginated query to TeamRepository with search support
+        - Returns formatted response with member list and team info
 
         Args:
             contest_id: UUID of the contest containing the team
@@ -646,46 +566,17 @@ class TeamService:
             TeamNotFoundError: If the team is not found in the contest
             PermissionDeniedError: If user lacks read permission on contest
         """
-        # Check contest permission
-        contest = self.db.query(Contest).filter(Contest.id == contest_id).first()
-        if not contest:
-            raise ContestNotFoundError(str(contest_id))
+        # Check permission and get team
+        contest = self.repository.get_contest_or_raise(contest_id)
+        self.guard.check_read_team(user_id=user_id, contest=contest)
 
-        ContestPermission.can_read_contest(self.db, user_id=user_id, contest=contest)
-
-        # Check team exists
-        contest_team = (
-            self.db.query(ContestTeam)
-            .filter(
-                ContestTeam.contest_id == contest_id, ContestTeam.team_id == team_id
-            )
-            .first()
-        )
-
-        if not contest_team:
-            raise TeamNotFoundError(str(team_id), str(contest_id))
-
+        contest_team = self.repository.get_contest_team_or_raise(contest_id, team_id)
         team = contest_team.team
 
-        # Build query for team members
-        base_query = (
-            self.db.query(User, TeamUser)
-            .join(TeamUser, User.id == TeamUser.user_id)
-            .filter(TeamUser.team_id == team_id)
+        # Delegate to repository for paginated member retrieval
+        total, results = self.repository.get_team_members_paginated(
+            team_id=team_id, search_term=search_term, skip=skip, limit=limit
         )
-
-        # Apply search filter if provided
-        if search_term:
-            search_pattern = f"%{search_term}%"
-            base_query = base_query.filter(
-                (User.name.ilike(search_pattern)) | (User.email.ilike(search_pattern))
-            )
-
-        # Get total count
-        total = base_query.count()
-
-        # Get paginated results
-        results = base_query.offset(skip).limit(limit).all()
 
         # Transform to response objects
         members = []
@@ -700,7 +591,12 @@ class TeamService:
             )
             members.append(member)
 
+        # Calculate page number (1-indexed)
+        page = (skip // limit) + 1 if limit > 0 else 1
+
         return TeamMembersResponse(
             total=total,
+            page=page,
+            page_size=limit,
             members=members,
         )
