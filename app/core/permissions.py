@@ -126,3 +126,19 @@ class TeamPermission:
             raise PermissionDeniedError(
                 f"User {existing_participation} is already a member of a team in this contest"
             )
+
+    def can_update_team(
+        self,
+        db: Session,
+        *,
+        user_id: UUID,
+        contest: Contest,
+        team_leader_id: UUID,
+    ) -> None:
+        """
+        Raises PermissionDeniedError if user cannot update team.
+        - User must have contest management permission (creator/instructor/admin)
+          OR be the team leader.
+        """
+        if user_id == team_leader_id:
+            return

@@ -26,3 +26,14 @@ class TeamOperationGuard:
         TeamPermission.is_student_allowed_for_contest(
             self.db, user_ids=member_ids, contest_id=contest.id
         )
+
+    def check_update_team(
+        self,
+        user_id: UUID,
+        contest: Contest,
+    ):
+        """
+        Validates:
+        - User has contest management permission or is the team leader
+        """
+        ContestPermission.can_manage_contest(self.db, user_id=user_id, contest=contest)

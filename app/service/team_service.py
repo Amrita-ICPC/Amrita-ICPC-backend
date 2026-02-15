@@ -11,7 +11,6 @@ from app.exceptions.team import (
     InvalidTeamSizeError,
     MemberAlreadyInTeamError,
     MemberNotInTeamError,
-    TeamAlreadyExistsError,
     TeamNotFoundError,
 )
 from app.exceptions.user import UserNotFoundError
@@ -21,7 +20,7 @@ from app.models.contest import (
 )
 from app.models.team import Team, TeamUser
 from app.models.user import User
-from app.repositories.team import CreateTeamData, TeamRepository
+from app.repositories.team import CreateTeamData, TeamRepository, UpdateTeamData
 from app.schema.team import (
     ContestTeamResponse,
     TeamCreate,
@@ -173,111 +172,88 @@ class TeamService:
         self, contest_id: UUID, team_id: UUID, team_data: TeamUpdate, updated_by: UUID
     ) -> ContestTeamResponse:
         """
-        Update an existing team in a contest.
+        Update an existing team's basic information within a contest.
 
-        Only allows updating basic team information (name, description, logo, status).
-        Members management should be handled through separate endpoints.
+        This method handles updates to core team metadata including name, description,
+        logo, and status. It enforces strict business rules around name uniqueness
+        and team size requirements, particularly for status transitions. Team member
+        management is intentionally excluded and should be handled through dedicated
+        member add/remove endpoints to maintain clear separation of concerns.
 
-        Business rules:
-        - Name changes are validated for uniqueness within the contest
-        - Status changes from DRAFT to CONFIRMED require minimum team size
-        - Only users with contest management permission can update teams
+        The update process validates all changes against contest rules and existing
+        teams, ensuring data integrity and business rule compliance. Status changes
+        to CONFIRMED trigger additional validations to ensure the team meets all
+        contest requirements.
 
         Args:
             contest_id: UUID of the contest containing the team
-            team_id: UUID of the team to update
-            team_data: TeamUpdate schema with optional fields to update
-            updated_by: UUID of the user performing the update (must have permission)
+            team_id: UUID of the specific team to update
+            team_data: TeamUpdate schema containing optional fields to update:
+                - name: New team name (validated for uniqueness within contest)
+                - description: Updated team description text
+                - logo: New team logo URL or file path
+                - status: Team status change (DRAFT or CONFIRMED)
+            updated_by: UUID of the user performing the update (must have
+                contest management permission)
 
         Returns:
-            ContestTeamResponse with updated team information
+            ContestTeamResponse: Updated team information including all current
+            team data, metadata, timestamps, and status information
 
         Raises:
-            ContestNotFoundError: If the contest does not exist
-            TeamNotFoundError: If the team is not found in the contest
-            PermissionDeniedError: If user cannot manage the contest
-            TeamAlreadyExistsError: If updated name conflicts with existing team
-            InvalidTeamSizeError: If confirming team with insufficient members
+            ContestNotFoundError: If the specified contest does not exist
+            TeamNotFoundError: If the team is not found within the contest
+            PermissionDeniedError: If the user lacks contest management permission
+            TeamAlreadyExistsError: If the updated name conflicts with another
+                team in the same contest
+            InvalidTeamSizeError: If changing status to CONFIRMED but the team
+                has fewer than the minimum required members for the contest
+
+        Business Rules:
+            - Name uniqueness is enforced within the contest scope
+            - Status changes to CONFIRMED require meeting minimum team size
+            - Only users with contest management privileges can update teams
+            - Member modifications are prohibited through this endpoint
+            - All field updates are optional and preserve existing values if not specified
+
+        Cache Behavior:
+            - Updates cache entry for the modified team
+            - Invalidates contest teams cache and contest-team specific cache entries
+            - Ensures consistency across all cached team representations
         """
-        # Check contest exists
-        contest = self.db.query(Contest).filter(Contest.id == contest_id).first()
-        if not contest:
-            raise ContestNotFoundError(str(contest_id))
+        contest = self.repository.get_contest_or_raise(contest_id)
+        self.guard.check_update_team(user_id=updated_by, contest=contest)
+        contest_team = self.repository.get_contest_team_or_raise(contest_id, team_id)
 
-        # Check permission - must be able to manage the contest
-        ContestPermission.can_manage_contest(
-            self.db, user_id=updated_by, contest=contest
-        )
-
-        # Get the contest team
-        contest_team = (
-            self.db.query(ContestTeam)
-            .filter(
-                ContestTeam.contest_id == contest_id, ContestTeam.team_id == team_id
-            )
-            .first()
-        )
-
-        if not contest_team:
-            raise TeamNotFoundError(str(team_id), str(contest_id))
-
-        # Get the team
         team = contest_team.team
-
-        # Check for team name uniqueness if name is being updated
         if team_data.name is not None and team_data.name != team.name:
-            existing_team = (
-                self.db.query(Team)
-                .options(joinedload(Team.contest_teams))
-                .filter(
-                    ContestTeam.contest_id == contest_id,
-                    Team.name == team_data.name,
-                    Team.id != team_id,
-                )
-                .first()
+            existing_team = self.repository.find_team_by_name(
+                contest_id, team_data.name
             )
-            if existing_team:
-                raise TeamAlreadyExistsError(team_data.name, str(contest_id))
+            self.validator.validate_name_unique(
+                contest_id, team_data.name, existing_team
+            )
 
-        # Check team size if status is changing from DRAFT to CONFIRMED
         if (
-            team_data.status is not None
+            team_data.status == TeamStatus.CONFIRMED
             and contest_team.team_status == TeamStatus.DRAFT
-            and team_data.status == TeamStatus.CONFIRMED
         ):
-            # Load team members to check count
-            team_member_count = (
-                self.db.query(TeamUser).filter(TeamUser.team_id == team.id).count()
+            team_meber_count = self.repository.get_team_members_count_or_raise(team_id)
+
+            self.validator.validate_team_size(
+                team_meber_count, contest, team_data.status
             )
-            if team_member_count < contest.min_team_size:
-                raise InvalidTeamSizeError(
-                    team_member_count, contest.min_team_size, contest.max_team_size
-                )
-
-        # Update team fields directly from DTO
-        if team_data.name is not None:
-            team.name = team_data.name
-        if team_data.description is not None:
-            team.description = team_data.description
-        if team_data.logo is not None:
-            team.logo = team_data.logo
-        if team_data.status is not None:
-            contest_team.team_status = team_data.status
-
-        self.db.flush()
-        self.db.refresh(team)
-        self.db.refresh(contest_team)
-
-        # Get updated contest team with proper relationship
-        updated_contest_team = (
-            self.db.query(ContestTeam)
-            .options(joinedload(ContestTeam.team))
-            .filter(
-                ContestTeam.contest_id == contest_id, ContestTeam.team_id == team.id
-            )
-            .first()
+        updated_contest_team = self.repository.update_team(
+            UpdateTeamData(
+                team_id=team_id,
+                name=team_data.name,
+                description=team_data.description,
+                logo=team_data.logo,
+                status=team_data.status,
+            ),
+            team,
+            contest_team,
         )
-
         return ContestTeamResponse.from_contest_team(updated_contest_team)
 
     @cache_get(

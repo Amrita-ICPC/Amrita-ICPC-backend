@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session, joinedload
 
 from app.exceptions.contest import ContestNotFoundError
+from app.exceptions.team import TeamNotFoundError
 from app.exceptions.user import UserNotFoundError
 from app.models.contest import Contest, ContestTeam, ContestTeamProgress
 from app.models.team import Team, TeamUser
@@ -29,6 +30,23 @@ class CreateTeamData:
     member_ids: list[UUID]
     status: TeamStatus
     created_by: UUID
+
+
+@dataclass
+class UpdateTeamData:
+    """
+    Data transfer object for updating teams in the repository layer.
+
+    This class encapsulates the data needed to update a team without exposing
+    the API schema (TeamUpdate DTO) to the repository layer, maintaining
+    separation of concerns.
+    """
+
+    team_id: UUID
+    name: str | None = None
+    description: str | None = None
+    logo: str | None = None
+    status: TeamStatus | None = None
 
 
 class TeamRepository:
@@ -114,6 +132,73 @@ class TeamRepository:
             .first()
         )
 
+    def get_contest_team_or_raise(self, contest_id: UUID, team_id: UUID) -> ContestTeam:
+        """
+        Retrieve a ContestTeam by contest ID and team ID or raise an exception if not found.
+
+        Args:
+            contest_id: ID of the contest.
+            team_id: ID of the team.
+        Returns:
+            The ContestTeam object if found.
+        Raises:
+            TeamNotFoundError: If the ContestTeam with the given contest ID and team ID
+            does not exist.
+        """
+        contest_team = (
+            self.db.query(ContestTeam)
+            .options(joinedload(ContestTeam.team))
+            .filter(
+                ContestTeam.contest_id == contest_id,
+                ContestTeam.team_id == team_id,
+            )
+            .first()
+        )
+        if not contest_team:
+            raise TeamNotFoundError(str(team_id), str(contest_id))
+        return contest_team
+
+    def get_team_members_or_raise(self, team_id: UUID) -> list[User]:
+        """
+        Retrieve the members of a team by team ID or raise an exception if not found.
+
+        Args:
+            team_id: ID of the team.
+        Returns:
+            List of User objects representing the team members.
+        Raises:
+            TeamNotFoundError: If the team with the given ID does not exist.
+        """
+        team = self.db.query(Team).filter(Team.id == team_id).first()
+        if not team:
+            raise TeamNotFoundError(str(team_id))
+        members = (
+            self.db.query(User)
+            .join(TeamUser, TeamUser.user_id == User.id)
+            .filter(TeamUser.team_id == team_id)
+            .all()
+        )
+        return members
+
+    def get_team_members_count_or_raise(self, team_id: UUID) -> int:
+        """
+        Retrieve the count of members in a team by team ID or raise an exception if not found.
+
+        Args:
+            team_id: ID of the team.
+        Returns:
+            The count of team members.
+        Raises:
+            TeamNotFoundError: If the team with the given ID does not exist.
+        """
+        team = self.db.query(Team).filter(Team.id == team_id).first()
+        if not team:
+            raise TeamNotFoundError(str(team_id))
+        member_count = (
+            self.db.query(TeamUser).filter(TeamUser.team_id == team_id).count()
+        )
+        return member_count
+
     def create_team(self, team_data: CreateTeamData) -> ContestTeam:
         """
         Create a new team in the database.
@@ -160,6 +245,45 @@ class TeamRepository:
             .filter(
                 ContestTeam.team_id == team.id,
                 ContestTeam.contest_id == team_data.contest_id,
+            )
+            .first()
+        )
+
+    def update_team(
+        self, team_data: UpdateTeamData, team: Team, contest_team: ContestTeam
+    ) -> ContestTeam:
+        """
+        Update an existing team in the database.
+
+        Args:
+            team: Team object with updated data (must have valid ID)
+
+        Returns:
+            The updated ContestTeam object with its associated Team data loaded
+        """
+        if team_data.name is not None and team_data.name != team.name:
+            team.name = team_data.name
+        if (
+            team_data.description is not None
+            and team_data.description != team.description
+        ):
+            team.description = team_data.description
+        if team_data.logo is not None and team_data.logo != team.logo:
+            team.logo = team_data.logo
+        if (
+            team_data.status is not None
+            and team_data.status != contest_team.team_status
+        ):
+            contest_team.team_status = team_data.status
+
+        self.db.flush()  # Flush to save changes
+
+        return (
+            self.db.query(ContestTeam)
+            .options(joinedload(ContestTeam.team))
+            .filter(
+                ContestTeam.team_id == team.id,
+                ContestTeam.contest_id == contest_team.contest_id,
             )
             .first()
         )
