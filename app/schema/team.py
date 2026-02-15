@@ -31,18 +31,18 @@ class TeamCreate(BaseModel):
     leader_id: Optional[UUID] = None
     status: TeamStatus = Field(default=TeamStatus.DRAFT)
 
-    @model_validator(mode="after")
-    def validate_leader(self) -> "TeamCreate":
-        member_ids = self.member_ids
-        leader_id = self.leader_id
+    # @model_validator(mode="after")
+    # def validate_leader(self) -> "TeamCreate":
+    #     member_ids = self.member_ids
+    #     leader_id = self.leader_id
 
-        if member_ids and leader_id is None:
-            raise ValueError("Leader ID is required when there are members.")
+    #     if member_ids and leader_id is None:
+    #         raise ValueError("Leader ID is required when there are members.")
 
-        if leader_id and leader_id not in member_ids:
-            raise ValueError("Leader must be one of the members.")
+    #     if leader_id and leader_id not in member_ids:
+    #         raise ValueError("Leader must be one of the members.")
 
-        return self
+    #     return self
 
 
 class TeamUpdate(BaseModel):

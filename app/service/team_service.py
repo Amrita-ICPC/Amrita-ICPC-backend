@@ -3,6 +3,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.cache.decorators import cache_delete, cache_get, cache_set
+from app.core.guards.team import TeamOperationGuard
 from app.core.permissions import ContestPermission, TeamPermission
 from app.exceptions.contest import ContestNotFoundError
 from app.exceptions.team import (
@@ -17,10 +18,10 @@ from app.exceptions.user import UserNotFoundError
 from app.models.contest import (
     Contest,
     ContestTeam,
-    ContestTeamProgress,
 )
 from app.models.team import Team, TeamUser
 from app.models.user import User
+from app.repositories.team import CreateTeamData, TeamRepository
 from app.schema.team import (
     ContestTeamResponse,
     TeamCreate,
@@ -31,6 +32,7 @@ from app.schema.team import (
     TeamUpdate,
 )
 from app.utils.enums import TeamStatus
+from app.validators.team import TeamValidator
 
 
 def get_team_key(team_id: UUID) -> str:
@@ -62,8 +64,17 @@ class TeamService:
     - Permission enforcement at the service level
     """
 
-    def __init__(self, db: Session):
+    def __init__(
+        self,
+        db: Session,
+        repository: TeamRepository,
+        guard: TeamOperationGuard,
+        validator: TeamValidator,
+    ):
         self.db = db
+        self.repository = repository
+        self.guard = guard
+        self.validator = validator
 
     @cache_set(
         key_builder=lambda result, **kwargs: get_team_key(result.id), from_result=True
@@ -80,119 +91,74 @@ class TeamService:
         """
         Create a new team in a contest.
 
-        Validates team composition, member eligibility, and contest constraints
-        before creating the team. Automatically handles team-contest linking,
-        progress tracking initialization, and member assignment.
+        This method creates a team within a specific contest context, performing
+        comprehensive validation and permission checks. It validates team name
+        uniqueness within the contest, verifies member eligibility, checks team
+        size constraints, and ensures the creator has appropriate permissions.
+
+        The method uses a repository pattern for data access and includes
+        specialized guards and validator for different aspects of team creation.
 
         Args:
             contest_id: UUID of the contest where the team will be created
-            team_data: TeamCreate schema containing team details and member IDs
-            created_by: UUID of the user creating the team (must have manage permission)
+            team_data: TeamCreate schema containing team details including:
+                - name: Team name (must be unique within the contest)
+                - description: Optional team description
+                - logo: Optional team logo URL or path
+                - member_ids: List of user UUIDs to include as team members
+                - leader_id: Optional UUID of the team leader (must be in member_ids)
+                - status: Team status (DRAFT or CONFIRMED)
+            created_by: UUID of the user creating the team (requires contest management permission)
 
         Returns:
-            ContestTeamResponse containing the newly created team information
+            ContestTeamResponse: Response object containing the newly created team
+            information including team ID, name, description, logo, status, leader,
+            creation details, and timestamps
 
         Raises:
             ContestNotFoundError: If the specified contest does not exist
-            PermissionDeniedError: If creator lacks contest management permission
-            TeamAlreadyExistsError: If team name already exists in the contest
-            InvalidTeamSizeError: If team size violates contest constraints
+            PermissionDeniedError: If the creator lacks permission to manage the contest
+            TeamAlreadyExistsError: If a team with the same name already exists in the contest
+            InvalidTeamSizeError: If the team size violates contest constraints
             UserNotFoundError: If any specified member or leader does not exist
+            InvalidLeaderAssignmentError: If leader_id is specified but not in member_ids
+
+        Cache Behavior:
+            - Sets cache entry for the newly created team
+            - Invalidates all contest teams cache entries
         """
-        contest = self.db.query(Contest).filter(Contest.id == contest_id).first()
-        if not contest:
-            raise ContestNotFoundError(str(contest_id))
-
-        ContestPermission.can_manage_contest(
-            self.db, user_id=created_by, contest=contest
+        contest = self.repository.get_contest_or_raise(contest_id)
+        self.guard.check_create_team(
+            user_id=created_by, contest=contest, member_ids=team_data.member_ids
         )
 
-        # check team name uniqueness in contest
-        existing_team = (
-            self.db.query(Team)
-            .join(ContestTeam)
-            .filter(ContestTeam.contest_id == contest_id, Team.name == team_data.name)
-            .first()
-        )
-        if existing_team:
-            raise TeamAlreadyExistsError(team_data.name, str(contest_id))
+        existing_team = self.repository.find_team_by_name(contest_id, team_data.name)
+        self.validator.validate_name_unique(contest_id, team_data.name, existing_team)
 
-        # Validate team size
-        num_members = len(team_data.member_ids)
-        if num_members > contest.max_team_size:
-            raise InvalidTeamSizeError(
-                num_members, contest.min_team_size, contest.max_team_size
-            )
-
-        if team_data.status == TeamStatus.CONFIRMED:
-            if num_members < contest.min_team_size:
-                raise InvalidTeamSizeError(
-                    num_members, contest.min_team_size, contest.max_team_size
-                )
-
-        # Validate members existence and permission
-        users = self.db.query(User).filter(User.id.in_(team_data.member_ids)).all()
-        found_ids = {u.id for u in users}
-        missing = set(team_data.member_ids) - found_ids
-        if missing:
-            raise UserNotFoundError(str(next(iter(missing))))
-
-        TeamPermission.is_student_allowed_for_contest(
-            self.db, user_ids=team_data.member_ids, contest_id=contest_id
+        self.validator.validate_team_size(
+            len(team_data.member_ids), contest, team_data.status
         )
 
-        # Validate leader existence if provided (already handled by schema validator, but good for safety)
-        if team_data.leader_id:
-            user = self.db.query(User).filter(User.id == team_data.leader_id).first()
-            if not user:
-                raise UserNotFoundError(str(team_data.leader_id))
-        # Create Team (independent of contest now)
-        team = Team(
+        self.repository.get_users_or_raise(team_data.member_ids)
+
+        self.validator.validate_leader_assignment(
+            team_data.leader_id, team_data.member_ids
+        )
+
+        # Convert DTO to repository data object
+        create_team_data = CreateTeamData(
+            contest_id=contest_id,
+            created_by=created_by,
             name=team_data.name,
             description=team_data.description,
             logo=team_data.logo,
-            created_by=created_by,
             leader_id=team_data.leader_id,
-        )
-        self.db.add(team)
-        self.db.flush()  # Get team ID
-
-        # Create ContestTeam (Link Team to Contest)
-        contest_team = ContestTeam(
-            contest_id=contest_id,
-            team_id=team.id,
-            team_status=team_data.status,
-        )
-        self.db.add(contest_team)
-
-        # Create ContestTeamProgress
-        progress = ContestTeamProgress(
-            contest_id=contest_id,
-            team_id=team.id,
-        )
-        self.db.add(progress)
-
-        # Add members
-        self.db.add_all(
-            TeamUser(team_id=team.id, user_id=member_id)
-            for member_id in team_data.member_ids
+            member_ids=team_data.member_ids,
+            status=team_data.status,
         )
 
-        self.db.flush()
-        self.db.refresh(team)
-        self.db.refresh(contest_team)
-
-        # Ensure the relationship is loaded properly
-        contest_team_with_team = (
-            self.db.query(ContestTeam)
-            .options(joinedload(ContestTeam.team))
-            .filter(
-                ContestTeam.contest_id == contest_id, ContestTeam.team_id == team.id
-            )
-            .first()
-        )
-
-        return ContestTeamResponse.from_contest_team(contest_team_with_team)
+        contest_team = self.repository.create_team(create_team_data)
+        return ContestTeamResponse.from_contest_team(contest_team)
 
     @cache_set(
         key_builder=lambda result, **kwargs: get_team_key(result.id), from_result=True
