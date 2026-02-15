@@ -92,7 +92,9 @@ async def create_contest(
 async def get_all_contests(
     current_user: Dict[str, Any] = Depends(get_current_user),
     search: str | None = Query(None, description="Search by contest name"),
-    status: ContestStatus | None = Query(None, description="Filter by contest status"),
+    contest_status: ContestStatus | None = Query(
+        None, description="Filter by contest status"
+    ),
     is_public: bool | None = Query(
         None, description="Filter by visibility (public/private)"
     ),
@@ -106,7 +108,7 @@ async def get_all_contests(
 
     Args:
         search: Optional search term for contest name
-        status: Optional status to filter by
+        contest_status: Optional status to filter by
         is_public: Optional visibility filter
         page: Page number (starts from 1)
         page_size: Number of contests per page (max 100)
@@ -120,7 +122,7 @@ async def get_all_contests(
     user_id = (await UserService.get_user_by_keycloak_id(db, kc_id)).id
     skip = (page - 1) * page_size
     total, contests = await service.get_all_contests(
-        user_id, search, status, is_public, skip, page_size
+        user_id, search, contest_status, is_public, skip, page_size
     )
     return ContestListResponse(total=total, contests=contests)
 

@@ -99,6 +99,12 @@ class ContestService:
         """
         # Validate contest data
         self.validator.validate_contest_dates(contest.start_time, contest.end_time)
+        self.validator.validate_registration_dates(
+            contest.registration_start, contest.registration_end, contest.start_time
+        )
+        self.validator.validate_team_size_constraints(
+            contest.min_team_size, contest.max_team_size
+        )
 
         # Create contest data DTO
         contest_data = CreateContestData(
@@ -187,9 +193,8 @@ class ContestService:
             Tuple of (total count, contests list)
         """
         # Check if user is admin
-        user_is_admin = (
-            self.user_repository.get_user_by_id(user_id).role == UserRole.admin
-        )
+        user = self.user_repository.get_user_or_raise(user_id)
+        user_is_admin = user.role == UserRole.admin
         # Create filter and pagination objects
         filters = ContestFilters(
             search_term=search_term, status=status, is_public=is_public
@@ -242,7 +247,32 @@ class ContestService:
             contest_data.start_time if contest_data.start_time else contest.start_time
         )
         new_end = contest_data.end_time if contest_data.end_time else contest.end_time
+        new_reg_start = (
+            contest_data.registration_start
+            if contest_data.registration_start
+            else contest.registration_start
+        )
+        new_reg_end = (
+            contest_data.registration_end
+            if contest_data.registration_end
+            else contest.registration_end
+        )
+        new_min_size = (
+            contest_data.min_team_size
+            if contest_data.min_team_size
+            else contest.min_team_size
+        )
+        new_max_size = (
+            contest_data.max_team_size
+            if contest_data.max_team_size
+            else contest.max_team_size
+        )
+
         self.validator.validate_contest_dates(new_start, new_end)
+        self.validator.validate_registration_dates(
+            new_reg_start, new_reg_end, new_start
+        )
+        self.validator.validate_team_size_constraints(new_min_size, new_max_size)
 
         # Create update data DTO with manual field mapping
         update_data = UpdateContestData(
@@ -321,13 +351,11 @@ class ContestService:
         """
         # Check if contest exists and user has permission
         contest = self.repository.get_contest_or_raise(contest_id)
-        self.user_repository.get_users_or_raise(
-            request.instructor_ids
-        )  # Validate instructor IDs
         self.guard.check_assign_instructors(
             user_id=user_id, contest=contest, instructor_ids=request.instructor_ids
         )
 
+        self.user_repository.get_users_or_raise(request.instructor_ids)
         # Validate instructors and assign
         existing_instructors = self.repository.get_all_instructors_for_contest(
             contest_id
@@ -342,7 +370,6 @@ class ContestService:
         self.repository.assign_instructor(contest_id, request.instructor_ids)
         logger.info(
             f"Assigned {len(request.instructor_ids)} instructor(s) to contest {contest_id} "
-            f"by user {user_id}: {request.instructor_ids}"
         )
 
     @cache_delete(
@@ -388,7 +415,6 @@ class ContestService:
         self.repository.remove_instructor(contest_id, request.instructor_ids)
         logger.info(
             f"Removed {len(request.instructor_ids)} instructor(s) from contest {contest_id} "
-            f"by user {user_id}: {request.instructor_ids}"
         )
 
     @cache_get(

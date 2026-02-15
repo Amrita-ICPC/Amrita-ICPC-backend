@@ -103,7 +103,7 @@ class TeamRepository:
             raise UserNotFoundError(str(next(iter(missing_user_ids))))
         return users
 
-    def find_team_by_name(self, contest_id: UUID, team_name: str) -> ContestTeam | None:
+    def find_team_by_name(self, contest_id: UUID, team_name: str) -> Team | None:
         """
         Find a team by its name within a specific contest.
 
@@ -112,7 +112,7 @@ class TeamRepository:
             team_name: Name of the team to find.
 
         Returns:
-            The ContestTeam object if found, otherwise None.
+            The Team object if found, otherwise None.
         """
         return (
             self.db.query(Team)
@@ -124,12 +124,13 @@ class TeamRepository:
             .first()
         )
 
-    def get_team_or_raise(self, team_id: UUID) -> Team:
+    def get_team_or_raise(self, team_id: UUID, contest_id: UUID | None = None) -> Team:
         """
         Retrieve a team by its ID or raise an exception if not found.
 
         Args:
             team_id: ID of the team to retrieve.
+            contest_id: Optional ID of the contest for context in error messages.
         Returns:
             The Team object if found.
         Raises:
@@ -137,7 +138,9 @@ class TeamRepository:
         """
         team = self.db.query(Team).filter(Team.id == team_id).first()
         if not team:
-            raise TeamNotFoundError(str(team_id))
+            raise TeamNotFoundError(
+                str(team_id), str(contest_id) if contest_id else None
+            )
         return team
 
     def get_contest_team_or_raise(self, contest_id: UUID, team_id: UUID) -> ContestTeam:
@@ -166,12 +169,15 @@ class TeamRepository:
             raise TeamNotFoundError(str(team_id), str(contest_id))
         return contest_team
 
-    def get_team_members_or_raise(self, team_id: UUID) -> list[User]:
+    def get_team_members_or_raise(
+        self, team_id: UUID, contest_id: UUID | None = None
+    ) -> list[User]:
         """
         Retrieve the members of a team by team ID or raise an exception if not found.
 
         Args:
             team_id: ID of the team.
+            contest_id: Optional ID of the contest for context in error messages.
         Returns:
             List of User objects representing the team members.
         Raises:
@@ -179,7 +185,9 @@ class TeamRepository:
         """
         team = self.db.query(Team).filter(Team.id == team_id).first()
         if not team:
-            raise TeamNotFoundError(str(team_id))
+            raise TeamNotFoundError(
+                str(team_id), str(contest_id) if contest_id else None
+            )
         members = (
             self.db.query(User)
             .join(TeamUser, TeamUser.user_id == User.id)
@@ -188,12 +196,15 @@ class TeamRepository:
         )
         return members
 
-    def get_team_members_count_or_raise(self, team_id: UUID) -> int:
+    def get_team_members_count_or_raise(
+        self, team_id: UUID, contest_id: UUID | None = None
+    ) -> int:
         """
         Retrieve the count of members in a team by team ID or raise an exception if not found.
 
         Args:
             team_id: ID of the team.
+            contest_id: Optional ID of the contest for context in error messages.
         Returns:
             The count of team members.
         Raises:
@@ -201,7 +212,9 @@ class TeamRepository:
         """
         team = self.db.query(Team).filter(Team.id == team_id).first()
         if not team:
-            raise TeamNotFoundError(str(team_id))
+            raise TeamNotFoundError(
+                str(team_id), str(contest_id) if contest_id else None
+            )
         member_count = (
             self.db.query(TeamUser).filter(TeamUser.team_id == team_id).count()
         )
@@ -295,6 +308,27 @@ class TeamRepository:
             team = self.db.query(Team).filter(Team.id == team_id).first()
             if team:
                 team.leader_id = leader_id
+
+        self.db.flush()
+
+    def remove_team_members(self, team_id: UUID, member_ids: list[UUID]) -> None:
+        """
+        Remove members from a team.
+
+        This method encapsulates the database operations for removing team members,
+        keeping the service layer clean and focused on business logic.
+
+        Args:
+            team_id: ID of the team to remove members from
+            member_ids: List of user IDs to remove from the team
+
+        Returns:
+            None - changes are flushed to the database
+        """
+        # Remove team members
+        self.db.query(TeamUser).filter(
+            TeamUser.team_id == team_id, TeamUser.user_id.in_(member_ids)
+        ).delete(synchronize_session=False)
 
         self.db.flush()
 

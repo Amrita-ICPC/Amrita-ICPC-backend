@@ -181,9 +181,12 @@ class TestRemoveTeamMemberSuccess:
                 contest_id, team_id, member_data, user_id
             )
 
-        mock_repository.update_team.assert_called_once_with(
-            team_id=team_id, leader_id=new_leader_id, updated_by=user_id
-        )
+        # Verify update_team is called with proper arguments
+        assert mock_repository.update_team.call_count == 1
+        call_args = mock_repository.update_team.call_args
+        update_data, team, contest_team = call_args[0]
+        assert update_data.team_id == team_id
+        assert update_data.leader_id == new_leader_id
 
     @pytest.mark.asyncio
     async def test_removes_non_leader_member_without_leader_change(
@@ -220,9 +223,12 @@ class TestRemoveTeamMemberSuccess:
                 contest_id, team_id, member_data, user_id
             )
 
-        mock_repository.update_team.assert_called_once_with(
-            team_id=team_id, leader_id=None, updated_by=user_id
-        )
+        # Verify update_team is called with proper arguments
+        assert mock_repository.update_team.call_count == 1
+        call_args = mock_repository.update_team.call_args
+        update_data, team, contest_team = call_args[0]
+        assert update_data.team_id == team_id
+        assert update_data.leader_id is None
 
 
 class TestRemoveTeamMemberContestValidation:
@@ -270,7 +276,7 @@ class TestRemoveTeamMemberTeamValidation:
         member_data = TeamMemberRemove(member_ids=[uuid4()], new_leader_id=None)
 
         mock_repository.get_contest_or_raise.return_value = mock_contest
-        mock_repository.get_team_or_raise.side_effect = TeamNotFoundError(
+        mock_repository.get_contest_team_or_raise.side_effect = TeamNotFoundError(
             str(team_id), str(contest_id)
         )
 
@@ -497,6 +503,10 @@ class TestRemoveTeamMemberSizeValidation:
 
         mock_repository.get_contest_or_raise.return_value = mock_contest
         mock_repository.get_team_or_raise.return_value = mock_team
+        mock_contest_team = MagicMock()
+        mock_contest_team.team_status = TeamStatus.DRAFT
+        mock_contest_team.team = mock_team
+        mock_repository.get_contest_team_or_raise.return_value = mock_contest_team
         mock_repository.get_all_team_members.return_value = existing_members
 
         with patch.object(team_service, "get_team_members"):
@@ -506,7 +516,7 @@ class TestRemoveTeamMemberSizeValidation:
 
         # Should validate with 2 remaining members (4 total - 2 removed)
         mock_validator.validate_team_size.assert_called_once_with(
-            2, mock_contest, mock_team.team_status
+            2, mock_contest, mock_contest_team.team_status
         )
 
 
@@ -632,7 +642,7 @@ class TestRemoveTeamMemberLeaderValidation:
             )
 
         mock_validator.validate_leader_change.assert_called_once_with(
-            team_member_ids, new_leader_id, current_leader_id
+            [member_to_remove], new_leader_id, current_leader_id
         )
 
 
@@ -830,9 +840,12 @@ class TestRemoveTeamMemberRepositoryContract:
                 contest_id, team_id, member_data, user_id
             )
 
-        mock_repository.update_team.assert_called_once_with(
-            team_id=team_id, leader_id=new_leader_id, updated_by=user_id
-        )
+        # Verify update_team is called with proper arguments
+        assert mock_repository.update_team.call_count == 1
+        call_args = mock_repository.update_team.call_args
+        update_data, team, contest_team = call_args[0]
+        assert update_data.team_id == team_id
+        assert update_data.leader_id == new_leader_id
 
     @pytest.mark.asyncio
     async def test_update_team_called_with_none_when_no_leader(
@@ -865,9 +878,12 @@ class TestRemoveTeamMemberRepositoryContract:
                 contest_id, team_id, member_data, user_id
             )
 
-        mock_repository.update_team.assert_called_once_with(
-            team_id=team_id, leader_id=None, updated_by=user_id
-        )
+        # Verify update_team is called with proper arguments
+        assert mock_repository.update_team.call_count == 1
+        call_args = mock_repository.update_team.call_args
+        update_data, team, contest_team = call_args[0]
+        assert update_data.team_id == team_id
+        assert update_data.leader_id is None
 
     @pytest.mark.asyncio
     async def test_get_team_members_called_after_removal(
