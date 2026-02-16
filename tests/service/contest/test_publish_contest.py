@@ -213,12 +213,5 @@ class TestPublishContestSoftDelete:
         mock_contest.is_deleted = True
         mock_contest_repository.get_contest_or_raise.return_value = mock_contest
 
-        # Service should check is_deleted and raise ContestNotFoundError
-        # (This assumes the service has this check, which is reasonable)
-        # If not, this test documents the expected behavior
-        mock_contest_repository.get_contest_or_raise.side_effect = (
-            ContestNotFoundError(str(mock_contest.id))
-        )
-
         with pytest.raises(ContestNotFoundError):
             await contest_service.publish_contest(mock_contest.id, user_id)

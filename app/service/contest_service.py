@@ -500,6 +500,10 @@ class ContestService:
         """
         contest = self.repository.get_contest_or_raise(contest_id)
 
+        # Check if contest is soft-deleted
+        if contest.is_deleted:
+            raise ContestNotFoundError(str(contest_id))
+
         # Check permissions
         self.guard.check_manage_contest(user_id=user_id, contest=contest)
 
