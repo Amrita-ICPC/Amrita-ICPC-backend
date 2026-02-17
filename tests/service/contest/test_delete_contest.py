@@ -7,7 +7,6 @@ This module tests soft delete and restore functionality:
 - Repository contract verification
 """
 
-from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -16,6 +15,7 @@ import pytest
 from app.core.permissions import PermissionDeniedError
 from app.exceptions.contest import ContestNotFoundError
 from app.schema.contest import ContestResponse
+from app.utils.enums import UserRole
 
 
 class TestDeleteContestSuccess:
@@ -55,8 +55,8 @@ class TestDeleteContestValidation:
     ):
         """Test that ContestNotFoundError is raised when contest doesn't exist."""
         contest_id = uuid4()
-        mock_contest_repository.get_contest_or_raise.side_effect = (
-            ContestNotFoundError(str(contest_id))
+        mock_contest_repository.get_contest_or_raise.side_effect = ContestNotFoundError(
+            str(contest_id)
         )
 
         with pytest.raises(ContestNotFoundError):
@@ -141,8 +141,8 @@ class TestRestoreContestValidation:
     ):
         """Test that ContestNotFoundError is raised for non-existent contest."""
         contest_id = uuid4()
-        mock_contest_repository.get_contest_or_raise.side_effect = (
-            ContestNotFoundError(str(contest_id))
+        mock_contest_repository.get_contest_or_raise.side_effect = ContestNotFoundError(
+            str(contest_id)
         )
 
         with pytest.raises(ContestNotFoundError):
@@ -230,12 +230,14 @@ class TestGetSoftDeletedContests:
         mock_contest.is_deleted = True
         mock_result = PaginatedResult(total=1, items=[mock_contest])
         mock_contest_repository.get_soft_deleted_contests.return_value = mock_result
-        mock_user.role = "student"
+        mock_user.role = UserRole.student
         mock_user_repository.get_user_or_raise.return_value = mock_user
 
         from app.schema.contest import ContestSummaryResponse
 
-        with patch.object(ContestSummaryResponse, "model_validate", side_effect=lambda x: x):
+        with patch.object(
+            ContestSummaryResponse, "model_validate", side_effect=lambda x: x
+        ):
             total, contests = await contest_service.get_soft_deleted_contests(user_id)
 
         assert total == 1

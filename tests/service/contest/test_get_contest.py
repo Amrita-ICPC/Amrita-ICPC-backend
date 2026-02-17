@@ -16,7 +16,6 @@ Test Organization:
     - Repository contract verification
 """
 
-from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -105,8 +104,8 @@ class TestGetContestByIdValidation:
     ):
         """Test that ContestNotFoundError is raised when contest doesn't exist."""
         contest_id = uuid4()
-        mock_contest_repository.get_contest_or_raise.side_effect = (
-            ContestNotFoundError(str(contest_id))
+        mock_contest_repository.get_contest_or_raise.side_effect = ContestNotFoundError(
+            str(contest_id)
         )
 
         with pytest.raises(ContestNotFoundError):
@@ -220,9 +219,7 @@ class TestGetAllContestsSuccess:
         mock_user_repository.get_user_or_raise.return_value = mock_user
         mock_user.role = UserRole.student
 
-        await contest_service.get_all_contests(
-            user_id, status=ContestStatus.SCHEDULED
-        )
+        await contest_service.get_all_contests(user_id, status=ContestStatus.SCHEDULED)
 
         call_args = mock_contest_repository.get_contests_with_filters.call_args
         filters = call_args[0][2]
@@ -266,7 +263,6 @@ class TestGetAllContestsUserRoles:
         """Test that admin status is passed to repository."""
         mock_result = PaginatedResult(total=0, items=[])
         mock_contest_repository.get_contests_with_filters.return_value = mock_result
-        mock_user = MagicMock()
         mock_user.role = UserRole.admin
         mock_user_repository.get_user_or_raise.return_value = mock_user
 
