@@ -9,7 +9,7 @@ This module tests instructor operations:
 - Repository contract verification
 """
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
@@ -21,8 +21,7 @@ from app.exceptions.contest import (
     InstructorNotAssignedError,
 )
 from app.exceptions.user import UserNotFoundError
-from app.repositories.dto import PaginatedResult
-from app.schema.contest import InstructorListResponse, InstructorManageRequest
+from app.schema.contest import InstructorManageRequest
 from app.utils.enums import UserRole
 
 
@@ -92,8 +91,8 @@ class TestAssignInstructorsContestValidation:
         """Test that ContestNotFoundError is raised when contest doesn't exist."""
         contest_id = uuid4()
         request_data = InstructorManageRequest(instructor_ids=[uuid4()])
-        mock_contest_repository.get_contest_or_raise.side_effect = (
-            ContestNotFoundError(str(contest_id))
+        mock_contest_repository.get_contest_or_raise.side_effect = ContestNotFoundError(
+            str(contest_id)
         )
 
         with pytest.raises(ContestNotFoundError):
@@ -165,7 +164,9 @@ class TestAssignInstructorsValidation:
         mock_user_repository.get_user_or_raise.return_value = mock_user
 
         mock_contest_repository.assign_instructor.side_effect = (
-            InstructorAlreadyAssignedError(str(instructor_id), str(setup_valid_contest.id))
+            InstructorAlreadyAssignedError(
+                str(instructor_id), str(setup_valid_contest.id)
+            )
         )
 
         with pytest.raises(InstructorAlreadyAssignedError):
@@ -276,7 +277,8 @@ class TestGetInstructorsSuccess:
     ):
         """Test that get_contest_instructors returns paginated list."""
         mock_contest_repository.get_contest_instructors_paginated.return_value = (
-            1, [mock_instructor]
+            1,
+            [mock_instructor],
         )
 
         response = await contest_service.get_contest_instructors(
@@ -296,9 +298,7 @@ class TestGetInstructorsSuccess:
         user_id,
     ):
         """Test that empty instructor list returns (0, [])."""
-        mock_contest_repository.get_contest_instructors_paginated.return_value = (
-            0, []
-        )
+        mock_contest_repository.get_contest_instructors_paginated.return_value = (0, [])
 
         response = await contest_service.get_contest_instructors(
             mock_contest.id, user_id
@@ -317,9 +317,7 @@ class TestGetInstructorsSuccess:
         user_id,
     ):
         """Test that pagination parameters are passed to repository."""
-        mock_contest_repository.get_contest_instructors_paginated.return_value = (
-            0, []
-        )
+        mock_contest_repository.get_contest_instructors_paginated.return_value = (0, [])
 
         await contest_service.get_contest_instructors(
             mock_contest.id, user_id, skip=10, limit=20
@@ -328,6 +326,8 @@ class TestGetInstructorsSuccess:
         call_args = mock_contest_repository.get_contest_instructors_paginated.call_args
         # Verify pagination is passed correctly
         assert call_args is not None
+        _, kwargs = call_args
+        assert kwargs.get("skip") == 10 or (call_args[0] and 10 in call_args[0])
 
 
 class TestManageInstructorsRepositoryContract:
@@ -391,8 +391,8 @@ class TestManageInstructorsExecutionOrder:
         """Test that contest existence is checked before permissions on assign."""
         contest_id = uuid4()
         request_data = InstructorManageRequest(instructor_ids=[uuid4()])
-        mock_contest_repository.get_contest_or_raise.side_effect = (
-            ContestNotFoundError(str(contest_id))
+        mock_contest_repository.get_contest_or_raise.side_effect = ContestNotFoundError(
+            str(contest_id)
         )
 
         with pytest.raises(ContestNotFoundError):
