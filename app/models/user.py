@@ -39,3 +39,6 @@ class User(Base):
     creator_contest_questions = relationship(
         "ContestQuestion", back_populates="creator"
     )
+    deleted_banks = relationship(
+        "Bank", back_populates="deleter", foreign_keys="[Bank.deleted_by]"
+    )

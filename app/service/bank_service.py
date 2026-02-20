@@ -1,17 +1,11 @@
 from typing import List
 from uuid import UUID
 
-from sqlalchemy import or_
-from sqlalchemy.orm import Session, joinedload
-
 from app.core.cache.decorators import cache_delete, cache_get, cache_set
-from app.exceptions.bank import (
-    BankAccessDeniedError,
-    BankAlreadyExistsError,
-    BankNotFoundError,
-    BankPermissionError,
-)
-from app.models.bank import Bank, BankShare
+from app.core.guards.bank import BankOperationGuard
+from app.repositories.bank import BankRepository
+from app.repositories.dto.bank import BankFilters
+from app.repositories.dto.pagination import PaginationParams
 from app.schema.bank import (
     BankCreate,
     BankDetailResponse,
@@ -20,13 +14,34 @@ from app.schema.bank import (
     BankUpdate,
 )
 from app.utils.enums import BankPermission
+from app.validators.bank import BankValidator
 
 
 class BankService:
-    """Service for bank database operations."""
+    """Service layer coordinating bank logic through injected repositories and guards.
 
-    def __init__(self, db: Session):
-        self.db = db
+    This service orchestrates bank-related business logic by coordinating
+    between the repository layer (data access), guard layer (permissions),
+    and validator layer (business rules). This implements a clean architecture
+    pattern separating concerns completely from database or API knowledge.
+    """
+
+    def __init__(
+        self,
+        repository: BankRepository,
+        guard: BankOperationGuard,
+        validator: BankValidator,
+    ):
+        """Initialize the bank service layer dependencies.
+
+        Args:
+            repository (BankRepository): Data access gateway.
+            guard (BankOperationGuard): Permission policy checker.
+            validator (BankValidator): Schema and logic validation.
+        """
+        self.repository = repository
+        self.guard = guard
+        self.validator = validator
 
     @cache_delete(
         key_builder=lambda self, bank, user_id: f"banks:user:{user_id}:*",
@@ -37,26 +52,29 @@ class BankService:
         from_result=True,
     )
     async def create_bank(self, bank: BankCreate, user_id: UUID) -> BankResponse:
-        """Create a new bank."""
-        existing_bank = (
-            self.db.query(Bank)
-            .filter(Bank.name == bank.name, Bank.created_by == user_id)
-            .first()
+        """Create a new bank under the current user's ownership.
+
+        Args:
+            bank (BankCreate): Bank specification details.
+            user_id (UUID): The creating user.
+
+        Returns:
+            BankResponse: Exposes public attributes of the newly created bank.
+
+        Raises:
+            BankAlreadyExistsError: If this user already created a bank with this exact name.
+        """
+        existing = self.repository.get_bank_by_name_and_creator(
+            name=bank.name, user_id=user_id
         )
-        if existing_bank:
-            raise BankAlreadyExistsError(bank.name)
+        self.validator.validate_unique_bank_creation(existing, bank.name)
 
-        db_bank = Bank(name=bank.name, description=bank.description, created_by=user_id)
-        self.db.add(db_bank)
-        self.db.flush()
-        self.db.refresh(db_bank)
+        db_bank = self.repository.create_bank(bank_data=bank, user_id=user_id)
 
-        # Grant OWNER access to creator
-        share = BankShare(
+        # Grant ownership instantly via share relationships
+        self.repository.add_share(
             bank_id=db_bank.id, user_id=user_id, permission=BankPermission.owner
         )
-        self.db.add(share)
-        self.db.flush()
 
         return BankResponse.model_validate(db_bank)
 
@@ -65,59 +83,49 @@ class BankService:
         ttl=300,
     )
     async def _get_bank_from_cache(self, bank_id: UUID) -> BankDetailResponse:
-        """
-        Internal method to get bank from DB with caching.
-        WARNING: Does not check permissions!
-        """
-        stmt = (
-            self.db.query(Bank)
-            .options(joinedload(Bank.questions), joinedload(Bank.shares))
-            .filter(Bank.id == bank_id)
-        )
-        bank = stmt.first()
+        """Internal helper handling explicit cache access for bank structure.
 
-        if not bank:
-            raise BankNotFoundError(str(bank_id))
+        WARNING: This skips access checks intentionally to load entities uniformly.
 
+        Args:
+            bank_id (UUID): Fetching by database ID.
+
+        Returns:
+            BankDetailResponse: Serialized data representation from DB.
+        """
+        bank = self.repository.get_bank_or_raise(bank_id, load_relations=True)
         return BankDetailResponse.model_validate(bank)
 
     async def get_bank_by_id(
         self, bank_id: UUID, user_id: UUID, check_access: bool = True
     ) -> BankDetailResponse:
+        """Fetch bank specific details including relationships, heavily guarded.
+
+        Args:
+            bank_id (UUID): Focus entity ID.
+            user_id (UUID): Requesting agent ID.
+            check_access (bool): Whether to enforce READ constraints.
+
+        Returns:
+            BankDetailResponse: A complete detail breakdown of structure.
         """
-        Get bank by ID with permission checks and visibility filtering.
-        """
-        # Get bank from cache (or DB)
-        bank = await self._get_bank_from_cache(bank_id)
+        cached_dto = await self._get_bank_from_cache(bank_id)
 
         if check_access:
-            # Check ownership or share
-            if bank.created_by == user_id:
-                # Owner sees everything
-                pass
-            else:
-                # Check share
-                # We can check the shares list in the cached object since it includes all shares
-                # This avoids hitting the DB again
-                has_access = False
-                for share in bank.shares:
-                    if share.user_id == user_id:
-                        has_access = True
-                        break
+            # We recreate a mock 'bank' locally from DTO since guard expects model interfaces
+            # Alternatively we could decouple guard to use arbitrary dicts or pass the DTO
+            # Converting to standard validation checks
+            class MinimalBankMock:
+                created_by = cached_dto.created_by
+                shares = cached_dto.shares
 
-                if not has_access:
-                    raise BankAccessDeniedError()
+            self.guard.check_read_bank(user_id=user_id, bank=MinimalBankMock())  # type: ignore
 
-                # Non-owners should not see the shares list
-                # We create a copy or modify the Pydantic model response
-                # Since Pydantic models are immutable by default in v2 but we are using v1 style or Config,
-                # we can use model_copy with update, or just set the field if it's a standard model
-                # app.schema.bank.BankDetailResponse seems to be a standard BaseModel
+            if cached_dto.created_by != user_id:
+                # Strip out comprehensive admin detail lists for regular readers
+                cached_dto = cached_dto.model_copy(update={"shares": []})
 
-                # Create a copy with empty shares
-                bank = bank.model_copy(update={"shares": []})
-
-        return bank
+        return cached_dto
 
     @cache_get(
         key_builder=lambda self,
@@ -129,17 +137,25 @@ class BankService:
     async def get_all_banks(
         self, user_id: UUID, skip: int = 0, limit: int = 100
     ) -> tuple[int, List[BankResponse]]:
-        """Get all banks accessible to the user (Owned + Shared)."""
-        query = (
-            self.db.query(Bank)
-            .outerjoin(BankShare)
-            .filter(or_(Bank.created_by == user_id, BankShare.user_id == user_id))
-            .distinct()
+        """Fetch a paginated block of available banks scoped to the caller.
+
+        Args:
+            user_id (UUID): Target entity fetching list.
+            skip (int): Records to advance before streaming.
+            limit (int): Max records back-streamed.
+
+        Returns:
+            tuple[int, List[BankResponse]]: Total row size available globally vs fetched subset.
+        """
+        filters = BankFilters()
+        pagination = PaginationParams(skip=skip, limit=limit)
+
+        result = self.repository.get_banks_with_filters(
+            user_id=user_id, filters=filters, pagination=pagination
         )
 
-        total = query.count()
-        banks = query.offset(skip).limit(limit).all()
-        return total, [BankResponse.model_validate(bank) for bank in banks]
+        responses = [BankResponse.model_validate(b) for b in result.items]
+        return result.total, responses
 
     @cache_delete(
         key_builder=lambda self,
@@ -155,39 +171,29 @@ class BankService:
     async def update_bank(
         self, bank_id: UUID, bank_update: BankUpdate, user_id: UUID
     ) -> BankResponse:
-        """Update a bank."""
-        # We need the raw DB object here to check permissions and update,
-        # but get_bank_by_id returns Pydantic model due to cache decorator.
-        # So we query directly or use a private helper.
-        # Private helper avoid circular cache logic issues.
+        """Partially update internal specifications regarding a bank entity.
 
-        bank = self.db.query(Bank).filter(Bank.id == bank_id).first()
-        if not bank:
-            raise BankNotFoundError(str(bank_id))
+        Args:
+            bank_id (UUID): Selection block targeting specific bank.
+            bank_update (BankUpdate): Safe schema input wrapping possible modifications.
+            user_id (UUID): Identity handling the patch.
 
-        # Check permissions for edit
-        if bank.created_by != user_id:
-            share = (
-                self.db.query(BankShare)
-                .filter(BankShare.bank_id == bank_id, BankShare.user_id == user_id)
-                .first()
-            )
-
-            if share and share.permission == BankPermission.read:
-                raise BankPermissionError()
-
-            if not share:
-                raise BankAccessDeniedError()
+        Returns:
+            BankResponse: Serialized modified entity mapping to DB.
+        """
+        bank = self.repository.get_bank_or_raise(bank_id, load_relations=True)
+        self.guard.check_edit_bank(user_id=user_id, bank=bank)
 
         update_data = bank_update.model_dump(exclude_unset=True)
-        for field, value in update_data.items():
-            if field == "name" and (value is None or value.strip() == ""):
-                continue
+        validated_data = self.validator.construct_valid_update_payload(
+            update_data, bank
+        )
+
+        for field, value in validated_data.items():
             setattr(bank, field, value)
 
-        self.db.flush()
-        self.db.refresh(bank)
-        return BankResponse.model_validate(bank)
+        updated_bank = self.repository.update_bank(bank)
+        return BankResponse.model_validate(updated_bank)
 
     @cache_delete(
         key_builder=lambda self, bank_id, user_id: [
@@ -196,111 +202,155 @@ class BankService:
         ]
     )
     async def delete_bank(self, bank_id: UUID, user_id: UUID) -> None:
-        """Delete a bank."""
-        bank = self.db.query(Bank).filter(Bank.id == bank_id).first()
-        if not bank:
-            raise BankNotFoundError(str(bank_id))
+        """Force erase an entire bank node including associative metadata.
 
-        # Only Owner can delete
-        if bank.created_by != user_id:
-            raise BankPermissionError()
+        Args:
+            bank_id (UUID): Pointer to exact resource.
+            user_id (UUID): Deletion agent forcing execution.
+        """
+        bank = self.repository.get_bank_or_raise(bank_id)
+        self.guard.check_manage_bank(user_id=user_id, bank=bank)
+        self.repository.delete_bank(bank)
 
-        self.db.delete(bank)
-        self.db.flush()
+    @cache_get(
+        key_builder=lambda self,
+        user_id,
+        skip=0,
+        limit=100: f"banks:deleted:user:{user_id}:skip:{skip}:limit:{limit}",
+        ttl=300,
+    )
+    async def get_soft_deleted_banks(
+        self, user_id: UUID, skip: int = 0, limit: int = 100
+    ) -> tuple[int, List[BankResponse]]:
+        """Fetch a paginated block of softly deleted banks scoped to the caller.
+
+        Args:
+            user_id (UUID): Target entity fetching list.
+            skip (int): Records to advance before streaming.
+            limit (int): Max records back-streamed.
+
+        Returns:
+            tuple[int, List[BankResponse]]: Total row size available vs fetched subset.
+        """
+        filters = BankFilters()
+        pagination = PaginationParams(skip=skip, limit=limit)
+
+        result = self.repository.get_soft_deleted_banks(
+            user_id=user_id, filters=filters, pagination=pagination
+        )
+
+        responses = [BankResponse.model_validate(b) for b in result.items]
+        return result.total, responses
+
+    @cache_delete(
+        key_builder=lambda self, bank_id, user_id: [
+            f"bank:{bank_id}",
+            f"banks:user:{user_id}:*",
+            f"banks:deleted:user:{user_id}:*",
+        ]
+    )
+    async def soft_delete_bank(self, bank_id: UUID, user_id: UUID) -> None:
+        """Soft delete an entire bank node.
+
+        Args:
+            bank_id (UUID): Pointer to exact resource.
+            user_id (UUID): Deletion agent forcing execution.
+        """
+        bank = self.repository.get_bank_or_raise(bank_id)
+        self.guard.check_manage_bank(user_id=user_id, bank=bank)
+        self.repository.soft_delete_bank(bank, user_id)
+
+    @cache_delete(
+        key_builder=lambda self, bank_id, user_id: [
+            f"bank:{bank_id}",
+            f"banks:user:{user_id}:*",
+            f"banks:deleted:user:{user_id}:*",
+        ]
+    )
+    @cache_set(
+        key_builder=lambda result: f"bank:{result.id}",
+        ttl=300,
+        from_result=True,
+    )
+    async def restore_bank(self, bank_id: UUID, user_id: UUID) -> BankResponse:
+        """Restore a softly deleted bank node.
+
+        Args:
+            bank_id (UUID): Pointer to exact resource.
+            user_id (UUID): Agent forcing execution.
+
+        Returns:
+            BankResponse: Exposes public attributes of the restored bank.
+        """
+        bank = self.repository.get_deleted_bank_or_raise(bank_id)
+        self.guard.check_manage_bank(user_id=user_id, bank=bank)
+        restored_bank = self.repository.restore_bank(bank)
+        return BankResponse.model_validate(restored_bank)
 
     @cache_delete(
         key_builder=lambda self, bank_id, shares, current_user_id: [
-            f"bank:{bank_id}",  # Invalidate bank details as shares change
-            # We might want to invalidate target users' lists too but that requires knowning target user IDs.
-            # shares is a list of objects.
+            f"bank:{bank_id}",
         ]
     )
     async def share_bank(
         self, bank_id: UUID, shares: List[BankShareItem], current_user_id: UUID
     ) -> None:
-        """Share a bank with multiple users or transfer ownership."""
-        bank = self.db.query(Bank).filter(Bank.id == bank_id).first()
-        if not bank:
-            raise BankNotFoundError(str(bank_id))
+        """Grant additional members explicit roles configuring access levels within bank scopes.
 
-        # Access Check: Only Owner can share
-        is_owner = bank.created_by == current_user_id
-        if not is_owner:
-            raise BankPermissionError()
+        If an owner role is granted, the original owner is downgraded and explicitly logged
+        as shifting out of master status.
+
+        Args:
+            bank_id (UUID): Focus selection pointer.
+            shares (List[BankShareItem]): Role assignment definitions per specific user node.
+            current_user_id (UUID): Master controller forcing action.
+        """
+        bank = self.repository.get_bank_or_raise(bank_id)
+        self.guard.check_manage_bank(user_id=current_user_id, bank=bank)
 
         for share_item in shares:
             target_user_id = share_item.user_id
             permission = share_item.permission
 
-            # Handle Ownership Transfer
             if permission == BankPermission.owner:
-                # Transfer ownership
-                # 1. Update Bank
                 bank.created_by = target_user_id
 
-                # 2. Update Old Owner (Current User) -> EDIT
-                old_owner_share = (
-                    self.db.query(BankShare)
-                    .filter(
-                        BankShare.bank_id == bank_id,
-                        BankShare.user_id == current_user_id,
-                    )
-                    .first()
+                # Check old owner share existence
+                old_owner_share = self.repository.get_share_for_user(
+                    bank_id=bank_id, user_id=current_user_id
                 )
-
                 if old_owner_share:
                     old_owner_share.permission = BankPermission.edit
                 else:
-                    self.db.add(
-                        BankShare(
-                            bank_id=bank_id,
-                            user_id=current_user_id,
-                            permission=BankPermission.edit,
-                        )
+                    self.repository.add_share(
+                        bank_id=bank_id,
+                        user_id=current_user_id,
+                        permission=BankPermission.edit,
                     )
 
-                # 3. Update New Owner -> OWNER
-                # Check if target user already had a share
-                new_owner_share = (
-                    self.db.query(BankShare)
-                    .filter(
-                        BankShare.bank_id == bank_id,
-                        BankShare.user_id == target_user_id,
-                    )
-                    .first()
+                new_owner_share = self.repository.get_share_for_user(
+                    bank_id=bank_id, user_id=target_user_id
                 )
-
                 if new_owner_share:
                     new_owner_share.permission = BankPermission.owner
                 else:
-                    self.db.add(
-                        BankShare(
-                            bank_id=bank_id,
-                            user_id=target_user_id,
-                            permission=BankPermission.owner,
-                        )
+                    self.repository.add_share(
+                        bank_id=bank_id,
+                        user_id=target_user_id,
+                        permission=BankPermission.owner,
                     )
-
             else:
-                # Normal Sharing (Read/Edit)
-                existing_share = (
-                    self.db.query(BankShare)
-                    .filter(
-                        BankShare.bank_id == bank_id,
-                        BankShare.user_id == target_user_id,
-                    )
-                    .first()
+                existing_share = self.repository.get_share_for_user(
+                    bank_id=bank_id, user_id=target_user_id
                 )
-
                 if existing_share:
                     existing_share.permission = permission
                 else:
-                    new_share = BankShare(
+                    self.repository.add_share(
                         bank_id=bank_id, user_id=target_user_id, permission=permission
                     )
-                    self.db.add(new_share)
 
-        self.db.flush()
+        self.repository.batch_flush()
 
     @cache_delete(
         key_builder=lambda self, bank_id, user_ids, current_user_id: [
@@ -310,30 +360,26 @@ class BankService:
     async def unshare_bank(
         self, bank_id: UUID, user_ids: List[UUID], current_user_id: UUID
     ) -> None:
-        """Remove users from bank shares."""
-        bank = self.db.query(Bank).filter(Bank.id == bank_id).first()
-        if not bank:
-            raise BankNotFoundError(str(bank_id))
+        """Strip read/edit rights from targets against specific bank.
 
-        # Access Check: Only Owner can unshare
-        is_owner = bank.created_by == current_user_id
-        if not is_owner:
-            raise BankPermissionError()
+        Cannot delete the ownership role entirely natively.
+
+        Args:
+            bank_id (UUID): Scope limitation path string.
+            user_ids (List[UUID]): Multiple identifiers selected.
+            current_user_id (UUID): Master node executing directive.
+        """
+        bank = self.repository.get_bank_or_raise(bank_id)
+        self.guard.check_manage_bank(user_id=current_user_id, bank=bank)
 
         for target_user_id in user_ids:
-            # Cannot remove owner via unshare (must transfer ownership via share endpoint)
             if target_user_id == bank.created_by:
                 continue
 
-            share = (
-                self.db.query(BankShare)
-                .filter(
-                    BankShare.bank_id == bank_id, BankShare.user_id == target_user_id
-                )
-                .first()
+            share = self.repository.get_share_for_user(
+                bank_id=bank_id, user_id=target_user_id
             )
-
             if share:
-                self.db.delete(share)
+                self.repository.remove_share(share)
 
-        self.db.flush()
+        self.repository.batch_flush()

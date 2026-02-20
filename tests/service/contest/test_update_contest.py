@@ -9,7 +9,6 @@ This module tests contest update operations with focus on:
 - Repository contract verification
 """
 
-from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -17,9 +16,7 @@ import pytest
 
 from app.core.permissions import PermissionDeniedError
 from app.exceptions.contest import ContestNotFoundError, InvalidContestError
-from app.repositories.contest import UpdateContestData
 from app.schema.contest import ContestResponse, ContestUpdate
-from app.utils.enums import ScoringType
 
 
 class TestUpdateContestSuccess:
@@ -114,12 +111,14 @@ class TestUpdateContestContestValidation:
     ):
         """Test that ContestNotFoundError is raised when contest doesn't exist."""
         contest_id = uuid4()
-        mock_contest_repository.get_contest_or_raise.side_effect = (
-            ContestNotFoundError(str(contest_id))
+        mock_contest_repository.get_contest_or_raise.side_effect = ContestNotFoundError(
+            str(contest_id)
         )
 
         with pytest.raises(ContestNotFoundError):
-            await contest_service.update_contest(contest_id, contest_update_data, user_id)
+            await contest_service.update_contest(
+                contest_id, contest_update_data, user_id
+            )
 
         mock_guard.check_manage_contest.assert_not_called()
 
@@ -189,9 +188,7 @@ class TestUpdateContestDateValidation:
         mock_contest_repository.update_contest.return_value = updated_contest
 
         with patch.object(ContestResponse, "model_validate"):
-            await contest_service.update_contest(
-                mock_contest.id, update_data, user_id
-            )
+            await contest_service.update_contest(mock_contest.id, update_data, user_id)
 
         # Validator should be called with merged dates
         assert mock_validator.validate_contest_dates.called
@@ -220,9 +217,7 @@ class TestUpdateContestTeamSizeValidation:
         )
 
         with pytest.raises(InvalidContestError):
-            await contest_service.update_contest(
-                mock_contest.id, bad_update, user_id
-            )
+            await contest_service.update_contest(mock_contest.id, bad_update, user_id)
 
 
 class TestUpdateContestExecutionOrder:
@@ -239,8 +234,8 @@ class TestUpdateContestExecutionOrder:
     ):
         """Test that contest existence is checked before permissions."""
         contest_id = uuid4()
-        mock_contest_repository.get_contest_or_raise.side_effect = (
-            ContestNotFoundError(str(contest_id))
+        mock_contest_repository.get_contest_or_raise.side_effect = ContestNotFoundError(
+            str(contest_id)
         )
 
         with pytest.raises(ContestNotFoundError):

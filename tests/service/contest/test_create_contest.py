@@ -12,14 +12,12 @@ organized into logical test classes that cover different aspects of the operatio
 
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
-from uuid import uuid4
 
 import pytest
 
-from app.exceptions.contest import InvalidContestError
 from app.repositories.contest import CreateContestData
 from app.schema.contest import ContestCreate, ContestResponse
-from app.utils.enums import ContestStatus, ScoringType
+from app.utils.enums import ScoringType
 
 
 class TestCreateContestSuccess:
@@ -41,7 +39,7 @@ class TestCreateContestSuccess:
             ContestResponse,
             "model_validate",
             return_value=MagicMock(spec=ContestResponse),
-        ) as mock_validate:
+        ):
             result = await contest_service.create_contest(contest_create_data, user_id)
 
         assert result is not None
