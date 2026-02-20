@@ -1,7 +1,6 @@
-from typing import Any, Dict
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import (
@@ -9,25 +8,26 @@ from app.auth.dependencies import (
     can_delete,
     can_read,
     can_update,
-    get_current_user,
+    get_current_user_id,
 )
 from app.core.clients.database import get_db
 from app.core.guards.contest import ContestOperationGuard
 from app.core.logger import logger
+from app.core.response import create_api_response
 from app.repositories.contest import ContestRepository
 from app.repositories.user import UserRepository
+from app.schema.base import APIResponse
 from app.schema.contest import (
     ContestCreate,
-    ContestListResponse,
     ContestResponse,
+    ContestSummaryResponse,
     ContestUpdate,
-    InstructorListResponse,
     InstructorManageRequest,
-    MessageResponse,
+    InstructorResponse,
 )
 from app.service.contest_service import ContestService
-from app.service.user_service import UserService
 from app.utils.enums import ContestStatus
+from app.utils.pagination import get_pagination
 from app.validators.contest import ContestValidator
 
 router = APIRouter()
@@ -43,54 +43,39 @@ def get_contest_service(db: Session = Depends(get_db)) -> ContestService:
 
 @router.post(
     "/",
-    response_model=MessageResponse,
+    response_model=APIResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create a new contest",
     dependencies=[can_create("contests")],
 )
 async def create_contest(
+    request: Request,
     contest: ContestCreate,
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    user_id: UUID = Depends(get_current_user_id),
     service: ContestService = Depends(get_contest_service),
 ):
-    """
-    Create a new contest.
-
-    Only users with admin role can create contests.
-
-    Args:
-        contest: Contest creation data
-        db: Database session
-        current_user: Current authenticated user
-        service: Contest service instance
-
-    Returns:
-        Success message
-
-    Raises:
-        PermissionDeniedError: If user is not admin
-        UserNotFoundError: If user not found in database
-    """
-    # Fetch the database user using the Keycloak user ID (sub)
-    keycloak_user_id = current_user["sub"]
-    db_user = await UserService.get_user_by_keycloak_id(db, keycloak_user_id)
-    created_contest = await service.create_contest(contest, db_user.id)
+    created_contest = await service.create_contest(contest, user_id)
     logger.info(
-        f"Contest '{created_contest.name}' with ID {created_contest.id} created by user {db_user.id}"
+        f"Contest '{created_contest.name}' with ID {created_contest.id} created by user {user_id}"
     )
 
-    return MessageResponse(message="Contest created successfully")
+    return create_api_response(
+        request,
+        data=None,
+        message="Contest created successfully",
+        status_code=status.HTTP_201_CREATED,
+    )
 
 
 @router.get(
     "/",
-    response_model=ContestListResponse,
+    response_model=APIResponse[list[ContestSummaryResponse]],
     summary="Get all contests",
     dependencies=[can_read("contests")],
 )
 async def get_all_contests(
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    request: Request,
+    user_id: UUID = Depends(get_current_user_id),
     search: str | None = Query(None, description="Search by contest name"),
     contest_status: ContestStatus | None = Query(
         None, description="Filter by contest status"
@@ -100,419 +85,266 @@ async def get_all_contests(
     ),
     page: int = Query(1, ge=1, description="Page number (starts from 1)"),
     page_size: int = Query(10, ge=1, le=100, description="Number of contests per page"),
-    db: Session = Depends(get_db),
     service: ContestService = Depends(get_contest_service),
 ):
-    """
-    Get all contests with pagination, search, and filtering support.
-
-    Args:
-        search: Optional search term for contest name
-        contest_status: Optional status to filter by
-        is_public: Optional visibility filter
-        page: Page number (starts from 1)
-        page_size: Number of contests per page (max 100)
-        db: Database session
-        service: Contest service instance
-
-    Returns:
-        List of contests and total count
-    """
-    kc_id = current_user.get("sub")
-    user_id = (await UserService.get_user_by_keycloak_id(db, kc_id)).id
     skip = (page - 1) * page_size
     total, contests = await service.get_all_contests(
         user_id, search, contest_status, is_public, skip, page_size
     )
-    return ContestListResponse(total=total, contests=contests)
+
+    pagination = get_pagination(total=total, page=page, page_size=page_size)
+
+    return create_api_response(
+        request,
+        data=contests,
+        message="Contests fetched successfully",
+        pagination=pagination,
+    )
 
 
 @router.get(
     "/deleted",
-    response_model=ContestListResponse,
+    response_model=APIResponse[list[ContestSummaryResponse]],
     summary="Get soft-deleted contests",
     dependencies=[can_read("contests")],
 )
 async def get_deleted_contests(
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    request: Request,
+    user_id: UUID = Depends(get_current_user_id),
     search: str | None = Query(None, description="Search by contest name"),
     contest_status: ContestStatus | None = Query(
         None, description="Filter by contest status"
     ),
     page: int = Query(1, ge=1, description="Page number (starts from 1)"),
     page_size: int = Query(10, ge=1, le=100, description="Number of contests per page"),
-    db: Session = Depends(get_db),
     service: ContestService = Depends(get_contest_service),
 ):
-    """
-    Get all soft-deleted contests with pagination, search, and filtering support.
-
-    Args:
-        search: Optional search term for contest name
-        contest_status: Optional status to filter by
-        page: Page number (starts from 1)
-        page_size: Number of contests per page (max 100)
-        db: Database session
-        service: Contest service instance
-
-    Returns:
-        List of soft-deleted contests and total count
-    """
-    kc_id = current_user.get("sub")
-    user_id = (await UserService.get_user_by_keycloak_id(db, kc_id)).id
     skip = (page - 1) * page_size
     total, contests = await service.get_soft_deleted_contests(
         user_id, search, contest_status, skip, page_size
     )
-    return ContestListResponse(total=total, contests=contests)
+
+    pagination = get_pagination(total=total, page=page, page_size=page_size)
+
+    return create_api_response(
+        request,
+        data=contests,
+        message="Deleted contests fetched successfully",
+        pagination=pagination,
+    )
 
 
 @router.get(
     "/{contest_id}",
-    response_model=ContestResponse,
+    response_model=APIResponse[ContestResponse],
     summary="Get contest by ID",
     dependencies=[can_read("contests")],
 )
 async def get_contest(
+    request: Request,
     contest_id: UUID,
     service: ContestService = Depends(get_contest_service),
-    current_user: Dict[str, Any] = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id),
 ):
-    """
-    Get a specific contest by its ID.
-
-    Args:
-        contest_id: Contest ID
-        service: Contest service instance
-        current_user: Current authenticated user
-        db: Database session
-    Returns:
-        Contest details
-
-    Raises:
-        ContestNotFoundError: If contest with given ID not found
-    """
-    kc_id = current_user.get("sub")
-    user_id = (await UserService.get_user_by_keycloak_id(db, kc_id)).id
-    return await service.get_contest_by_id(contest_id, user_id)
+    contest = await service.get_contest_by_id(contest_id, user_id)
+    return create_api_response(
+        request, data=contest, message="Contest fetched successfully"
+    )
 
 
 @router.patch(
     "/{contest_id}",
-    response_model=MessageResponse,
+    response_model=APIResponse[ContestResponse],
     summary="Update contest",
     dependencies=[can_update("contests")],
 )
 async def update_contest(
+    request: Request,
     contest_id: UUID,
     contest_data: ContestUpdate,
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    user_id: UUID = Depends(get_current_user_id),
     service: ContestService = Depends(get_contest_service),
 ):
-    """
-    Partially update an existing contest with provided fields.
-
-    Only users with admin role can update contests.
-    Only the fields provided in the request body will be updated. Other fields remain unchanged.
-
-    Args:
-        contest_id: Contest ID
-        contest_data: Contest update data (partial update - only provided fields are updated)
-        db: Database session
-        current_user: Current authenticated user
-        service: Contest service instance
-
-    Returns:
-        Success message
-
-    Raises:
-        ContestNotFoundError: If contest with given ID not found
-        PermissionDeniedError: If user is not admin
-    """
-    kc_id = current_user.get("sub")
-    user_id = (await UserService.get_user_by_keycloak_id(db, kc_id)).id
-    await service.update_contest(contest_id, contest_data, user_id)
+    contest = await service.update_contest(contest_id, contest_data, user_id)
     logger.info(f"Contest with ID {contest_id} updated by user {user_id}")
 
-    return MessageResponse(message="Contest updated successfully")
+    return create_api_response(
+        request,
+        data=contest,
+        message="Contest updated successfully",
+    )
 
 
 @router.post(
     "/{contest_id}/publish",
-    response_model=MessageResponse,
+    response_model=APIResponse,
     status_code=status.HTTP_200_OK,
     summary="Publish contest",
     dependencies=[can_update("contests")],
 )
 async def publish_contest(
+    request: Request,
     contest_id: UUID,
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    user_id: UUID = Depends(get_current_user_id),
     service: ContestService = Depends(get_contest_service),
 ):
-    """
-    Publish a contest.
-
-    Only users with admin role can publish contests.
-    Publishing a contest sets the published_at timestamp and updates the status.
-
-    Args:
-        contest_id: Contest ID
-        db: Database session
-        current_user: Current authenticated user
-        service: Contest service instance
-
-    Returns:
-        Success message
-
-    Raises:
-        ContestNotFoundError: If contest with given ID not found
-        PermissionDeniedError: If user is not admin
-    """
-    kc_id = current_user.get("sub")
-    user_id = (await UserService.get_user_by_keycloak_id(db, kc_id)).id
     await service.publish_contest(contest_id, user_id)
     logger.info(f"Contest with ID {contest_id} published by user {user_id}")
 
-    return MessageResponse(message="Contest published successfully")
+    return create_api_response(
+        request,
+        data=None,
+        message="Contest published successfully",
+    )
 
 
 @router.delete(
     "/{contest_id}",
-    response_model=MessageResponse,
+    response_model=APIResponse,
     status_code=status.HTTP_200_OK,
     summary="Delete contest",
     dependencies=[can_delete("contests")],
 )
 async def delete_contest(
+    request: Request,
     contest_id: UUID,
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    user_id: UUID = Depends(get_current_user_id),
     service: ContestService = Depends(get_contest_service),
 ):
-    """
-    Delete a contest by its ID.
-
-    Only users with admin role can delete contests.
-
-    Args:
-        contest_id: Contest ID
-        db: Database session
-        current_user: Current authenticated user
-        service: Contest service instance
-
-    Returns:
-        Success message
-
-    Raises:
-        ContestNotFoundError: If contest with given ID not found
-        PermissionDeniedError: If user is not admin
-    """
-    kc_id = current_user.get("sub")
-    user_id = (await UserService.get_user_by_keycloak_id(db, kc_id)).id
     await service.delete_contest(contest_id, user_id)
     logger.info(f"Contest with ID {contest_id} deleted by user {user_id}")
 
-    return MessageResponse(message="Contest deleted successfully")
+    return create_api_response(
+        request,
+        data=None,
+        message="Contest deleted successfully",
+    )
 
 
 @router.delete(
     "/{contest_id}/soft-delete",
-    response_model=MessageResponse,
+    response_model=APIResponse,
     status_code=status.HTTP_200_OK,
     summary="Soft delete contest",
     dependencies=[can_delete("contests")],
 )
 async def soft_delete_contest(
+    request: Request,
     contest_id: UUID,
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    user_id: UUID = Depends(get_current_user_id),
     service: ContestService = Depends(get_contest_service),
 ):
-    """
-    Soft delete a contest.
-
-    Args:
-        contest_id: Contest ID
-        db: Database session
-        current_user: Current authenticated user
-        service: Contest service instance
-
-    Returns:
-        Success message
-    """
-    kc_id = current_user.get("sub")
-    user_id = (await UserService.get_user_by_keycloak_id(db, kc_id)).id
     await service.soft_delete_contest(contest_id, user_id)
     logger.info(f"Contest {contest_id} soft deleted by user {user_id}")
 
-    return MessageResponse(message="Contest soft deleted successfully")
+    return create_api_response(
+        request,
+        data=None,
+        message="Contest soft deleted successfully",
+    )
 
 
 @router.post(
     "/{contest_id}/restore",
-    response_model=ContestResponse,
+    response_model=APIResponse[ContestResponse],
     status_code=status.HTTP_200_OK,
     summary="Restore soft-deleted contest",
     dependencies=[can_update("contests")],
 )
 async def restore_contest(
+    request: Request,
     contest_id: UUID,
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    user_id: UUID = Depends(get_current_user_id),
     service: ContestService = Depends(get_contest_service),
 ):
-    """
-    Restore a soft-deleted contest.
-
-    Args:
-        contest_id: Contest ID
-        db: Database session
-        current_user: Current authenticated user
-        service: Contest service instance
-
-    Returns:
-        Restored contest object
-    """
-    kc_id = current_user.get("sub")
-    user_id = (await UserService.get_user_by_keycloak_id(db, kc_id)).id
     contest = await service.restore_contest(contest_id, user_id)
     logger.info(f"Contest {contest_id} restored by user {user_id}")
-    return contest
+    return create_api_response(
+        request, data=contest, message="Contest restored successfully"
+    )
 
 
 @router.post(
     "/{contest_id}/instructors",
-    response_model=MessageResponse,
+    response_model=APIResponse,
     status_code=status.HTTP_200_OK,
     summary="Assign instructors to contest",
     dependencies=[can_update("contests")],
 )
 async def assign_instructors_to_contest(
+    request: Request,
     contest_id: UUID,
-    request: InstructorManageRequest,
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    instructor_request: InstructorManageRequest,
+    user_id: UUID = Depends(get_current_user_id),
     service: ContestService = Depends(get_contest_service),
 ):
-    """
-    Assign a list of instructors to a contest.
-
-    Only users with admin role can assign instructors to contests.
-
-    Args:
-        contest_id: Contest ID
-        request: Request containing list of instructor IDs
-        db: Database session
-        current_user: Current authenticated user
-        service: Contest service instance
-
-    Returns:
-        Success message
-
-    Raises:
-        ContestNotFoundError: If contest not found
-        UserNotFoundError: If any instructor not found
-        InstructorAlreadyAssignedError: If any instructor is already assigned
-        PermissionDeniedError: If user doesn't have permission
-    """
-    kc_id = current_user.get("sub")
-    user_id = (await UserService.get_user_by_keycloak_id(db, kc_id)).id
-    await service.assign_instructors_to_contest(contest_id, request, user_id)
+    await service.assign_instructors_to_contest(contest_id, instructor_request, user_id)
     logger.info(
-        f"Assigned {len(request.instructor_ids)} instructors to contest {contest_id} by user {user_id}"
+        f"Assigned {len(instructor_request.instructor_ids)} instructors to contest {contest_id} by user {user_id}"
     )
 
-    return MessageResponse(message="Instructors assigned successfully")
+    return create_api_response(
+        request,
+        data=None,
+        message="Instructors assigned successfully",
+    )
 
 
 @router.delete(
     "/{contest_id}/instructors",
-    response_model=MessageResponse,
+    response_model=APIResponse,
     status_code=status.HTTP_200_OK,
     summary="Remove instructors from contest",
     dependencies=[can_update("contests")],
 )
 async def remove_instructors_from_contest(
+    request: Request,
     contest_id: UUID,
-    request: InstructorManageRequest,
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    instructor_request: InstructorManageRequest,
+    user_id: UUID = Depends(get_current_user_id),
     service: ContestService = Depends(get_contest_service),
 ):
-    """
-    Remove a list of instructors from a contest.
-
-    Only users with admin role can remove instructors from contests.
-
-    Args:
-        contest_id: Contest ID
-        request: Request containing list of instructor IDs
-        db: Database session
-        current_user: Current authenticated user
-        service: Contest service instance
-
-    Returns:
-        Success message
-
-    Raises:
-        ContestNotFoundError: If contest not found
-        InstructorNotAssignedError: If any instructor is not assigned to the contest
-        PermissionDeniedError: If user doesn't have permission
-    """
-    kc_id = current_user.get("sub")
-    user_id = (await UserService.get_user_by_keycloak_id(db, kc_id)).id
-    await service.remove_instructors_from_contest(contest_id, request, user_id)
+    await service.remove_instructors_from_contest(
+        contest_id, instructor_request, user_id
+    )
     logger.info(
-        f"Removed {len(request.instructor_ids)} instructors from contest {contest_id} by user {user_id}"
+        f"Removed {len(instructor_request.instructor_ids)} instructors from contest {contest_id} by user {user_id}"
     )
 
-    return MessageResponse(message="Instructors removed successfully")
+    return create_api_response(
+        request,
+        data=None,
+        message="Instructors removed successfully",
+    )
 
 
 @router.get(
     "/{contest_id}/instructors",
-    response_model=InstructorListResponse,
+    response_model=APIResponse[list[InstructorResponse]],
     summary="Get contest instructors",
     dependencies=[can_read("contests")],
 )
 async def get_contest_instructors(
+    request: Request,
     contest_id: UUID,
     page: int = Query(1, ge=1, description="Page number (starts from 1)"),
     page_size: int = Query(
         10, ge=1, le=100, description="Number of instructors per page"
     ),
-    db: Session = Depends(get_db),
     service: ContestService = Depends(get_contest_service),
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    user_id: UUID = Depends(get_current_user_id),
 ):
-    """
-    Get all instructors assigned to a contest with pagination support.
-
-    Only users who can manage the contest (creators or assigned instructors) can view the instructors list.
-
-    Args:
-        contest_id: Contest ID
-        page: Page number (starts from 1)
-        page_size: Number of instructors per page (max 100)
-        service: Contest service instance
-        current_user: Current authenticated user
-
-    Returns:
-        List of instructors assigned to the contest
-
-    Raises:
-        ContestNotFoundError: If contest not found
-        PermissionDeniedError: If user cannot manage the contest
-    """
-    kc_id = current_user.get("sub")
-    user_id = (await UserService.get_user_by_keycloak_id(db, kc_id)).id
     skip = (page - 1) * page_size
-    result = await service.get_contest_instructors(contest_id, user_id, skip, page_size)
-    logger.info(
-        f"Retrieved {len(result.instructors)} instructors for contest {contest_id}"
+    total, instructors = await service.get_contest_instructors(
+        contest_id, user_id, skip, page_size
     )
+    logger.info(f"Retrieved {len(instructors)} instructors for contest {contest_id}")
 
-    return result
+    pagination = get_pagination(total=total, page=page, page_size=page_size)
+
+    return create_api_response(
+        request,
+        data=instructors,
+        message="Instructors fetched successfully",
+        pagination=pagination,
+    )

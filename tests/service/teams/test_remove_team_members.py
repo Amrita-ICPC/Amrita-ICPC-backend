@@ -24,7 +24,7 @@ from app.exceptions.team import (
     MemberNotInTeamError,
     TeamNotFoundError,
 )
-from app.schema.team import TeamMemberRemove, TeamMembersResponse
+from app.schema.team import TeamMemberRemove, TeamMemberResponse
 from app.utils.enums import TeamStatus
 
 
@@ -61,7 +61,7 @@ class TestRemoveTeamMemberSuccess:
         mock_repository.get_team_or_raise.return_value = mock_team
         mock_repository.get_all_team_members.return_value = existing_members
 
-        mock_response = MagicMock(spec=TeamMembersResponse)
+        mock_response = (1, [MagicMock(spec=TeamMemberResponse)])
 
         with patch.object(team_service, "get_team_members", return_value=mock_response):
             result = await team_service.remove_team_member(

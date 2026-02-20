@@ -24,7 +24,7 @@ from app.exceptions.team import (
     TeamNotFoundError,
 )
 from app.exceptions.user import UserNotFoundError
-from app.schema.team import TeamMemberAdd, TeamMembersResponse
+from app.schema.team import TeamMemberAdd, TeamMemberResponse
 
 
 class TestAddTeamMembersSuccess:
@@ -50,7 +50,7 @@ class TestAddTeamMembersSuccess:
         mock_repository.get_team_members_count_or_raise.return_value = 2
         mock_repository.get_all_team_members.return_value = []
 
-        mock_response = MagicMock(spec=TeamMembersResponse)
+        mock_response = (1, [MagicMock(spec=TeamMemberResponse)])
 
         with patch.object(team_service, "get_team_members", return_value=mock_response):
             result = await team_service.add_team_members(

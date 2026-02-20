@@ -9,6 +9,7 @@ from app.core.clients.database import init_db
 from app.core.clients.redis import close_redis, init_redis
 from app.core.config import config
 from app.core.logger import logger, setup_sqlalchemy_logging, setup_uvicorn_logging
+from app.core.middleware import RequestMiddleware
 from app.core.security import setup_security
 
 
@@ -53,6 +54,9 @@ fastapi_app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+fastapi_app.add_middleware(RequestMiddleware)
 
 fastapi_app.include_router(api_router, prefix=config.API_PREFIX)
 setup_exception_handlers(fastapi_app)
