@@ -10,6 +10,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -134,6 +135,7 @@ class ContestInstructor(Base):
 
 class ContestQuestion(Base):
     __tablename__ = "contest_question"
+    __table_args__ = (UniqueConstraint("contest_id", "order"),)
 
     contest_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("contest.id", ondelete="CASCADE"), primary_key=True
@@ -141,12 +143,26 @@ class ContestQuestion(Base):
     question_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("question.id", ondelete="CASCADE"), primary_key=True
     )
+    bank_question_id = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+
+    created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+
+    order: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
 
     duration: Mapped[int] = mapped_column(Integer, nullable=False)
     score: Mapped[int] = mapped_column(Integer, nullable=False)
 
     contest = relationship("Contest", back_populates="questions")
     question = relationship("Question", back_populates="contests")
+    creator = relationship("User", back_populates="creator_contest_questions")
 
 
 class ContestTeamProgress(Base):
