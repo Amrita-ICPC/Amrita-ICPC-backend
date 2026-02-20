@@ -35,3 +35,7 @@ class User(Base):
     )
 
     teams = relationship("TeamUser", back_populates="user")
+    creator_bank_questions = relationship("BankQuestion", back_populates="creator")
+    creator_contest_questions = relationship(
+        "ContestQuestion", back_populates="creator"
+    )

@@ -1,4 +1,4 @@
-## Golden Rules (Read This First)
+## Golden Rules (Updated)
 - Routers never touch the DB.
 - Services never return error flags.
 - All permissions: router RBAC + service domain check.
@@ -10,7 +10,51 @@
 - Do not cache permission-sensitive list endpoints unless user_id is part of the cache key.
 - Do not log request bodies, secrets, tokens, or PII.
 
-## Project-wide guidance
+## Repository Layer
+- Encapsulate all database operations in repository classes.
+- Use DTOs (Data Transfer Objects) for data transfer between layers.
+- Raise domain-specific exceptions (e.g., `TeamNotFoundError`) instead of exposing raw database errors.
+- Ensure repository methods are type-safe and return domain objects or DTOs.
+- Avoid direct SQLAlchemy queries in services or routers.
+
+## Guards
+- Implement guards to centralize permission checks for operations.
+- Validate user permissions before any state-changing operations.
+- Use `TeamOperationGuard` for team-related permission checks.
+- Guards should raise `PermissionDeniedError` immediately on failure.
+- Ensure guards are stateless and reusable across services.
+
+## Validators
+- Centralize business rule validation in validator classes.
+- Use `TeamValidator` to enforce team-specific constraints (e.g., team size, leader assignment).
+- Validators should be stateless and raise domain-specific exceptions on violations.
+- Perform validation before any state changes to ensure data integrity.
+
+## Team Implementation Guidelines
+- **Routes**: Keep routes thin; delegate all business logic to services.
+  - Use `get_team_service` dependency to inject `TeamService`.
+  - Enforce RBAC using `can_create`, `can_update`, `can_read` dependencies.
+  - Use Pydantic schemas (`TeamCreate`, `TeamUpdate`, etc.) for request/response validation.
+- **Services**: Orchestrate business logic by coordinating between repository, guard, and validator layers.
+  - Use `TeamService` for all team-related operations.
+  - Apply caching for read operations (e.g., `get_team_by_id`) with appropriate TTLs.
+  - Invalidate cache on mutations (e.g., `create_team`, `update_team`).
+- **Repository**: Encapsulate all database queries in `TeamRepository`.
+  - Use eager loading for related entities (e.g., `ContestTeam`, `TeamUser`).
+  - Provide paginated results for list endpoints.
+- **Validators**: Use `TeamValidator` to enforce business rules.
+  - Validate team name uniqueness, size constraints, and leader assignment.
+  - Ensure validation methods are reusable and stateless.
+- **Guards**: Use `TeamOperationGuard` to enforce permission checks.
+  - Validate contest management permissions for team creation and updates.
+  - Ensure guards are invoked before any repository or service calls.
+
+## Testing
+- Write unit tests for all layers (routes, services, repository, validators, guards).
+- Mock database interactions in service tests.
+- Use fixtures to set up test data and dependencies.
+- Test both success and failure paths for all operations.
+- Ensure tests are isolated and do not rely on external systems.
 
 ### Coding style and naming conventions
 - Follow existing module naming and FastAPI patterns.

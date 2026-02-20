@@ -60,12 +60,26 @@ class BankShare(Base):
 class BankQuestion(Base):
     __tablename__ = "bank_question"
 
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+
     bank_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("bank.id", ondelete="CASCADE"), primary_key=True
     )
     question_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("question.id", ondelete="CASCADE"), primary_key=True
     )
+    created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
 
+    creator = relationship("User", back_populates="creator_bank_questions")
     bank = relationship("Bank", back_populates="questions")
     question = relationship("Question", back_populates="banks")
