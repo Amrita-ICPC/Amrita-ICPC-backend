@@ -1,7 +1,6 @@
-from typing import Any, Dict
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import (
@@ -10,73 +9,94 @@ from app.auth.dependencies import (
     can_read,
     can_update,
     check_permission,
-    get_current_user,
+    get_current_user_id,
 )
 from app.core.clients.database import get_db
+from app.core.guards.bank import BankOperationGuard
 from app.core.logger import logger
+from app.core.response import create_api_response
+from app.repositories.bank import BankRepository
 from app.schema.bank import (
     BankCreate,
     BankDetailResponse,
-    BankListResponse,
+    BankResponse,
     BankShareRequest,
     BankUnshareRequest,
     BankUpdate,
 )
-from app.schema.contest import MessageResponse
+from app.schema.base import APIResponse
 from app.service.bank_service import BankService
-from app.service.user_service import UserService
+from app.utils.pagination import get_pagination
+from app.validators.bank import BankValidator
 
 router = APIRouter()
 
 
+def get_bank_service(db: Session = Depends(get_db)) -> BankService:
+    """Dependency injector linking repository, guard, and validator into the service.
+
+    Args:
+        db (Session): Database session passed from FastAPI dependencies.
+
+    Returns:
+        BankService: Fully configured service class instance.
+    """
+    repository = BankRepository(db)
+    guard = BankOperationGuard()
+    validator = BankValidator()
+    return BankService(repository, guard, validator)
+
+
 @router.post(
     "/",
-    response_model=MessageResponse,
+    response_model=APIResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create a new bank",
     dependencies=[can_create("banks")],
 )
 async def create_bank(
+    request: Request,
     bank: BankCreate,
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    user_id: UUID = Depends(get_current_user_id),
+    service: BankService = Depends(get_bank_service),
 ):
     """
     Create a new bank.
 
     Args:
+        request (Request): Framework context.
         bank (BankCreate): The bank data to create.
-        db (Session): Database session.
-        current_user (Dict[str, Any]): The currently authenticated user.
+        user_id (UUID): The currently authenticated user ID via Keycloak.
+        service (BankService): Injected domain service handling bank.
 
     Returns:
-        MessageResponse: A message indicating successful creation.
-
-    Raises:
-        BankAlreadyExistsError: If a bank with the same name already exists for the user.
+        APIResponse: Standardized response encapsulating creation metadata.
     """
-    keycloak_user_id = current_user["sub"]
-    db_user = await UserService.get_user_by_keycloak_id(db, keycloak_user_id)
-    bank_service = BankService(db)
-    created_bank = await bank_service.create_bank(bank, db_user.id)
+    created_bank = await service.create_bank(bank, user_id)
     logger.info(
-        f"Bank {created_bank.name} with ID {created_bank.id} created by user {db_user.id}"
+        f"Bank '{created_bank.name}' with ID {created_bank.id} created by user {user_id}"
     )
 
-    return MessageResponse(message="Bank created successfully")
+    return create_api_response(
+        request,
+        data=None,
+        message="Bank created successfully",
+        status_code=status.HTTP_201_CREATED,
+    )
 
 
 @router.get(
     "/",
-    response_model=BankListResponse,
+    response_model=APIResponse[list[BankResponse]],
     summary="Get all banks",
     dependencies=[can_read("banks")],
 )
 async def get_all_banks(
+    request: Request,
     page: int = Query(1, ge=1, description="Page number (starts from 1)"),
     page_size: int = Query(10, ge=1, le=100, description="Number of banks per page"),
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    user_id: UUID = Depends(get_current_user_id),
+    service: BankService = Depends(get_bank_service),
 ):
     """
     Get all banks accessible to the user.
@@ -84,65 +104,110 @@ async def get_all_banks(
     This includes banks created by the user and banks shared with the user.
 
     Args:
+        request (Request): Framework context.
         page (int): Page number (starts from 1).
         page_size (int): Number of banks per page.
-        db (Session): Database session.
-        current_user (Dict[str, Any]): The currently authenticated user.
+        user_id (UUID): Authenticated user ID.
+        service (BankService): Injected domain service.
 
     Returns:
-        BankListResponse: A list of banks and the total count.
+        APIResponse: Standardized response encapsulating the list of banks and pagination state.
     """
-    keycloak_user_id = current_user["sub"]
-    db_user = await UserService.get_user_by_keycloak_id(db, keycloak_user_id)
     skip = (page - 1) * page_size
-    bank_service = BankService(db)
-    total, banks = await bank_service.get_all_banks(db_user.id, skip, page_size)
-    return BankListResponse(total=total, banks=banks)
+    total, banks = await service.get_all_banks(user_id, skip, page_size)
+
+    pagination = get_pagination(total=total, page=page, page_size=page_size)
+
+    return create_api_response(
+        request,
+        data=banks,
+        message="Banks fetched successfully",
+        pagination=pagination,
+    )
+
+
+@router.get(
+    "/deleted",
+    response_model=APIResponse[list[BankResponse]],
+    summary="Get softly deleted banks",
+    dependencies=[can_read("banks")],
+)
+async def get_deleted_banks(
+    request: Request,
+    page: int = Query(1, ge=1, description="Page number (starts from 1)"),
+    page_size: int = Query(10, ge=1, le=100, description="Number of banks per page"),
+    user_id: UUID = Depends(get_current_user_id),
+    service: BankService = Depends(get_bank_service),
+):
+    """
+    Get all softly deleted banks accessible to the user.
+
+    Args:
+        request (Request): Framework context.
+        page (int): Page number (starts from 1).
+        page_size (int): Number of banks per page.
+        user_id (UUID): Authenticated user ID.
+        service (BankService): Injected domain service.
+
+    Returns:
+        APIResponse: Standardized response encapsulating the list of softly deleted banks.
+    """
+    skip = (page - 1) * page_size
+    total, banks = await service.get_soft_deleted_banks(user_id, skip, page_size)
+
+    pagination = get_pagination(total=total, page=page, page_size=page_size)
+
+    return create_api_response(
+        request,
+        data=banks,
+        message="Deleted banks fetched successfully",
+        pagination=pagination,
+    )
 
 
 @router.get(
     "/{bank_id}",
-    response_model=BankDetailResponse,
+    response_model=APIResponse[BankDetailResponse],
     summary="Get bank details",
     dependencies=[can_read("banks")],
 )
 async def get_bank(
+    request: Request,
     bank_id: UUID,
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    user_id: UUID = Depends(get_current_user_id),
+    service: BankService = Depends(get_bank_service),
 ):
     """
     Get bank details including questions and shares.
 
     Args:
+        request (Request): Framework context.
         bank_id (UUID): The unique identifier of the bank.
-        db (Session): Database session.
-        current_user (Dict[str, Any]): The currently authenticated user.
+        user_id (UUID): Authenticated user ID.
+        service (BankService): Injected domain service.
 
     Returns:
-        BankDetailResponse: Detailed information about the bank.
-
-    Raises:
-        BankNotFoundError: If the bank does not exist.
-        BankAccessDeniedError: If the user does not have permission to view the bank.
+        APIResponse: Detailed information block for the bank.
     """
-    keycloak_user_id = current_user["sub"]
-    db_user = await UserService.get_user_by_keycloak_id(db, keycloak_user_id)
-    bank_service = BankService(db)
-    return await bank_service.get_bank_by_id(bank_id, db_user.id)
+    bank_details = await service.get_bank_by_id(bank_id, user_id)
+
+    return create_api_response(
+        request, data=bank_details, message="Bank details fetched successfully"
+    )
 
 
 @router.patch(
     "/{bank_id}",
-    response_model=MessageResponse,
+    response_model=APIResponse,
     summary="Update bank",
     dependencies=[can_update("banks")],
 )
 async def update_bank(
+    request: Request,
     bank_id: UUID,
     bank_update: BankUpdate,
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    user_id: UUID = Depends(get_current_user_id),
+    service: BankService = Depends(get_bank_service),
 ):
     """
     Update bank details.
@@ -150,39 +215,33 @@ async def update_bank(
     Only the owner or users with EDIT permission can update the bank.
 
     Args:
+        request (Request): Framework context.
         bank_id (UUID): The unique identifier of the bank.
         bank_update (BankUpdate): The fields to update.
-        db (Session): Database session.
-        current_user (Dict[str, Any]): The currently authenticated user.
+        user_id (UUID): Authenticated user ID.
+        service (BankService): Injected domain service.
 
     Returns:
-        MessageResponse: A message indicating successful update.
-
-    Raises:
-        BankNotFoundError: If the bank does not exist.
-        BankPermissionError: If the user has READ-only access.
-        BankAccessDeniedError: If the user has no access.
+        APIResponse: Confirmation flag on update.
     """
-    keycloak_user_id = current_user["sub"]
-    db_user = await UserService.get_user_by_keycloak_id(db, keycloak_user_id)
-    bank_service = BankService(db)
-    await bank_service.update_bank(bank_id, bank_update, db_user.id)
-    logger.info(f"Bank with ID {bank_id} updated by user {db_user.id}")
+    await service.update_bank(bank_id, bank_update, user_id)
+    logger.info(f"Bank with ID {bank_id} updated by user {user_id}")
 
-    return MessageResponse(message="Bank updated successfully")
+    return create_api_response(request, data=None, message="Bank updated successfully")
 
 
 @router.delete(
     "/{bank_id}",
-    response_model=MessageResponse,
+    response_model=APIResponse,
     status_code=status.HTTP_200_OK,
     summary="Delete bank",
     dependencies=[can_delete("banks")],
 )
 async def delete_bank(
+    request: Request,
     bank_id: UUID,
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    user_id: UUID = Depends(get_current_user_id),
+    service: BankService = Depends(get_bank_service),
 ):
     """
     Delete a bank.
@@ -190,37 +249,97 @@ async def delete_bank(
     Only the owner can delete the bank.
 
     Args:
+        request (Request): Framework context.
         bank_id (UUID): The unique identifier of the bank.
-        db (Session): Database session.
-        current_user (Dict[str, Any]): The currently authenticated user.
+        user_id (UUID): Authenticated user ID.
+        service (BankService): Injected domain service.
 
     Returns:
-        MessageResponse: A message indicating successful deletion.
-
-    Raises:
-        BankNotFoundError: If the bank does not exist.
-        BankPermissionError: If the user is not the owner.
-        BankAccessDeniedError: If the user has no access.
+        APIResponse: Success confirmation.
     """
-    keycloak_user_id = current_user["sub"]
-    db_user = await UserService.get_user_by_keycloak_id(db, keycloak_user_id)
-    bank_service = BankService(db)
-    await bank_service.delete_bank(bank_id, db_user.id)
-    logger.info(f"Bank with ID {bank_id} deleted by user {db_user.id}")
-    return MessageResponse(message="Bank deleted successfully")
+    await service.delete_bank(bank_id, user_id)
+    logger.info(f"Bank with ID {bank_id} deleted by user {user_id}")
+    return create_api_response(request, data=None, message="Bank deleted successfully")
+
+
+@router.delete(
+    "/{bank_id}/soft-delete",
+    response_model=APIResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Soft delete bank",
+    dependencies=[can_delete("banks")],
+)
+async def soft_delete_bank(
+    request: Request,
+    bank_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: BankService = Depends(get_bank_service),
+):
+    """
+    Soft delete a bank without physically removing it.
+
+    Only the owner or authorized roles can manage this deletion status.
+
+    Args:
+        request (Request): Framework context.
+        bank_id (UUID): The unique identifier of the bank.
+        user_id (UUID): Authenticated user ID.
+        service (BankService): Injected domain service.
+
+    Returns:
+        APIResponse: Success confirmation.
+    """
+    await service.soft_delete_bank(bank_id, user_id)
+    logger.info(f"Bank {bank_id} soft deleted by user {user_id}")
+    return create_api_response(
+        request, data=None, message="Bank soft deleted successfully"
+    )
+
+
+@router.post(
+    "/{bank_id}/restore",
+    response_model=APIResponse[BankResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Restore softly deleted bank",
+    dependencies=[can_update("banks")],
+)
+async def restore_bank(
+    request: Request,
+    bank_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: BankService = Depends(get_bank_service),
+):
+    """
+    Restore a softly deleted bank.
+
+    Returns the bank to an active status.
+
+    Args:
+        request (Request): Framework context.
+        bank_id (UUID): The unique identifier of the bank.
+        user_id (UUID): Authenticated user ID.
+        service (BankService): Injected domain service.
+
+    Returns:
+        APIResponse: The restored bank object block.
+    """
+    bank = await service.restore_bank(bank_id, user_id)
+    logger.info(f"Bank {bank_id} restored by user {user_id}")
+    return create_api_response(request, data=bank, message="Bank restored successfully")
 
 
 @router.post(
     "/{bank_id}/share",
-    response_model=MessageResponse,
+    response_model=APIResponse,
     summary="Share bank with users",
     dependencies=[Depends(check_permission("banks", "share"))],
 )
 async def share_bank(
+    request: Request,
     bank_id: UUID,
     share_data: BankShareRequest,
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    user_id: UUID = Depends(get_current_user_id),
+    service: BankService = Depends(get_bank_service),
 ):
     """
     Share bank with other users.
@@ -228,40 +347,35 @@ async def share_bank(
     Only the owner can share the bank or transfer ownership.
 
     Args:
+        request (Request): Framework context.
         bank_id (UUID): The unique identifier of the bank.
         share_data (BankShareRequest): The list of users and permissions to share with.
-        db (Session): Database session.
-        current_user (Dict[str, Any]): The currently authenticated user.
+        user_id (UUID): Authenticated user ID.
+        service (BankService): Injected domain service.
 
     Returns:
-        MessageResponse: A message indicating successful sharing.
-
-    Raises:
-        BankNotFoundError: If the bank does not exist.
-        BankPermissionError: If the user is not the owner.
+        APIResponse: Success confirmation on sharing execution.
     """
-    keycloak_user_id = current_user["sub"]
-    db_user = await UserService.get_user_by_keycloak_id(db, keycloak_user_id)
-    bank_service = BankService(db)
-    await bank_service.share_bank(bank_id, share_data.shares, db_user.id)
+    await service.share_bank(bank_id, share_data.shares, user_id)
 
     logger.info(
-        f"Bank {bank_id} shared by user {db_user.id} to {len(share_data.shares)} recipients"
+        f"Bank {bank_id} shared by user {user_id} to {len(share_data.shares)} recipients"
     )
-    return MessageResponse(message="Bank shared successfully")
+    return create_api_response(request, data=None, message="Bank shared successfully")
 
 
 @router.post(
     "/{bank_id}/unshare",
-    response_model=MessageResponse,
+    response_model=APIResponse,
     summary="Remove users from bank share",
     dependencies=[Depends(check_permission("banks", "share"))],
 )
 async def unshare_bank(
+    request: Request,
     bank_id: UUID,
     unshare_data: BankUnshareRequest,
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    user_id: UUID = Depends(get_current_user_id),
+    service: BankService = Depends(get_bank_service),
 ):
     """
     Remove users from bank share.
@@ -269,23 +383,20 @@ async def unshare_bank(
     Only the owner can remove users.
 
     Args:
+        request (Request): Framework context.
         bank_id (UUID): The unique identifier of the bank.
         unshare_data (BankUnshareRequest): The list of users to remove.
-        db (Session): Database session.
-        current_user (Dict[str, Any]): The currently authenticated user.
+        user_id (UUID): Authenticated user ID.
+        service (BankService): Injected domain service.
 
     Returns:
-        MessageResponse: A message indicating successful removal.
-
-    Raises:
-        BankNotFoundError: If the bank does not exist.
-        BankPermissionError: If the user is not the owner.
+        APIResponse: Explicit success confirmation.
     """
-    keycloak_user_id = current_user["sub"]
-    db_user = await UserService.get_user_by_keycloak_id(db, keycloak_user_id)
-    bank_service = BankService(db)
-    await bank_service.unshare_bank(bank_id, unshare_data.user_ids, db_user.id)
+    await service.unshare_bank(bank_id, unshare_data.user_ids, user_id)
+
     logger.info(
-        f"Bank with ID {bank_id} access removed for users {unshare_data.user_ids} by user {db_user.id}"
+        f"Bank with ID {bank_id} access removed for users {unshare_data.user_ids} by user {user_id}"
     )
-    return MessageResponse(message="Users removed from bank share successfully")
+    return create_api_response(
+        request, data=None, message="Users removed from bank share successfully"
+    )

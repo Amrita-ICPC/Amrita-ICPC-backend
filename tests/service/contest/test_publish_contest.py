@@ -7,15 +7,13 @@ This module tests contest publishing operations:
 - Repository contract verification
 """
 
-from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
 
 from app.core.permissions import PermissionDeniedError
 from app.exceptions.contest import ContestNotFoundError
-from app.schema.contest import ContestResponse
 from app.utils.enums import ContestStatus
 
 
@@ -69,8 +67,8 @@ class TestPublishContestValidation:
     ):
         """Test that ContestNotFoundError is raised when contest doesn't exist."""
         contest_id = uuid4()
-        mock_contest_repository.get_contest_or_raise.side_effect = (
-            ContestNotFoundError(str(contest_id))
+        mock_contest_repository.get_contest_or_raise.side_effect = ContestNotFoundError(
+            str(contest_id)
         )
 
         with pytest.raises(ContestNotFoundError):
@@ -130,8 +128,8 @@ class TestPublishContestExecutionOrder:
     ):
         """Test that contest existence is checked before permissions."""
         contest_id = uuid4()
-        mock_contest_repository.get_contest_or_raise.side_effect = (
-            ContestNotFoundError(str(contest_id))
+        mock_contest_repository.get_contest_or_raise.side_effect = ContestNotFoundError(
+            str(contest_id)
         )
 
         with pytest.raises(ContestNotFoundError):

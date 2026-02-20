@@ -86,7 +86,9 @@ def mock_validator():
 
 
 @pytest.fixture
-def contest_service(mock_contest_repository, mock_user_repository, mock_guard, mock_validator):
+def contest_service(
+    mock_contest_repository, mock_user_repository, mock_guard, mock_validator
+):
     """ContestService instance with all dependencies mocked.
 
     Provides a fully configured ContestService with mocked dependencies,
@@ -183,7 +185,7 @@ def mock_instructor(user_id):
         MagicMock: Mock User object with instructor attributes
     """
     from datetime import date, datetime
-    
+
     user = MagicMock(spec=User)
     user.id = user_id
     user.user_id = "instructor_001"
@@ -296,7 +298,9 @@ def setup_valid_contest(mock_contest_repository, mock_contest):
 
 
 @pytest.fixture
-def setup_valid_contest_with_creator(mock_contest_repository, mock_user_repository, mock_contest, mock_user):
+def setup_valid_contest_with_creator(
+    mock_contest_repository, mock_user_repository, mock_contest, mock_user
+):
     """Pre-configure repository for valid contest with creator user.
 
     Use in tests that need both contest and creator information.
