@@ -8,10 +8,11 @@ from app.schema.question import QuestionResponse
 from app.utils.enums import BankPermission
 
 
-
 class BankBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=255, description="Bank name")
-    description: Optional[str] = Field(None, max_length=5000, description="Bank description")
+    description: Optional[str] = Field(
+        None, max_length=5000, description="Bank description"
+    )
 
 
 class BankCreate(BankBase):
@@ -20,7 +21,9 @@ class BankCreate(BankBase):
 
 class BankUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=255, description="Bank name")
-    description: Optional[str] = Field(None, max_length=5000, description="Bank description")
+    description: Optional[str] = Field(
+        None, max_length=5000, description="Bank description"
+    )
 
 
 class BankResponse(BankBase):
@@ -61,4 +64,6 @@ class BankShareRequest(BaseModel):
 
 
 class BankUnshareRequest(BaseModel):
-    user_ids: List[UUID] = Field(..., description="List of user IDs to remove access for")
+    user_ids: List[UUID] = Field(
+        ..., description="List of user IDs to remove access for"
+    )

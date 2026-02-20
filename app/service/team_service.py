@@ -10,7 +10,6 @@ from app.schema.team import (
     TeamMemberAdd,
     TeamMemberRemove,
     TeamMemberResponse,
-    TeamMembersResponse,
     TeamUpdate,
 )
 from app.utils.enums import TeamStatus
@@ -376,7 +375,7 @@ class TeamService:
         team_id: UUID,
         member_data: TeamMemberAdd,
         updated_by: UUID,
-    ) -> TeamMembersResponse:
+    ) -> tuple[int, list[TeamMemberResponse]]:
         """
         Add members to an existing team in a contest.
 
@@ -472,7 +471,7 @@ class TeamService:
         team_id: UUID,
         member_data: TeamMemberRemove,
         updated_by: UUID,
-    ) -> TeamMembersResponse:
+    ) -> tuple[int, list[TeamMemberResponse]]:
         """
         Remove multiple members from a team in a contest.
 
@@ -544,7 +543,7 @@ class TeamService:
         search_term: str | None = None,
         skip: int = 0,
         limit: int = 100,
-    ) -> TeamMembersResponse:
+    ) -> tuple[int, list[TeamMemberResponse]]:
         """
         Retrieve all members of a team with optional search and pagination.
 
@@ -599,11 +598,6 @@ class TeamService:
             members.append(member)
 
         # Calculate page number (1-indexed)
-        page = (skip // limit) + 1 if limit > 0 else 1
+        (skip // limit) + 1 if limit > 0 else 1
 
-        return TeamMembersResponse(
-            total=total,
-            page=page,
-            page_size=limit,
-            members=members,
-        )
+        return total, members

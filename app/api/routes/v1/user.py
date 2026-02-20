@@ -33,7 +33,11 @@ def create_user():
     return {"message": "User created"}
 
 
-@router.post("/sync-keycloak-users", response_model=UserSyncResponse, status_code=status.HTTP_200_OK)
+@router.post(
+    "/sync-keycloak-users",
+    response_model=UserSyncResponse,
+    status_code=status.HTTP_200_OK,
+)
 def sync_keycloak_users(
     admin_user: Dict[str, Any] = Depends(require_admin),
     db=Depends(get_db),
@@ -66,7 +70,7 @@ def sync_keycloak_users(
 
     # Sync Keycloak users (exception handled in service layer)
     sync_result = UserService.sync_keycloak_users(db)
-    
+
     users_synced = sync_result["synced_count"]
     skipped_count = sync_result["skipped_count"]
 

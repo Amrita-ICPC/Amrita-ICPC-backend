@@ -18,7 +18,6 @@ from app.schema.contest import (
     ContestResponse,
     ContestSummaryResponse,
     ContestUpdate,
-    InstructorListResponse,
     InstructorManageRequest,
     InstructorResponse,
 )
@@ -435,7 +434,7 @@ class ContestService:
     )
     async def get_contest_instructors(
         self, contest_id: UUID, user_id: UUID, skip: int = 0, limit: int = 100
-    ) -> InstructorListResponse:
+    ) -> tuple[int, list[InstructorResponse]]:
         """
         Get all instructors assigned to a contest.
 
@@ -465,20 +464,11 @@ class ContestService:
             InstructorResponse.model_validate(instructor) for instructor in instructors
         ]
 
-        # Get creator information
-        creator = None
-        if contest.created_by:
-            creator_user = self.repository.get_creator(contest.created_by)
-            if creator_user:
-                creator = InstructorResponse.model_validate(creator_user)
-
         logger.info(
             f"Retrieved {len(instructor_responses)} instructors for contest {contest_id}"
         )
 
-        return InstructorListResponse(
-            total=total, instructors=instructor_responses, creator=creator
-        )
+        return total, instructor_responses
 
     @cache_delete(
         key_builder=lambda self, contest_id, user_id: [

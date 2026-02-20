@@ -143,13 +143,6 @@ class ContestDetailResponse(ContestBase):
 ContestResponse = ContestDetailResponse
 
 
-class ContestListResponse(BaseModel):
-    """Schema for contest list response."""
-
-    total: int = Field(..., description="Total number of contests")
-    contests: List[ContestSummaryResponse] = Field(..., description="List of contests")
-
-
 class MessageResponse(BaseModel):
     """Schema for message response."""
 
@@ -178,19 +171,5 @@ class InstructorResponse(BaseModel):
     gender: Optional[str] = Field(None, description="Instructor gender")
     dob: Optional[date] = Field(None, description="Instructor date of birth")
     created_at: datetime = Field(..., description="Account creation time (UTC)")
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class InstructorListResponse(BaseModel):
-    """Schema for instructor list response."""
-
-    total: int = Field(..., description="Total number of instructors")
-    instructors: List[InstructorResponse] = Field(
-        ..., description="List of instructors"
-    )
-    creator: Optional[InstructorResponse] = Field(
-        None, description="Contest creator details"
-    )
 
     model_config = ConfigDict(from_attributes=True)

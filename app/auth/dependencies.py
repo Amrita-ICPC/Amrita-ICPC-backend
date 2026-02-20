@@ -1,9 +1,13 @@
 from typing import Any, Dict, List
+from uuid import UUID
 
 from fastapi import Depends, Request
+from sqlalchemy.orm import Session
 
+from app.core.clients.database import get_db
 from app.core.logger import logger
 from app.exceptions.auth import PermissionDeniedError, UnauthorizedError
+from app.service.user_service import UserService
 
 
 def get_current_user(request: Request) -> Dict[str, Any]:
@@ -180,6 +184,21 @@ def can_read(resource: str):
 
 def can_update(resource: str):
     return Depends(check_permission(resource, "update"))
+
+
+async def get_current_user_id(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> UUID:
+    """
+    Retrieve the current authenticated user's database ID.
+
+    This dependency avoids repeated database lookups by leveraging the UserService.
+    """
+    kc_id = current_user.get("sub")
+    # UserService.get_user_by_keycloak_id is cached, so efficient
+    user = await UserService.get_user_by_keycloak_id(db, kc_id)
+    return user.id
 
 
 def can_delete(resource: str):

@@ -281,12 +281,12 @@ class TestGetInstructorsSuccess:
             [mock_instructor],
         )
 
-        response = await contest_service.get_contest_instructors(
+        total, instructors = await contest_service.get_contest_instructors(
             mock_contest.id, user_id
         )
 
-        assert response.total == 1
-        assert len(response.instructors) == 1
+        assert total == 1
+        assert len(instructors) == 1
 
     @pytest.mark.asyncio
     async def test_empty_instructor_list(
@@ -300,12 +300,12 @@ class TestGetInstructorsSuccess:
         """Test that empty instructor list returns (0, [])."""
         mock_contest_repository.get_contest_instructors_paginated.return_value = (0, [])
 
-        response = await contest_service.get_contest_instructors(
+        total, instructors = await contest_service.get_contest_instructors(
             mock_contest.id, user_id
         )
 
-        assert response.total == 0
-        assert response.instructors == []
+        assert total == 0
+        assert instructors == []
 
     @pytest.mark.asyncio
     async def test_with_pagination_parameters(

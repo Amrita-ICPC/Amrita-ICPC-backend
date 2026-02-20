@@ -238,23 +238,6 @@ class ContestTeamDetailResponse(TeamResponse):
         )
 
 
-class TeamListResponse(BaseModel):
-    """
-    Schema for list of teams response with pagination.
-
-    Attributes:
-        total: Total number of teams matching the filters.
-        page: Current page number (1-indexed).
-        page_size: Number of teams per page.
-        teams: List of teams without member details for the current page.
-    """
-
-    total: int
-    page: int
-    page_size: int
-    teams: List[ContestTeamResponse]
-
-
 class TeamMemberAdd(BaseModel):
     """
     Schema for adding members to a team.
@@ -293,20 +276,3 @@ class TeamMemberRemove(BaseModel):
     new_leader_id: Optional[UUID] = Field(
         None, description="New leader if removing current leader"
     )
-
-
-class TeamMembersResponse(BaseModel):
-    """
-    Schema for team members list response with pagination.
-
-    Attributes:
-        total: Total number of members in the team.
-        page: Current page number (1-indexed).
-        page_size: Number of items per page.
-        members: List of team members for current page.
-    """
-
-    total: int
-    page: int
-    page_size: int
-    members: List[TeamMemberResponse]
