@@ -31,6 +31,15 @@ router = APIRouter()
 
 
 def get_team_service(db: Session = Depends(get_db)) -> TeamService:
+    """
+    Dependency injector linking repository, guard, and validator into the service.
+
+    Args:
+        db (Session): Database session passed from FastAPI dependencies.
+
+    Returns:
+        TeamService: Fully configured service class instance.
+    """
     return TeamService(
         repository=TeamRepository(db),
         guard=TeamOperationGuard(db),
@@ -52,6 +61,19 @@ async def create_team(
     user_id: UUID = Depends(get_current_user_id),
     service: TeamService = Depends(get_team_service),
 ):
+    """
+    Create a new team in a specific contest.
+
+    Args:
+        request (Request): Framework context.
+        contest_id (UUID): The unique identifier of the contest.
+        team_data (TeamCreate): The team data to create.
+        user_id (UUID): Authenticated user ID.
+        service (TeamService): Injected domain service.
+
+    Returns:
+        APIResponse: Standardized response encapsulating creation metadata.
+    """
     await service.create_team(contest_id, team_data, user_id)
     logger.info(
         f"Team '{team_data.name}' created in contest {contest_id} by user {user_id}"
@@ -79,6 +101,20 @@ async def update_team(
     user_id: UUID = Depends(get_current_user_id),
     service: TeamService = Depends(get_team_service),
 ):
+    """
+    Update an existing team in a contest.
+
+    Args:
+        request (Request): Framework context.
+        contest_id (UUID): The unique identifier of the contest.
+        team_id (UUID): The unique identifier of the team.
+        team_data (TeamUpdate): The fields to update.
+        user_id (UUID): Authenticated user ID.
+        service (TeamService): Injected domain service.
+
+    Returns:
+        APIResponse: Standardized response encapsulating updated team data.
+    """
     team = await service.update_team(contest_id, team_id, team_data, user_id)
     logger.info(f"Team '{team.name}' updated in contest {contest_id} by user {user_id}")
     return create_api_response(request, data=team, message="Team updated successfully")
@@ -94,15 +130,31 @@ async def get_contest_teams(
     request: Request,
     contest_id: UUID,
     search: str | None = Query(None, description="Search by team name"),
-    status: TeamStatus | None = Query(None, description="Filter by team status"),
+    team_status: TeamStatus | None = Query(None, description="Filter by team status"),
     page: int = Query(1, ge=1, description="Page number (starts from 1)"),
     page_size: int = Query(10, ge=1, le=100, description="Number of teams per page"),
     user_id: UUID = Depends(get_current_user_id),
     service: TeamService = Depends(get_team_service),
 ):
+    """
+    Get all teams in a specific contest.
+
+    Args:
+        request (Request): Framework context.
+        contest_id (UUID): The unique identifier of the contest.
+        search (str | None): Optional string to search team names.
+        status (TeamStatus | None): Optional filter for team status.
+        page (int): Page number (starts from 1).
+        page_size (int): Number of teams per page.
+        user_id (UUID): Authenticated user ID.
+        service (TeamService): Injected domain service.
+
+    Returns:
+        APIResponse: Standardized response with list of teams and pagination state.
+    """
     skip = (page - 1) * page_size
     total, teams = await service.get_contest_teams(
-        contest_id, user_id, search, status, skip, page_size
+        contest_id, user_id, search, team_status, skip, page_size
     )
 
     pagination = get_pagination(total=total, page=page, page_size=page_size)
@@ -128,6 +180,19 @@ async def get_team(
     user_id: UUID = Depends(get_current_user_id),
     service: TeamService = Depends(get_team_service),
 ):
+    """
+    Get detailed information about a specific team.
+
+    Args:
+        request (Request): Framework context.
+        contest_id (UUID): The unique identifier of the contest.
+        team_id (UUID): The unique identifier of the team.
+        user_id (UUID): Authenticated user ID.
+        service (TeamService): Injected domain service.
+
+    Returns:
+        APIResponse: Standardized response encapsulating team details.
+    """
     team = await service.get_team_by_id(contest_id, team_id, user_id)
     return create_api_response(request, data=team, message="Team fetched successfully")
 
@@ -148,6 +213,22 @@ async def get_team_members(
     user_id: UUID = Depends(get_current_user_id),
     service: TeamService = Depends(get_team_service),
 ):
+    """
+    Get a paginated list of members in a specific team.
+
+    Args:
+        request (Request): Framework context.
+        contest_id (UUID): The unique identifier of the contest.
+        team_id (UUID): The unique identifier of the team.
+        search (str | None): Optional string to search member names or emails.
+        page (int): Page number (starts from 1).
+        page_size (int): Number of members per page.
+        user_id (UUID): Authenticated user ID.
+        service (TeamService): Injected domain service.
+
+    Returns:
+        APIResponse: Standardized response with list of members and pagination state.
+    """
     skip = (page - 1) * page_size
 
     total, members = await service.get_team_members(
@@ -178,6 +259,20 @@ async def add_team_members(
     user_id: UUID = Depends(get_current_user_id),
     service: TeamService = Depends(get_team_service),
 ):
+    """
+    Add members to an existing team.
+
+    Args:
+        request (Request): Framework context.
+        contest_id (UUID): The unique identifier of the contest.
+        team_id (UUID): The unique identifier of the team.
+        member_data (TeamMemberAdd): Request containing list of member IDs.
+        user_id (UUID): Authenticated user ID.
+        service (TeamService): Injected domain service.
+
+    Returns:
+        APIResponse: Success confirmation with updated member list.
+    """
     total, members = await service.add_team_members(
         contest_id, team_id, member_data, user_id
     )
@@ -206,6 +301,20 @@ async def remove_team_member(
     user_id: UUID = Depends(get_current_user_id),
     service: TeamService = Depends(get_team_service),
 ):
+    """
+    Remove members from an existing team.
+
+    Args:
+        request (Request): Framework context.
+        contest_id (UUID): The unique identifier of the contest.
+        team_id (UUID): The unique identifier of the team.
+        member_data (TeamMemberRemove): Request containing list of member IDs to remove.
+        user_id (UUID): Authenticated user ID.
+        service (TeamService): Injected domain service.
+
+    Returns:
+        APIResponse: Success confirmation with updated member list.
+    """
     total, members = await service.remove_team_member(
         contest_id, team_id, member_data, user_id
     )

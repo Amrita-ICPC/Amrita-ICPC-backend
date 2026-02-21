@@ -34,6 +34,15 @@ router = APIRouter()
 
 
 def get_contest_service(db: Session = Depends(get_db)) -> ContestService:
+    """
+    Dependency injector linking repository, guard, and validator into the service.
+
+    Args:
+        db (Session): Database session passed from FastAPI dependencies.
+
+    Returns:
+        ContestService: Fully configured service class instance.
+    """
     contest_repository = ContestRepository(db)
     user_repository = UserRepository(db)
     guard = ContestOperationGuard(db)
@@ -54,6 +63,18 @@ async def create_contest(
     user_id: UUID = Depends(get_current_user_id),
     service: ContestService = Depends(get_contest_service),
 ):
+    """
+    Create a new contest.
+
+    Args:
+        request (Request): Framework context.
+        contest (ContestCreate): The contest data to create.
+        user_id (UUID): The currently authenticated user ID via Keycloak.
+        service (ContestService): Injected domain service handling contest operations.
+
+    Returns:
+        APIResponse: Standardized response encapsulating creation metadata.
+    """
     created_contest = await service.create_contest(contest, user_id)
     logger.info(
         f"Contest '{created_contest.name}' with ID {created_contest.id} created by user {user_id}"
@@ -87,6 +108,22 @@ async def get_all_contests(
     page_size: int = Query(10, ge=1, le=100, description="Number of contests per page"),
     service: ContestService = Depends(get_contest_service),
 ):
+    """
+    Get all active contests accessible to the user.
+
+    Args:
+        request (Request): Framework context.
+        user_id (UUID): Authenticated user ID.
+        search (str | None): Optional string to search contest names.
+        contest_status (ContestStatus | None): Optional filter for contest status.
+        is_public (bool | None): Optional filter for visibility.
+        page (int): Page number (starts from 1).
+        page_size (int): Number of contests per page.
+        service (ContestService): Injected domain service.
+
+    Returns:
+        APIResponse: Standardized response encapsulating the list of contests and pagination state.
+    """
     skip = (page - 1) * page_size
     total, contests = await service.get_all_contests(
         user_id, search, contest_status, is_public, skip, page_size
@@ -119,6 +156,21 @@ async def get_deleted_contests(
     page_size: int = Query(10, ge=1, le=100, description="Number of contests per page"),
     service: ContestService = Depends(get_contest_service),
 ):
+    """
+    Get soft-deleted contests accessible to the user.
+
+    Args:
+        request (Request): Framework context.
+        user_id (UUID): Authenticated user ID.
+        search (str | None): Optional string to search contest names.
+        contest_status (ContestStatus | None): Optional filter for contest status.
+        page (int): Page number (starts from 1).
+        page_size (int): Number of contests per page.
+        service (ContestService): Injected domain service.
+
+    Returns:
+        APIResponse: Standardized response encapsulating the list of soft-deleted contests.
+    """
     skip = (page - 1) * page_size
     total, contests = await service.get_soft_deleted_contests(
         user_id, search, contest_status, skip, page_size
@@ -146,6 +198,18 @@ async def get_contest(
     service: ContestService = Depends(get_contest_service),
     user_id: UUID = Depends(get_current_user_id),
 ):
+    """
+    Get detailed information about a specific contest.
+
+    Args:
+        request (Request): Framework context.
+        contest_id (UUID): The unique identifier of the contest.
+        service (ContestService): Injected domain service.
+        user_id (UUID): Authenticated user ID.
+
+    Returns:
+        APIResponse: Detailed information block for the contest.
+    """
     contest = await service.get_contest_by_id(contest_id, user_id)
     return create_api_response(
         request, data=contest, message="Contest fetched successfully"
@@ -165,6 +229,19 @@ async def update_contest(
     user_id: UUID = Depends(get_current_user_id),
     service: ContestService = Depends(get_contest_service),
 ):
+    """
+    Update contest details.
+
+    Args:
+        request (Request): Framework context.
+        contest_id (UUID): The unique identifier of the contest.
+        contest_data (ContestUpdate): The fields to update.
+        user_id (UUID): Authenticated user ID.
+        service (ContestService): Injected domain service.
+
+    Returns:
+        APIResponse: Standardized response encapsulating the updated contest details.
+    """
     contest = await service.update_contest(contest_id, contest_data, user_id)
     logger.info(f"Contest with ID {contest_id} updated by user {user_id}")
 
@@ -188,6 +265,18 @@ async def publish_contest(
     user_id: UUID = Depends(get_current_user_id),
     service: ContestService = Depends(get_contest_service),
 ):
+    """
+    Publish a contest.
+
+    Args:
+        request (Request): Framework context.
+        contest_id (UUID): The unique identifier of the contest to publish.
+        user_id (UUID): Authenticated user ID.
+        service (ContestService): Injected domain service.
+
+    Returns:
+        APIResponse: Success confirmation.
+    """
     await service.publish_contest(contest_id, user_id)
     logger.info(f"Contest with ID {contest_id} published by user {user_id}")
 
@@ -211,6 +300,18 @@ async def delete_contest(
     user_id: UUID = Depends(get_current_user_id),
     service: ContestService = Depends(get_contest_service),
 ):
+    """
+    Hard delete a contest.
+
+    Args:
+        request (Request): Framework context.
+        contest_id (UUID): The unique identifier of the contest to delete.
+        user_id (UUID): Authenticated user ID.
+        service (ContestService): Injected domain service.
+
+    Returns:
+        APIResponse: Success confirmation.
+    """
     await service.delete_contest(contest_id, user_id)
     logger.info(f"Contest with ID {contest_id} deleted by user {user_id}")
 
@@ -234,6 +335,18 @@ async def soft_delete_contest(
     user_id: UUID = Depends(get_current_user_id),
     service: ContestService = Depends(get_contest_service),
 ):
+    """
+    Soft delete a contest without physically removing it.
+
+    Args:
+        request (Request): Framework context.
+        contest_id (UUID): The unique identifier of the contest to soft delete.
+        user_id (UUID): Authenticated user ID.
+        service (ContestService): Injected domain service.
+
+    Returns:
+        APIResponse: Success confirmation.
+    """
     await service.soft_delete_contest(contest_id, user_id)
     logger.info(f"Contest {contest_id} soft deleted by user {user_id}")
 
@@ -257,6 +370,20 @@ async def restore_contest(
     user_id: UUID = Depends(get_current_user_id),
     service: ContestService = Depends(get_contest_service),
 ):
+    """
+    Restore a soft-deleted contest.
+
+    Returns the contest to an active status.
+
+    Args:
+        request (Request): Framework context.
+        contest_id (UUID): The unique identifier of the contest to restore.
+        user_id (UUID): Authenticated user ID.
+        service (ContestService): Injected domain service.
+
+    Returns:
+        APIResponse: Standardized response encapsulating the restored contest data.
+    """
     contest = await service.restore_contest(contest_id, user_id)
     logger.info(f"Contest {contest_id} restored by user {user_id}")
     return create_api_response(
@@ -278,6 +405,19 @@ async def assign_instructors_to_contest(
     user_id: UUID = Depends(get_current_user_id),
     service: ContestService = Depends(get_contest_service),
 ):
+    """
+    Assign instructors to a contest.
+
+    Args:
+        request (Request): Framework context.
+        contest_id (UUID): The unique identifier of the contest.
+        instructor_request (InstructorManageRequest): Request containing instructor IDs.
+        user_id (UUID): Authenticated user ID.
+        service (ContestService): Injected domain service.
+
+    Returns:
+        APIResponse: Success confirmation.
+    """
     await service.assign_instructors_to_contest(contest_id, instructor_request, user_id)
     logger.info(
         f"Assigned {len(instructor_request.instructor_ids)} instructors to contest {contest_id} by user {user_id}"
@@ -304,6 +444,19 @@ async def remove_instructors_from_contest(
     user_id: UUID = Depends(get_current_user_id),
     service: ContestService = Depends(get_contest_service),
 ):
+    """
+    Remove instructors from a contest.
+
+    Args:
+        request (Request): Framework context.
+        contest_id (UUID): The unique identifier of the contest.
+        instructor_request (InstructorManageRequest): Request containing instructor IDs to remove.
+        user_id (UUID): Authenticated user ID.
+        service (ContestService): Injected domain service.
+
+    Returns:
+        APIResponse: Success confirmation.
+    """
     await service.remove_instructors_from_contest(
         contest_id, instructor_request, user_id
     )
@@ -334,6 +487,20 @@ async def get_contest_instructors(
     service: ContestService = Depends(get_contest_service),
     user_id: UUID = Depends(get_current_user_id),
 ):
+    """
+    Get paginated list of instructors for a contest.
+
+    Args:
+        request (Request): Framework context.
+        contest_id (UUID): The unique identifier of the contest.
+        page (int): Page number (starts from 1).
+        page_size (int): Number of instructors per page.
+        service (ContestService): Injected domain service.
+        user_id (UUID): Authenticated user ID.
+
+    Returns:
+        APIResponse: Standardized response with list of instructors and pagination state.
+    """
     skip = (page - 1) * page_size
     total, instructors = await service.get_contest_instructors(
         contest_id, user_id, skip, page_size

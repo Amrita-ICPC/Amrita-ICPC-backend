@@ -1,3 +1,7 @@
+---
+trigger: always_on
+---
+
 ## Golden Rules (Updated)
 - Routers never touch the DB.
 - Services never return error flags.
@@ -126,7 +130,7 @@ from app.validators.contest import ContestValidator
 
 class ContestService:
     def __init__(
-        db: Session,
+        self,
         repository: ContestRepository,
         guard: ContestOperationGuard,
         validator: ContestValidator,
@@ -202,7 +206,7 @@ class ContestService:
   - Ensure guards are invoked before any repository or service calls.
 
 ## Testing
-- Write unit tests service layer
+- Write unit tests for service layer
 - Mock database interactions in service tests.
 - Use fixtures to set up test data and dependencies.
 - Test both success and failure paths for all operations.

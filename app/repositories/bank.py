@@ -279,6 +279,28 @@ class BankRepository:
         self.db.delete(share)
         self.db.flush()
 
+    def update_bank_owner(self, bank: Bank, new_owner_id: UUID) -> None:
+        """Atomically update the explicit owner field of a bank.
+
+        Args:
+            bank (Bank): The database bank model.
+            new_owner_id (UUID): The target user ID acquiring ownership.
+        """
+        bank.created_by = new_owner_id
+        self.db.flush()
+
+    def update_share_permission(
+        self, share: BankShare, permission: BankPermission
+    ) -> None:
+        """Atomically update an existing share permissions explicitly.
+
+        Args:
+            share (BankShare): The database share model.
+            permission (BankPermission): The new role being assigned.
+        """
+        share.permission = permission
+        self.db.flush()
+
     def batch_flush(self) -> None:
         """Flush the current session to commit bulk schema changes instantly."""
         self.db.flush()

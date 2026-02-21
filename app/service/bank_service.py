@@ -313,14 +313,16 @@ class BankService:
             permission = share_item.permission
 
             if permission == BankPermission.owner:
-                bank.created_by = target_user_id
+                self.repository.update_bank_owner(bank, target_user_id)
 
                 # Check old owner share existence
                 old_owner_share = self.repository.get_share_for_user(
                     bank_id=bank_id, user_id=current_user_id
                 )
                 if old_owner_share:
-                    old_owner_share.permission = BankPermission.edit
+                    self.repository.update_share_permission(
+                        old_owner_share, BankPermission.edit
+                    )
                 else:
                     self.repository.add_share(
                         bank_id=bank_id,
@@ -332,7 +334,9 @@ class BankService:
                     bank_id=bank_id, user_id=target_user_id
                 )
                 if new_owner_share:
-                    new_owner_share.permission = BankPermission.owner
+                    self.repository.update_share_permission(
+                        new_owner_share, BankPermission.owner
+                    )
                 else:
                     self.repository.add_share(
                         bank_id=bank_id,
@@ -344,7 +348,7 @@ class BankService:
                     bank_id=bank_id, user_id=target_user_id
                 )
                 if existing_share:
-                    existing_share.permission = permission
+                    self.repository.update_share_permission(existing_share, permission)
                 else:
                     self.repository.add_share(
                         bank_id=bank_id, user_id=target_user_id, permission=permission

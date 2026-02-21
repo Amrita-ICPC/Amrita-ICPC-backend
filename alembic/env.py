@@ -5,6 +5,8 @@ from sqlalchemy.engine import URL
 
 from alembic import context
 from app.core.config import config as app_config
+
+# Models must be imported here for SQLAlchemy to register them with metadata
 from app.models import bank, contest, question, tag, team, user  # noqa: F401
 from app.models.base import Base
 

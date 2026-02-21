@@ -196,6 +196,8 @@ async def get_current_user_id(
     This dependency avoids repeated database lookups by leveraging the UserService.
     """
     kc_id = current_user.get("sub")
+    if kc_id is None:
+        raise UnauthorizedError("No authenticated user found")
     # UserService.get_user_by_keycloak_id is cached, so efficient
     user = await UserService.get_user_by_keycloak_id(db, kc_id)
     return user.id

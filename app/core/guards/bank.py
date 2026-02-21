@@ -77,5 +77,18 @@ class BankOperationGuard:
         Raises:
             BankPermissionError: If the user is not the owner.
         """
-        if bank.created_by != user_id:
-            raise BankPermissionError()
+        if bank.created_by == user_id:
+            return
+
+        owner_share = next(
+            (
+                s
+                for s in bank.shares
+                if s.user_id == user_id and s.permission == BankPermission.owner
+            ),
+            None,
+        )
+        if owner_share:
+            return
+
+        raise BankPermissionError()
