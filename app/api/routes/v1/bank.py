@@ -12,7 +12,6 @@ from app.auth.dependencies import (
     get_current_user_id,
 )
 from app.core.clients.database import get_db
-from app.core.guards.bank import BankOperationGuard
 from app.core.logger import logger
 from app.core.response import create_api_response
 from app.repositories.bank import BankRepository
@@ -42,9 +41,8 @@ def get_bank_service(db: Session = Depends(get_db)) -> BankService:
         BankService: Fully configured service class instance.
     """
     repository = BankRepository(db)
-    guard = BankOperationGuard()
     validator = BankValidator()
-    return BankService(repository, guard, validator)
+    return BankService(repository, validator)
 
 
 @router.post(

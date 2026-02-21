@@ -12,7 +12,7 @@ The fixtures follow a hierarchy:
 - Helper setup fixtures for common scenarios
 """
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -35,15 +35,15 @@ patch("app.core.cache.decorators.cache_delete", lambda **kw: lambda f: f).start(
 def mock_repository():
     """Mock TeamRepository with all database operations mocked.
 
-    All methods return MagicMock objects by default. Individual tests
+    All methods return AsyncMock objects by default. Individual tests
     can override specific method behaviors by setting return_value or side_effect.
 
     Returns:
-        MagicMock: Mock TeamRepository instance
+        AsyncMock: Mock TeamRepository instance
     """
-    mock = MagicMock(spec=TeamRepository)
+    mock = AsyncMock(spec=TeamRepository)
     # Add remove_team_members method (not yet in actual repository)
-    mock.remove_team_members = MagicMock()
+    mock.remove_team_members = AsyncMock()
     return mock
 
 
@@ -55,9 +55,9 @@ def mock_guard():
     permission denial by setting side_effect on specific methods.
 
     Returns:
-        MagicMock: Mock TeamOperationGuard instance
+        AsyncMock: Mock TeamOperationGuard instance
     """
-    return MagicMock(spec=TeamOperationGuard)
+    return AsyncMock(spec=TeamOperationGuard)
 
 
 @pytest.fixture
@@ -68,9 +68,9 @@ def mock_validator():
     validation failures by setting side_effect on specific methods.
 
     Returns:
-        MagicMock: Mock TeamValidator instance
+        AsyncMock: Mock TeamValidator instance
     """
-    return MagicMock(spec=TeamValidator)
+    return AsyncMock(spec=TeamValidator)
 
 
 @pytest.fixture
@@ -106,9 +106,9 @@ def mock_team(leader_id):
         leader_id: UUID from leader_id fixture
 
     Returns:
-        MagicMock: Mock Team object with typical attributes
+        AsyncMock: Mock Team object with typical attributes
     """
-    team = MagicMock(spec=Team)
+    team = AsyncMock(spec=Team)
     team.id = __import__("uuid").uuid4()
     team.name = "Test Team"
     team.description = "Test Description"
@@ -127,9 +127,9 @@ def mock_contest_team(mock_contest, mock_team):
         mock_team: Mock Team object
 
     Returns:
-        MagicMock: Mock ContestTeam with relationships set
+        AsyncMock: Mock ContestTeam with relationships set
     """
-    contest_team = MagicMock(spec=ContestTeam)
+    contest_team = AsyncMock(spec=ContestTeam)
     contest_team.id = __import__("uuid").uuid4()
     contest_team.contest_id = mock_contest.id
     contest_team.team_id = mock_team.id
@@ -143,9 +143,9 @@ def mock_user():
     """Mock User object with student role.
 
     Returns:
-        MagicMock: Mock User object with typical student attributes
+        AsyncMock: Mock User object with typical student attributes
     """
-    user = MagicMock(spec=User)
+    user = AsyncMock(spec=User)
     user.id = __import__("uuid").uuid4()
     user.name = "Test User"
     user.email = "test@example.com"
@@ -164,11 +164,11 @@ def mock_users(member_ids):
         member_ids: List of UUIDs from member_ids fixture
 
     Returns:
-        list[MagicMock]: List of mock User objects with matching IDs
+        list[AsyncMock]: List of mock User objects with matching IDs
     """
     users = []
     for i, uid in enumerate(member_ids):
-        user = MagicMock(spec=User)
+        user = AsyncMock(spec=User)
         user.id = uid
         user.name = f"User {i}"
         user.email = f"user{i}@example.com"
@@ -208,9 +208,9 @@ def mock_contest_team_response():
     Simple mock that prevents schema validation issues during testing.
 
     Returns:
-        MagicMock: Mock response object
+        AsyncMock: Mock response object
     """
-    return MagicMock(spec=ContestTeamResponse)
+    return AsyncMock(spec=ContestTeamResponse)
 
 
 @pytest.fixture
@@ -225,10 +225,10 @@ def setup_valid_contest(mock_repository, mock_contest):
         mock_contest: Mock Contest object
 
     Returns:
-        MagicMock: The configured mock contest
+        AsyncMock: The configured mock contest
 
     Example:
-        async def test_foo(team_service, setup_valid_contest, ...):
+        def test_foo(team_service, setup_valid_contest, ...):
             # Contest already configured, proceed with test logic
             pass
     """
@@ -252,7 +252,7 @@ def setup_valid_contest_and_team(mock_repository, mock_contest, mock_contest_tea
         tuple: (mock_contest, mock_contest_team) for direct access
 
     Example:
-        async def test_update(team_service, setup_valid_contest_and_team, ...):
+        def test_update(team_service, setup_valid_contest_and_team, ...):
             mock_contest, mock_contest_team = setup_valid_contest_and_team
             # Both contest and team are configured
             pass

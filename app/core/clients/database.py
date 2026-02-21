@@ -1,8 +1,8 @@
 from typing import Dict, List, Optional, Set, Type
 
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import inspect
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.config import config
 from app.core.logger import logger
@@ -11,9 +11,9 @@ from app.core.logger import logger
 from app.models.base import Base
 
 # Construct the database URL
-DATABASE_URL = f"postgresql://{config.DATABASE_USERNAME}:{config.DATABASE_PASSWORD}@{config.DATABASE_HOST}:{config.DATABASE_PORT}/{config.DATABASE_NAME}"
+DATABASE_URL = f"postgresql+asyncpg://{config.DATABASE_USERNAME}:{config.DATABASE_PASSWORD}@{config.DATABASE_HOST}:{config.DATABASE_PORT}/{config.DATABASE_NAME}"
 
-engine = create_engine(
+engine = create_async_engine(
     DATABASE_URL,
     echo=config.ENVIRONMENT == "development",
     pool_pre_ping=True,
@@ -21,14 +21,14 @@ engine = create_engine(
     max_overflow=config.DATABASE_MAX_OVERFLOW,
 )
 
-SessionLocal = sessionmaker(
+SessionLocal = async_sessionmaker(
     bind=engine,
     autoflush=False,
-    autocommit=False,
+    expire_on_commit=False,
 )
 
 
-def init_db():
+async def init_db():
     """
     Initialize the database.
     If in development environment, create all tables.
@@ -37,35 +37,39 @@ def init_db():
         logger.info("Initializing database...")
         if config.MIGRATIONS_ENABLED:
             logger.info("Migrations enabled; creating tables via metadata.")
-            Base.metadata.create_all(bind=engine)
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
         else:
             logger.info("Migrations disabled; running schema sync.")
-            sync = SchemaSync(engine, Base)
-            # Sync schema (checks all models by default)
-            sync.sync_schema()
+            async with engine.begin() as conn:
+
+                def run_sync_schema(sync_conn):
+                    sync = SchemaSync(sync_conn, Base)
+                    # Sync schema (checks all models by default)
+                    sync.sync_schema()
+
+                await conn.run_sync(run_sync_schema)
         logger.info("Database tables created successfully.")
 
 
-def get_db():
+async def get_db():
     """
     Dependency to get a database session.
     """
-    db = SessionLocal()
-    try:
-        yield db
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
-    finally:
-        db.close()
+    async with SessionLocal() as db:
+        try:
+            yield db
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            raise
 
 
 class SchemaSync:
     """Sync database schema to SQLAlchemy models with dependency awareness."""
 
     def __init__(self, engine, base):
-        """Initialize a schema sync helper for a given engine and model base."""
+        """Initialize a schema sync helper for a given engine/connection and model base."""
         self.engine = engine
         self.base = base
         self.inspector = inspect(engine)

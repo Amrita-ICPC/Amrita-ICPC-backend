@@ -51,14 +51,6 @@ def mock_repository():
 
 
 @pytest.fixture
-def mock_guard():
-    """Provides a mocked BankOperationGuard."""
-    from app.core.guards.bank import BankOperationGuard
-
-    return MagicMock(spec=BankOperationGuard)
-
-
-@pytest.fixture
 def mock_validator():
     """Provides a mocked BankValidator."""
     from app.validators.bank import BankValidator
@@ -67,7 +59,7 @@ def mock_validator():
 
 
 @pytest.fixture
-def bank_service(mock_repository, mock_guard, mock_validator):
+def bank_service(mock_repository, mock_validator):
     """Provides a BankService instance equipped with mock dependencies."""
     with (
         patch(
@@ -87,7 +79,6 @@ def bank_service(mock_repository, mock_guard, mock_validator):
 
         service = BankService(
             repository=mock_repository,
-            guard=mock_guard,
             validator=mock_validator,
         )
         yield service
@@ -163,7 +154,7 @@ async def test_create_bank_duplicate_name(
 
 
 @pytest.mark.asyncio
-async def test_get_bank_by_id_owner(bank_service, mock_guard, existing_bank):
+async def test_get_bank_by_id_owner(bank_service, mock_validator, existing_bank):
     """Test owner can retrieve bank and sees shares (even if empty)."""
     from app.schema.bank import BankDetailResponse
 
@@ -185,11 +176,11 @@ async def test_get_bank_by_id_owner(bank_service, mock_guard, existing_bank):
 
         assert result.id == existing_bank.id
         assert result.shares == []
-        mock_guard.check_read_bank.assert_called_once()
+        mock_validator.check_read_bank.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_get_bank_by_id_shared_read(bank_service, mock_guard, existing_bank):
+async def test_get_bank_by_id_shared_read(bank_service, mock_validator, existing_bank):
     """Test shared user can retrieve bank but shares list is hidden."""
     shared_user_id = uuid4()
 
@@ -214,11 +205,13 @@ async def test_get_bank_by_id_shared_read(bank_service, mock_guard, existing_ban
         assert result.id == existing_bank.id
         # Expect shares to be stripped out for non-owner
         assert result.shares == []
-        mock_guard.check_read_bank.assert_called_once()
+        mock_validator.check_read_bank.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_get_bank_by_id_access_denied(bank_service, mock_guard, existing_bank):
+async def test_get_bank_by_id_access_denied(
+    bank_service, mock_validator, existing_bank
+):
     """Test unauthorized user cannot retrieve bank."""
     random_user_id = uuid4()
 
@@ -235,7 +228,7 @@ async def test_get_bank_by_id_access_denied(bank_service, mock_guard, existing_b
         shares=[],
     )
 
-    mock_guard.check_read_bank.side_effect = BankAccessDeniedError()
+    mock_validator.check_read_bank.side_effect = BankAccessDeniedError()
 
     with patch.object(bank_service, "_get_bank_from_cache", return_value=bank_response):
         with pytest.raises(BankAccessDeniedError):
@@ -244,7 +237,7 @@ async def test_get_bank_by_id_access_denied(bank_service, mock_guard, existing_b
 
 @pytest.mark.asyncio
 async def test_update_bank_owner_success(
-    bank_service, mock_repository, mock_guard, mock_validator, existing_bank
+    bank_service, mock_repository, mock_validator, existing_bank
 ):
     """Test owner can update bank."""
     update_data = BankUpdate(name="Updated Bank Name")
@@ -263,21 +256,21 @@ async def test_update_bank_owner_success(
         existing_bank.id, update_data, existing_bank.created_by
     )
 
-    mock_guard.check_edit_bank.assert_called_once()
+    mock_validator.check_edit_bank.assert_called_once()
     mock_validator.construct_valid_update_payload.assert_called_once()
     mock_repository.update_bank.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_update_bank_permission_denied(
-    bank_service, mock_repository, mock_guard, existing_bank
+    bank_service, mock_repository, mock_validator, existing_bank
 ):
     """Test non-owner/non-editor cannot update bank."""
     update_data = BankUpdate(name="New Name")
     random_user_id = uuid4()
 
     mock_repository.get_bank_or_raise.return_value = existing_bank
-    mock_guard.check_edit_bank.side_effect = BankAccessDeniedError()
+    mock_validator.check_edit_bank.side_effect = BankAccessDeniedError()
 
     with pytest.raises(BankAccessDeniedError):
         await bank_service.update_bank(existing_bank.id, update_data, random_user_id)
@@ -285,25 +278,25 @@ async def test_update_bank_permission_denied(
 
 @pytest.mark.asyncio
 async def test_delete_bank_owner_success(
-    bank_service, mock_repository, mock_guard, existing_bank
+    bank_service, mock_repository, mock_validator, existing_bank
 ):
     """Test owner can delete bank."""
     mock_repository.get_bank_or_raise.return_value = existing_bank
 
     await bank_service.delete_bank(existing_bank.id, existing_bank.created_by)
 
-    mock_guard.check_manage_bank.assert_called_once()
+    mock_validator.check_manage_bank.assert_called_once()
     mock_repository.delete_bank.assert_called_once_with(existing_bank)
 
 
 @pytest.mark.asyncio
 async def test_delete_bank_denied(
-    bank_service, mock_repository, mock_guard, existing_bank
+    bank_service, mock_repository, mock_validator, existing_bank
 ):
     """Test non-owner cannot delete bank."""
     random_user_id = uuid4()
     mock_repository.get_bank_or_raise.return_value = existing_bank
-    mock_guard.check_manage_bank.side_effect = BankPermissionError()
+    mock_validator.check_manage_bank.side_effect = BankPermissionError()
 
     with pytest.raises(BankPermissionError):
         await bank_service.delete_bank(existing_bank.id, random_user_id)
@@ -311,7 +304,7 @@ async def test_delete_bank_denied(
 
 @pytest.mark.asyncio
 async def test_share_bank_owner_success(
-    bank_service, mock_repository, mock_guard, existing_bank
+    bank_service, mock_repository, mock_validator, existing_bank
 ):
     """Test owner can share bank."""
     target_user_id = uuid4()
@@ -322,7 +315,7 @@ async def test_share_bank_owner_success(
 
     await bank_service.share_bank(existing_bank.id, shares, existing_bank.created_by)
 
-    mock_guard.check_manage_bank.assert_called_once()
+    mock_validator.check_manage_bank.assert_called_once()
     mock_repository.add_share.assert_called_once_with(
         bank_id=existing_bank.id, user_id=target_user_id, permission=BankPermission.read
     )
@@ -331,14 +324,14 @@ async def test_share_bank_owner_success(
 
 @pytest.mark.asyncio
 async def test_share_bank_denied(
-    bank_service, mock_repository, mock_guard, existing_bank
+    bank_service, mock_repository, mock_validator, existing_bank
 ):
     """Test non-owner cannot share bank."""
     shares = [BankShareItem(user_id=uuid4(), permission=BankPermission.read)]
     random_user_id = uuid4()
 
     mock_repository.get_bank_or_raise.return_value = existing_bank
-    mock_guard.check_manage_bank.side_effect = BankPermissionError()
+    mock_validator.check_manage_bank.side_effect = BankPermissionError()
 
     with pytest.raises(BankPermissionError):
         await bank_service.share_bank(existing_bank.id, shares, random_user_id)
@@ -346,7 +339,7 @@ async def test_share_bank_denied(
 
 @pytest.mark.asyncio
 async def test_unshare_bank_owner_success(
-    bank_service, mock_repository, mock_guard, existing_bank
+    bank_service, mock_repository, mock_validator, existing_bank
 ):
     """Test owner can unshare bank."""
     target_user_id = uuid4()
@@ -361,7 +354,7 @@ async def test_unshare_bank_owner_success(
         existing_bank.id, user_ids, existing_bank.created_by
     )
 
-    mock_guard.check_manage_bank.assert_called_once()
+    mock_validator.check_manage_bank.assert_called_once()
     mock_repository.remove_share.assert_called_once_with(mock_share)
     mock_repository.batch_flush.assert_called_once()
 
@@ -393,14 +386,14 @@ async def test_get_soft_deleted_banks_success(
 
 @pytest.mark.asyncio
 async def test_soft_delete_bank_owner_success(
-    bank_service, mock_repository, mock_guard, existing_bank
+    bank_service, mock_repository, mock_validator, existing_bank
 ):
     """Test owner can soft delete a bank."""
     mock_repository.get_bank_or_raise.return_value = existing_bank
 
     await bank_service.soft_delete_bank(existing_bank.id, existing_bank.created_by)
 
-    mock_guard.check_manage_bank.assert_called_once()
+    mock_validator.check_manage_bank.assert_called_once()
     mock_repository.soft_delete_bank.assert_called_once_with(
         existing_bank, existing_bank.created_by
     )
@@ -408,7 +401,7 @@ async def test_soft_delete_bank_owner_success(
 
 @pytest.mark.asyncio
 async def test_restore_bank_owner_success(
-    bank_service, mock_repository, mock_guard, existing_bank
+    bank_service, mock_repository, mock_validator, existing_bank
 ):
     """Test owner can restore a softly deleted bank."""
     deleted_bank = MockBank(**existing_bank.__dict__)
@@ -422,7 +415,7 @@ async def test_restore_bank_owner_success(
 
     result = await bank_service.restore_bank(existing_bank.id, existing_bank.created_by)
 
-    mock_guard.check_manage_bank.assert_called_once()
+    mock_validator.check_manage_bank.assert_called_once()
     mock_repository.get_deleted_bank_or_raise.assert_called_once_with(existing_bank.id)
     mock_repository.restore_bank.assert_called_once_with(deleted_bank)
     assert result.id == existing_bank.id

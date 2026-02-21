@@ -1,8 +1,9 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import or_
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from app.exceptions.bank import BankNotFoundError
 from app.models.bank import Bank, BankShare
@@ -24,15 +25,17 @@ class BankRepository:
         - Hide ORM details from the service layer.
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         """Initialize the repository with a database session.
 
         Args:
-            db (Session): The active SQLAlchemy database session.
+            db (AsyncSession): The active SQLAlchemy database session.
         """
         self.db = db
 
-    def get_bank_or_raise(self, bank_id: UUID, load_relations: bool = False) -> Bank:
+    async def get_bank_or_raise(
+        self, bank_id: UUID, load_relations: bool = False
+    ) -> Bank:
         """Retrieve a bank by its ID or raise a custom exception if missing.
 
         Args:
@@ -46,18 +49,21 @@ class BankRepository:
         Raises:
             BankNotFoundError: If the bank cannot be found.
         """
-        query = self.db.query(Bank)
+        query = select(Bank)
 
         if load_relations:
             query = query.options(joinedload(Bank.questions), joinedload(Bank.shares))
 
-        bank = query.filter(Bank.id == bank_id, Bank.is_deleted.is_(False)).first()
+        result = await self.db.execute(
+            query.filter(Bank.id == bank_id, Bank.is_deleted.is_(False))
+        )
+        bank = result.unique().scalars().first()
         if not bank:
             raise BankNotFoundError(str(bank_id))
 
         return bank
 
-    def get_deleted_bank_or_raise(self, bank_id: UUID) -> Bank:
+    async def get_deleted_bank_or_raise(self, bank_id: UUID) -> Bank:
         """Retrieve a softly deleted bank by its ID or raise a custom exception if missing.
 
         Args:
@@ -69,17 +75,16 @@ class BankRepository:
         Raises:
             BankNotFoundError: If the bank cannot be found or is not deleted.
         """
-        bank = (
-            self.db.query(Bank)
-            .filter(Bank.id == bank_id, Bank.is_deleted.is_(True))
-            .first()
+        result = await self.db.execute(
+            select(Bank).filter(Bank.id == bank_id, Bank.is_deleted.is_(True))
         )
+        bank = result.unique().scalars().first()
         if not bank:
             raise BankNotFoundError(str(bank_id))
 
         return bank
 
-    def get_banks_with_filters(
+    async def get_banks_with_filters(
         self,
         user_id: UUID,
         filters: BankFilters,
@@ -98,7 +103,7 @@ class BankRepository:
             PaginatedResult: Object containing the total element count and the data slice.
         """
         base_query = (
-            self.db.query(Bank)
+            select(Bank)
             .outerjoin(BankShare)
             .filter(
                 Bank.is_deleted.is_(False),
@@ -110,12 +115,22 @@ class BankRepository:
             base_query = base_query.filter(Bank.name.ilike(f"%{filters.search_term}%"))
 
         base_query = base_query.distinct()
-        total = base_query.count()
-        banks = base_query.offset(pagination.skip).limit(pagination.limit).all()
+
+        count_query = select(func.count()).select_from(
+            base_query.with_only_columns(Bank.id).subquery()
+        )
+        total = (await self.db.execute(count_query)).scalar()
+
+        result = await self.db.execute(
+            base_query.offset(pagination.skip).limit(pagination.limit)
+        )
+        banks = list(result.unique().scalars().all())
 
         return PaginatedResult(total=total, items=banks)
 
-    def get_bank_by_name_and_creator(self, name: str, user_id: UUID) -> Bank | None:
+    async def get_bank_by_name_and_creator(
+        self, name: str, user_id: UUID
+    ) -> Bank | None:
         """Check if a specific user already created a bank with a given name.
 
         Args:
@@ -125,13 +140,13 @@ class BankRepository:
         Returns:
             Bank | None: The existing bank if found, None otherwise.
         """
-        return (
-            self.db.query(Bank)
-            .filter(Bank.name == name, Bank.created_by == user_id)
-            .first()
+        result = await self.db.execute(
+            select(Bank).filter(Bank.name == name, Bank.created_by == user_id)
         )
 
-    def create_bank(self, bank_data: BankCreate, user_id: UUID) -> Bank:
+        return result.scalars().first()
+
+    async def create_bank(self, bank_data: BankCreate, user_id: UUID) -> Bank:
         """Create a new bank in the database.
 
         Args:
@@ -148,11 +163,11 @@ class BankRepository:
             is_deleted=False,
         )
         self.db.add(db_bank)
-        self.db.flush()
-        self.db.refresh(db_bank)
+        await self.db.flush()
+        await self.db.refresh(db_bank)
         return db_bank
 
-    def update_bank(self, bank: Bank) -> Bank:
+    async def update_bank(self, bank: Bank) -> Bank:
         """Commit an updated bank model to the database.
 
         Args:
@@ -161,20 +176,20 @@ class BankRepository:
         Returns:
             Bank: The refreshed bank object.
         """
-        self.db.flush()
-        self.db.refresh(bank)
+        await self.db.flush()
+        await self.db.refresh(bank)
         return bank
 
-    def delete_bank(self, bank: Bank) -> None:
+    async def delete_bank(self, bank: Bank) -> None:
         """Hard delete a bank from the database.
 
         Args:
             bank (Bank): The bank object to delete.
         """
-        self.db.delete(bank)
-        self.db.flush()
+        await self.db.delete(bank)
+        await self.db.flush()
 
-    def get_soft_deleted_banks(
+    async def get_soft_deleted_banks(
         self,
         user_id: UUID,
         filters: BankFilters,
@@ -191,7 +206,7 @@ class BankRepository:
             PaginatedResult: Object containing the data slice.
         """
         base_query = (
-            self.db.query(Bank)
+            select(Bank)
             .outerjoin(BankShare)
             .filter(
                 Bank.is_deleted.is_(True),
@@ -203,12 +218,20 @@ class BankRepository:
             base_query = base_query.filter(Bank.name.ilike(f"%{filters.search_term}%"))
 
         base_query = base_query.distinct()
-        total = base_query.count()
-        banks = base_query.offset(pagination.skip).limit(pagination.limit).all()
+
+        count_query = select(func.count()).select_from(
+            base_query.with_only_columns(Bank.id).subquery()
+        )
+        total = (await self.db.execute(count_query)).scalar()
+
+        result = await self.db.execute(
+            base_query.offset(pagination.skip).limit(pagination.limit)
+        )
+        banks = list(result.unique().scalars().all())
 
         return PaginatedResult(total=total, items=banks)
 
-    def soft_delete_bank(self, bank: Bank, user_id: UUID) -> None:
+    async def soft_delete_bank(self, bank: Bank, user_id: UUID) -> None:
         """Soft delete a bank by setting deletion flags.
 
         Args:
@@ -218,9 +241,9 @@ class BankRepository:
         bank.is_deleted = True
         bank.deleted_at = datetime.now(timezone.utc)
         bank.deleted_by = user_id
-        self.db.flush()
+        await self.db.flush()
 
-    def restore_bank(self, bank: Bank) -> Bank:
+    async def restore_bank(self, bank: Bank) -> Bank:
         """Restore a softly deleted bank.
 
         Args:
@@ -232,11 +255,13 @@ class BankRepository:
         bank.is_deleted = False
         bank.deleted_at = None
         bank.deleted_by = None
-        self.db.flush()
-        self.db.refresh(bank)
+        await self.db.flush()
+        await self.db.refresh(bank)
         return bank
 
-    def get_share_for_user(self, bank_id: UUID, user_id: UUID) -> BankShare | None:
+    async def get_share_for_user(
+        self, bank_id: UUID, user_id: UUID
+    ) -> BankShare | None:
         """Retrieve the specific share permission a user has on a bank.
 
         Args:
@@ -246,13 +271,14 @@ class BankRepository:
         Returns:
             BankShare | None: The share configuration if it exists, otherwise None.
         """
-        return (
-            self.db.query(BankShare)
-            .filter(BankShare.bank_id == bank_id, BankShare.user_id == user_id)
-            .first()
+        result = await self.db.execute(
+            select(BankShare).filter(
+                BankShare.bank_id == bank_id, BankShare.user_id == user_id
+            )
         )
+        return result.scalars().first()
 
-    def add_share(
+    async def add_share(
         self, bank_id: UUID, user_id: UUID, permission: BankPermission
     ) -> BankShare:
         """Create a new share entry granting a user access to a bank.
@@ -267,19 +293,19 @@ class BankRepository:
         """
         share = BankShare(bank_id=bank_id, user_id=user_id, permission=permission)
         self.db.add(share)
-        self.db.flush()
+        await self.db.flush()
         return share
 
-    def remove_share(self, share: BankShare) -> None:
+    async def remove_share(self, share: BankShare) -> None:
         """Remove a user's access to a bank.
 
         Args:
             share (BankShare): The share association to delete.
         """
-        self.db.delete(share)
-        self.db.flush()
+        await self.db.delete(share)
+        await self.db.flush()
 
-    def update_bank_owner(self, bank: Bank, new_owner_id: UUID) -> None:
+    async def update_bank_owner(self, bank: Bank, new_owner_id: UUID) -> None:
         """Atomically update the explicit owner field of a bank.
 
         Args:
@@ -287,9 +313,9 @@ class BankRepository:
             new_owner_id (UUID): The target user ID acquiring ownership.
         """
         bank.created_by = new_owner_id
-        self.db.flush()
+        await self.db.flush()
 
-    def update_share_permission(
+    async def update_share_permission(
         self, share: BankShare, permission: BankPermission
     ) -> None:
         """Atomically update an existing share permissions explicitly.
@@ -299,8 +325,8 @@ class BankRepository:
             permission (BankPermission): The new role being assigned.
         """
         share.permission = permission
-        self.db.flush()
+        await self.db.flush()
 
-    def batch_flush(self) -> None:
+    async def batch_flush(self) -> None:
         """Flush the current session to commit bulk schema changes instantly."""
-        self.db.flush()
+        await self.db.flush()

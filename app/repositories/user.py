@@ -1,6 +1,7 @@
 from uuid import UUID
 
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions.user import UserNotFoundError
 from app.models.user import User
@@ -36,10 +37,10 @@ class UserRepository:
         - Provides clear error messages with user IDs
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
 
-    def get_user_or_raise(self, user_id: UUID) -> User:
+    async def get_user_or_raise(self, user_id: UUID) -> User:
         """
         Retrieve a user by their ID or raise an exception if not found.
 
@@ -50,12 +51,13 @@ class UserRepository:
         Raises:
             UserNotFoundError: If the user with the given ID does not exist.
         """
-        user = self.db.query(User).filter(User.id == user_id).first()
+        result = await self.db.execute(select(User).filter(User.id == user_id))
+        user = result.scalars().first()
         if not user:
             raise UserNotFoundError(str(user_id))
         return user
 
-    def get_users_or_raise(self, user_ids: list[UUID]) -> list[User]:
+    async def get_users_or_raise(self, user_ids: list[UUID]) -> list[User]:
         """
         Retrieve multiple users by their IDs or raise an exception if any are not found.
 
@@ -67,14 +69,17 @@ class UserRepository:
             UserNotFoundError: If any user with the given IDs does not exist.
         """
         unique_user_ids = set(user_ids)
-        users = self.db.query(User).filter(User.id.in_(unique_user_ids)).all()
+        result = await self.db.execute(
+            select(User).filter(User.id.in_(unique_user_ids))
+        )
+        users = list(result.scalars().all())
         if len(users) != len(user_ids):
             found_user_ids = {user.id for user in users}
             missing_user_ids = set(user_ids) - found_user_ids
             raise UserNotFoundError(str(next(iter(missing_user_ids))))
         return users
 
-    def get_user_by_id(self, user_id: UUID) -> User | None:
+    async def get_user_by_id(self, user_id: UUID) -> User | None:
         """
         Retrieve a user by their ID without raising an exception.
 
@@ -83,4 +88,5 @@ class UserRepository:
         Returns:
             The User object if found, otherwise None.
         """
-        return self.db.query(User).filter(User.id == user_id).first()
+        result = await self.db.execute(select(User).filter(User.id == user_id))
+        return result.scalars().first()

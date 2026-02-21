@@ -22,7 +22,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"API Prefix: {config.API_PREFIX}")
 
     # Initialize database (create tables) if in development
-    init_db()
+    await init_db()
 
     # Initialize Redis
     await init_redis()

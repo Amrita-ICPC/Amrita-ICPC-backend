@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.permissions import ContestPermission
 from app.models.contest import Contest
@@ -36,10 +36,10 @@ class ContestOperationGuard:
         - Provides clear error messages for debugging
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
 
-    def check_manage_contest(self, user_id: UUID, contest: Contest) -> None:
+    async def check_manage_contest(self, user_id: UUID, contest: Contest) -> None:
         """
         Validates that the user has permission to manage the contest.
 
@@ -52,9 +52,11 @@ class ContestOperationGuard:
         Raises:
             PermissionDeniedError: If user lacks management permission
         """
-        ContestPermission.can_manage_contest(self.db, user_id=user_id, contest=contest)
+        await ContestPermission.can_manage_contest(
+            self.db, user_id=user_id, contest=contest
+        )
 
-    def check_read_contest(self, user_id: UUID, contest: Contest) -> None:
+    async def check_read_contest(self, user_id: UUID, contest: Contest) -> None:
         """
         Validates that the user has permission to read the contest.
 
@@ -65,9 +67,11 @@ class ContestOperationGuard:
         Raises:
             PermissionDeniedError: If user lacks read permission
         """
-        ContestPermission.can_read_contest(self.db, user_id=user_id, contest=contest)
+        await ContestPermission.can_read_contest(
+            self.db, user_id=user_id, contest=contest
+        )
 
-    def check_assign_instructors(
+    async def check_assign_instructors(
         self, user_id: UUID, contest: Contest, instructor_ids: list[UUID]
     ) -> None:
         """
@@ -82,9 +86,11 @@ class ContestOperationGuard:
             PermissionDeniedError: If user lacks management permission
         """
         # Assigning instructors requires contest management permission
-        ContestPermission.can_manage_contest(self.db, user_id=user_id, contest=contest)
+        await ContestPermission.can_manage_contest(
+            self.db, user_id=user_id, contest=contest
+        )
 
-    def check_remove_instructors(
+    async def check_remove_instructors(
         self, user_id: UUID, contest: Contest, instructor_ids: list[UUID]
     ) -> None:
         """
@@ -99,4 +105,6 @@ class ContestOperationGuard:
             PermissionDeniedError: If user lacks management permission
         """
         # Removing instructors requires contest management permission
-        ContestPermission.can_manage_contest(self.db, user_id=user_id, contest=contest)
+        await ContestPermission.can_manage_contest(
+            self.db, user_id=user_id, contest=contest
+        )

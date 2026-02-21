@@ -2,7 +2,6 @@ from typing import List
 from uuid import UUID
 
 from app.core.cache.decorators import cache_delete, cache_get, cache_set
-from app.core.guards.bank import BankOperationGuard
 from app.repositories.bank import BankRepository
 from app.repositories.dto.bank import BankFilters
 from app.repositories.dto.pagination import PaginationParams
@@ -29,18 +28,15 @@ class BankService:
     def __init__(
         self,
         repository: BankRepository,
-        guard: BankOperationGuard,
         validator: BankValidator,
     ):
         """Initialize the bank service layer dependencies.
 
         Args:
             repository (BankRepository): Data access gateway.
-            guard (BankOperationGuard): Permission policy checker.
             validator (BankValidator): Schema and logic validation.
         """
         self.repository = repository
-        self.guard = guard
         self.validator = validator
 
     @cache_delete(
@@ -64,15 +60,15 @@ class BankService:
         Raises:
             BankAlreadyExistsError: If this user already created a bank with this exact name.
         """
-        existing = self.repository.get_bank_by_name_and_creator(
+        existing = await self.repository.get_bank_by_name_and_creator(
             name=bank.name, user_id=user_id
         )
         self.validator.validate_unique_bank_creation(existing, bank.name)
 
-        db_bank = self.repository.create_bank(bank_data=bank, user_id=user_id)
+        db_bank = await self.repository.create_bank(bank_data=bank, user_id=user_id)
 
         # Grant ownership instantly via share relationships
-        self.repository.add_share(
+        await self.repository.add_share(
             bank_id=db_bank.id, user_id=user_id, permission=BankPermission.owner
         )
 
@@ -93,7 +89,7 @@ class BankService:
         Returns:
             BankDetailResponse: Serialized data representation from DB.
         """
-        bank = self.repository.get_bank_or_raise(bank_id, load_relations=True)
+        bank = await self.repository.get_bank_or_raise(bank_id, load_relations=True)
         return BankDetailResponse.model_validate(bank)
 
     async def get_bank_by_id(
@@ -119,7 +115,7 @@ class BankService:
                 created_by = cached_dto.created_by
                 shares = cached_dto.shares
 
-            self.guard.check_read_bank(user_id=user_id, bank=MinimalBankMock())  # type: ignore
+            self.validator.check_read_bank(user_id=user_id, bank=MinimalBankMock())  # type: ignore
 
             if cached_dto.created_by != user_id:
                 # Strip out comprehensive admin detail lists for regular readers
@@ -150,7 +146,7 @@ class BankService:
         filters = BankFilters()
         pagination = PaginationParams(skip=skip, limit=limit)
 
-        result = self.repository.get_banks_with_filters(
+        result = await self.repository.get_banks_with_filters(
             user_id=user_id, filters=filters, pagination=pagination
         )
 
@@ -181,8 +177,8 @@ class BankService:
         Returns:
             BankResponse: Serialized modified entity mapping to DB.
         """
-        bank = self.repository.get_bank_or_raise(bank_id, load_relations=True)
-        self.guard.check_edit_bank(user_id=user_id, bank=bank)
+        bank = await self.repository.get_bank_or_raise(bank_id, load_relations=True)
+        self.validator.check_edit_bank(user_id=user_id, bank=bank)
 
         update_data = bank_update.model_dump(exclude_unset=True)
         validated_data = self.validator.construct_valid_update_payload(
@@ -192,7 +188,7 @@ class BankService:
         for field, value in validated_data.items():
             setattr(bank, field, value)
 
-        updated_bank = self.repository.update_bank(bank)
+        updated_bank = await self.repository.update_bank(bank)
         return BankResponse.model_validate(updated_bank)
 
     @cache_delete(
@@ -208,9 +204,9 @@ class BankService:
             bank_id (UUID): Pointer to exact resource.
             user_id (UUID): Deletion agent forcing execution.
         """
-        bank = self.repository.get_bank_or_raise(bank_id)
-        self.guard.check_manage_bank(user_id=user_id, bank=bank)
-        self.repository.delete_bank(bank)
+        bank = await self.repository.get_bank_or_raise(bank_id)
+        self.validator.check_manage_bank(user_id=user_id, bank=bank)
+        await self.repository.delete_bank(bank)
 
     @cache_get(
         key_builder=lambda self,
@@ -235,7 +231,7 @@ class BankService:
         filters = BankFilters()
         pagination = PaginationParams(skip=skip, limit=limit)
 
-        result = self.repository.get_soft_deleted_banks(
+        result = await self.repository.get_soft_deleted_banks(
             user_id=user_id, filters=filters, pagination=pagination
         )
 
@@ -256,9 +252,9 @@ class BankService:
             bank_id (UUID): Pointer to exact resource.
             user_id (UUID): Deletion agent forcing execution.
         """
-        bank = self.repository.get_bank_or_raise(bank_id)
-        self.guard.check_manage_bank(user_id=user_id, bank=bank)
-        self.repository.soft_delete_bank(bank, user_id)
+        bank = await self.repository.get_bank_or_raise(bank_id)
+        self.validator.check_manage_bank(user_id=user_id, bank=bank)
+        await self.repository.soft_delete_bank(bank, user_id)
 
     @cache_delete(
         key_builder=lambda self, bank_id, user_id: [
@@ -282,9 +278,9 @@ class BankService:
         Returns:
             BankResponse: Exposes public attributes of the restored bank.
         """
-        bank = self.repository.get_deleted_bank_or_raise(bank_id)
-        self.guard.check_manage_bank(user_id=user_id, bank=bank)
-        restored_bank = self.repository.restore_bank(bank)
+        bank = await self.repository.get_deleted_bank_or_raise(bank_id)
+        self.validator.check_manage_bank(user_id=user_id, bank=bank)
+        restored_bank = await self.repository.restore_bank(bank)
         return BankResponse.model_validate(restored_bank)
 
     @cache_delete(
@@ -305,56 +301,58 @@ class BankService:
             shares (List[BankShareItem]): Role assignment definitions per specific user node.
             current_user_id (UUID): Master controller forcing action.
         """
-        bank = self.repository.get_bank_or_raise(bank_id)
-        self.guard.check_manage_bank(user_id=current_user_id, bank=bank)
+        bank = await self.repository.get_bank_or_raise(bank_id)
+        self.validator.check_manage_bank(user_id=current_user_id, bank=bank)
 
         for share_item in shares:
             target_user_id = share_item.user_id
             permission = share_item.permission
 
             if permission == BankPermission.owner:
-                self.repository.update_bank_owner(bank, target_user_id)
+                await self.repository.update_bank_owner(bank, target_user_id)
 
                 # Check old owner share existence
-                old_owner_share = self.repository.get_share_for_user(
+                old_owner_share = await self.repository.get_share_for_user(
                     bank_id=bank_id, user_id=current_user_id
                 )
                 if old_owner_share:
-                    self.repository.update_share_permission(
+                    await self.repository.update_share_permission(
                         old_owner_share, BankPermission.edit
                     )
                 else:
-                    self.repository.add_share(
+                    await self.repository.add_share(
                         bank_id=bank_id,
                         user_id=current_user_id,
                         permission=BankPermission.edit,
                     )
 
-                new_owner_share = self.repository.get_share_for_user(
+                new_owner_share = await self.repository.get_share_for_user(
                     bank_id=bank_id, user_id=target_user_id
                 )
                 if new_owner_share:
-                    self.repository.update_share_permission(
+                    await self.repository.update_share_permission(
                         new_owner_share, BankPermission.owner
                     )
                 else:
-                    self.repository.add_share(
+                    await self.repository.add_share(
                         bank_id=bank_id,
                         user_id=target_user_id,
                         permission=BankPermission.owner,
                     )
             else:
-                existing_share = self.repository.get_share_for_user(
+                existing_share = await self.repository.get_share_for_user(
                     bank_id=bank_id, user_id=target_user_id
                 )
                 if existing_share:
-                    self.repository.update_share_permission(existing_share, permission)
+                    await self.repository.update_share_permission(
+                        existing_share, permission
+                    )
                 else:
-                    self.repository.add_share(
+                    await self.repository.add_share(
                         bank_id=bank_id, user_id=target_user_id, permission=permission
                     )
 
-        self.repository.batch_flush()
+        await self.repository.batch_flush()
 
     @cache_delete(
         key_builder=lambda self, bank_id, user_ids, current_user_id: [
@@ -373,17 +371,17 @@ class BankService:
             user_ids (List[UUID]): Multiple identifiers selected.
             current_user_id (UUID): Master node executing directive.
         """
-        bank = self.repository.get_bank_or_raise(bank_id)
-        self.guard.check_manage_bank(user_id=current_user_id, bank=bank)
+        bank = await self.repository.get_bank_or_raise(bank_id)
+        self.validator.check_manage_bank(user_id=current_user_id, bank=bank)
 
         for target_user_id in user_ids:
             if target_user_id == bank.created_by:
                 continue
 
-            share = self.repository.get_share_for_user(
+            share = await self.repository.get_share_for_user(
                 bank_id=bank_id, user_id=target_user_id
             )
             if share:
-                self.repository.remove_share(share)
+                await self.repository.remove_share(share)
 
-        self.repository.batch_flush()
+        await self.repository.batch_flush()

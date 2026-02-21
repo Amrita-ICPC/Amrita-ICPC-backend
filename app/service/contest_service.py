@@ -124,7 +124,7 @@ class ContestService:
         )
 
         # Create contest via repository
-        db_contest = self.repository.create_contest(contest_data)
+        db_contest = await self.repository.create_contest(contest_data)
         return ContestResponse.model_validate(db_contest)
 
     @cache_get(
@@ -149,14 +149,14 @@ class ContestService:
             ContestNotFoundError: If contest not found
             PermissionDeniedError: If user lacks read permission
         """
-        contest = self.repository.get_contest_or_raise(contest_id)
+        contest = await self.repository.get_contest_or_raise(contest_id)
 
         # Check if contest is soft-deleted
         if contest.is_deleted:
             raise ContestNotFoundError(str(contest_id))
 
         # Check permissions
-        self.guard.check_read_contest(user_id=user_id, contest=contest)
+        await self.guard.check_read_contest(user_id=user_id, contest=contest)
 
         return ContestResponse.model_validate(contest)
 
@@ -194,7 +194,7 @@ class ContestService:
             Tuple of (total count, contests list)
         """
         # Check if user is admin
-        user = self.user_repository.get_user_or_raise(user_id)
+        user = await self.user_repository.get_user_or_raise(user_id)
         user_is_admin = user.role == UserRole.admin
         # Create filter and pagination objects
         filters = ContestFilters(
@@ -203,7 +203,7 @@ class ContestService:
         pagination = PaginationParams(skip=skip, limit=limit)
 
         # Get contests from repository
-        result = self.repository.get_contests_with_filters(
+        result = await self.repository.get_contests_with_filters(
             user_id, user_is_admin, filters, pagination
         )
 
@@ -238,10 +238,10 @@ class ContestService:
             PermissionDeniedError: If user doesn't have permission
             InvalidContestError: If update data is invalid
         """
-        contest = self.repository.get_contest_or_raise(contest_id)
+        contest = await self.repository.get_contest_or_raise(contest_id)
 
         # Check permissions
-        self.guard.check_manage_contest(user_id=user_id, contest=contest)
+        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
 
         # Validate dates if being updated
         new_start = (
@@ -299,7 +299,9 @@ class ContestService:
         )
 
         # Update contest via repository
-        updated_contest = self.repository.update_contest(contest, update_data, user_id)
+        updated_contest = await self.repository.update_contest(
+            contest, update_data, user_id
+        )
         return ContestResponse.model_validate(updated_contest)
 
     @cache_delete(
@@ -323,13 +325,13 @@ class ContestService:
             ContestNotFoundError: If contest not found
             PermissionDeniedError: If user doesn't have permission
         """
-        contest = self.repository.get_contest_or_raise(contest_id)
+        contest = await self.repository.get_contest_or_raise(contest_id)
 
         # Check permissions
-        self.guard.check_manage_contest(user_id=user_id, contest=contest)
+        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
 
         response = ContestResponse.model_validate(contest)
-        self.repository.delete_contest(contest)
+        await self.repository.delete_contest(contest)
 
         return response
 
@@ -357,14 +359,14 @@ class ContestService:
             PermissionDeniedError: If user doesn't have permission
         """
         # Check if contest exists and user has permission
-        contest = self.repository.get_contest_or_raise(contest_id)
-        self.guard.check_assign_instructors(
+        contest = await self.repository.get_contest_or_raise(contest_id)
+        await self.guard.check_assign_instructors(
             user_id=user_id, contest=contest, instructor_ids=request.instructor_ids
         )
 
-        self.user_repository.get_users_or_raise(request.instructor_ids)
+        await self.user_repository.get_users_or_raise(request.instructor_ids)
         # Validate instructors and assign
-        existing_instructors = self.repository.get_all_instructors_for_contest(
+        existing_instructors = await self.repository.get_all_instructors_for_contest(
             contest_id
         )
         existing_instructor_ids = [instructor.id for instructor in existing_instructors]
@@ -374,7 +376,7 @@ class ContestService:
         )
 
         # Assign instructors
-        self.repository.assign_instructor(contest_id, request.instructor_ids)
+        await self.repository.assign_instructor(contest_id, request.instructor_ids)
         logger.info(
             f"Assigned {len(request.instructor_ids)} instructor(s) to contest {contest_id} "
         )
@@ -402,24 +404,24 @@ class ContestService:
             PermissionDeniedError: If user doesn't have permission
         """
         # Check if contest exists and user has permission
-        contest = self.repository.get_contest_or_raise(contest_id)
-        self.guard.check_remove_instructors(
+        contest = await self.repository.get_contest_or_raise(contest_id)
+        await self.guard.check_remove_instructors(
             user_id=user_id, contest=contest, instructor_ids=request.instructor_ids
         )
 
-        self.user_repository.get_users_or_raise(
+        await self.user_repository.get_users_or_raise(
             request.instructor_ids
         )  # Validate instructor IDs
 
         # Validate assignments and remove
-        instructors = self.repository.get_all_instructors_for_contest(contest_id)
+        instructors = await self.repository.get_all_instructors_for_contest(contest_id)
         existing_instructor_ids = {instructor.id for instructor in instructors}
 
         self.validator.validate_instructors_in_contest(
             set(request.instructor_ids), existing_instructor_ids
         )
         # Remove instructors
-        self.repository.remove_instructor(contest_id, request.instructor_ids)
+        await self.repository.remove_instructor(contest_id, request.instructor_ids)
         logger.info(
             f"Removed {len(request.instructor_ids)} instructor(s) from contest {contest_id} "
         )
@@ -452,11 +454,11 @@ class ContestService:
             PermissionDeniedError: If user cannot manage the contest
         """
         # Check if contest exists and user has permission
-        contest = self.repository.get_contest_or_raise(contest_id)
-        self.guard.check_manage_contest(user_id=user_id, contest=contest)
+        contest = await self.repository.get_contest_or_raise(contest_id)
+        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
 
         # Get instructors with pagination
-        total, instructors = self.repository.get_contest_instructors_paginated(
+        total, instructors = await self.repository.get_contest_instructors_paginated(
             contest_id, skip, limit
         )
 
@@ -488,17 +490,17 @@ class ContestService:
             ContestNotFoundError: If contest not found
             PermissionDeniedError: If user doesn't have permission
         """
-        contest = self.repository.get_contest_or_raise(contest_id)
+        contest = await self.repository.get_contest_or_raise(contest_id)
 
         # Check if contest is soft-deleted
         if contest.is_deleted:
             raise ContestNotFoundError(str(contest_id))
 
         # Check permissions
-        self.guard.check_manage_contest(user_id=user_id, contest=contest)
+        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
 
         # Publish contest
-        self.repository.publish_contest(contest, user_id)
+        await self.repository.publish_contest(contest, user_id)
         logger.info(f"Contest {contest_id} published ")
 
     @cache_delete(
@@ -519,17 +521,17 @@ class ContestService:
             ContestNotFoundError: If contest not found
             PermissionDeniedError: If user doesn't have permission
         """
-        contest = self.repository.get_contest_or_raise(contest_id)
+        contest = await self.repository.get_contest_or_raise(contest_id)
 
         # Check if already soft-deleted
         if contest.is_deleted:
             raise ContestNotFoundError(str(contest_id))
 
         # Check permissions
-        self.guard.check_manage_contest(user_id=user_id, contest=contest)
+        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
 
         # Soft delete contest
-        self.repository.soft_delete_contest(contest, user_id)
+        await self.repository.soft_delete_contest(contest, user_id)
         logger.info(f"Contest {contest_id} soft deleted")
 
     @cache_delete(
@@ -553,14 +555,14 @@ class ContestService:
             ContestNotFoundError: If contest not found (even if deleted)
             PermissionDeniedError: If user doesn't have permission
         """
-        contest = self.repository.get_contest_or_raise(contest_id)
+        contest = await self.repository.get_contest_or_raise(contest_id)
 
         # Check permissions
-        self.guard.check_manage_contest(user_id=user_id, contest=contest)
+        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
 
         # Restore contest if it was soft-deleted
         if contest.is_deleted:
-            restored_contest = self.repository.restore_contest(contest)
+            restored_contest = await self.repository.restore_contest(contest)
             logger.info(f"Contest {contest_id} restored")
             return ContestResponse.model_validate(restored_contest)
 
@@ -597,7 +599,7 @@ class ContestService:
             Tuple of (total count, contests list)
         """
         # Check if user is admin
-        user = self.user_repository.get_user_or_raise(user_id)
+        user = await self.user_repository.get_user_or_raise(user_id)
         user_is_admin = user.role == UserRole.admin
 
         # Create filter and pagination objects
@@ -605,7 +607,7 @@ class ContestService:
         pagination = PaginationParams(skip=skip, limit=limit)
 
         # Get soft-deleted contests from repository
-        result = self.repository.get_soft_deleted_contests(
+        result = await self.repository.get_soft_deleted_contests(
             user_id, user_is_admin, filters, pagination
         )
 

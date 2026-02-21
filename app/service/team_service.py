@@ -123,19 +123,21 @@ class TeamService:
             - Sets cache entry for the newly created team
             - Invalidates all contest teams cache entries
         """
-        contest = self.repository.get_contest_or_raise(contest_id)
-        self.guard.check_create_team(
+        contest = await self.repository.get_contest_or_raise(contest_id)
+        await self.guard.check_create_team(
             user_id=created_by, contest=contest, member_ids=team_data.member_ids
         )
 
-        existing_team = self.repository.find_team_by_name(contest_id, team_data.name)
+        existing_team = await self.repository.find_team_by_name(
+            contest_id, team_data.name
+        )
         self.validator.validate_name_unique(contest_id, team_data.name, existing_team)
 
         self.validator.validate_team_size(
             len(team_data.member_ids), contest, team_data.status
         )
 
-        self.repository.get_users_or_raise(team_data.member_ids)
+        await self.repository.get_users_or_raise(team_data.member_ids)
 
         self.validator.validate_leader_assignment(
             team_data.leader_id, team_data.member_ids
@@ -153,7 +155,7 @@ class TeamService:
             status=team_data.status,
         )
 
-        contest_team = self.repository.create_team(create_team_data)
+        contest_team = await self.repository.create_team(create_team_data)
         return ContestTeamResponse.from_contest_team(contest_team)
 
     @cache_set(
@@ -218,13 +220,15 @@ class TeamService:
             - Invalidates contest teams cache and contest-team specific cache entries
             - Ensures consistency across all cached team representations
         """
-        contest = self.repository.get_contest_or_raise(contest_id)
-        self.guard.check_update_team(user_id=updated_by, contest=contest)
-        contest_team = self.repository.get_contest_team_or_raise(contest_id, team_id)
+        contest = await self.repository.get_contest_or_raise(contest_id)
+        await self.guard.check_update_team(user_id=updated_by, contest=contest)
+        contest_team = await self.repository.get_contest_team_or_raise(
+            contest_id, team_id
+        )
 
         team = contest_team.team
         if team_data.name is not None and team_data.name != team.name:
-            existing_team = self.repository.find_team_by_name(
+            existing_team = await self.repository.find_team_by_name(
                 contest_id, team_data.name
             )
             self.validator.validate_name_unique(
@@ -235,14 +239,14 @@ class TeamService:
             team_data.status == TeamStatus.CONFIRMED
             and contest_team.team_status == TeamStatus.DRAFT
         ):
-            team_member_count = self.repository.get_team_members_count_or_raise(
+            team_member_count = await self.repository.get_team_members_count_or_raise(
                 team_id, contest_id
             )
 
             self.validator.validate_team_size(
                 team_member_count, contest, team_data.status
             )
-        updated_contest_team = self.repository.update_team(
+        updated_contest_team = await self.repository.update_team(
             UpdateTeamData(
                 team_id=team_id,
                 name=team_data.name,
@@ -304,15 +308,17 @@ class TeamService:
             PermissionDeniedError: If user lacks read permission on contest
         """
         # Check permission using guard
-        contest = self.repository.get_contest_or_raise(contest_id)
-        self.guard.check_read_team(user_id=user_id, contest=contest)
+        contest = await self.repository.get_contest_or_raise(contest_id)
+        await self.guard.check_read_team(user_id=user_id, contest=contest)
 
         # Create filter and pagination objects
         filters = TeamFilters(search_term=search_term, status=status)
         pagination = PaginationParams(skip=skip, limit=limit)
 
         # Delegate to repository
-        result = self.repository.get_contest_teams(contest_id, filters, pagination)
+        result = await self.repository.get_contest_teams(
+            contest_id, filters, pagination
+        )
 
         return result.total, [
             ContestTeamResponse.from_contest_team(ct) for ct in result.items
@@ -354,11 +360,11 @@ class TeamService:
             PermissionDeniedError: If user lacks read permission on contest
         """
         # Check permission using guard
-        contest = self.repository.get_contest_or_raise(contest_id)
-        self.guard.check_read_team(user_id=user_id, contest=contest)
+        contest = await self.repository.get_contest_or_raise(contest_id)
+        await self.guard.check_read_team(user_id=user_id, contest=contest)
 
         # Delegate to repository
-        contest_team = self.repository.get_team_by_id(contest_id, team_id)
+        contest_team = await self.repository.get_team_by_id(contest_id, team_id)
 
         return ContestTeamResponse.from_contest_team(contest_team)
 
@@ -417,17 +423,17 @@ class TeamService:
             InvalidLeaderAssignmentError: If leader is not in combined member list
         """
         # Check permissions and validate members
-        contest = self.repository.get_contest_or_raise(contest_id)
-        self.guard.check_add_team_members(
+        contest = await self.repository.get_contest_or_raise(contest_id)
+        await self.guard.check_add_team_members(
             user_id=updated_by, contest=contest, member_ids=member_data.member_ids
         )
 
-        contest_team = self.repository.get_contest_team_or_raise(
+        contest_team = await self.repository.get_contest_team_or_raise(
             contest_id=contest_id, team_id=team_id
         )
 
         # Validate team size
-        team_members_count = self.repository.get_team_members_count_or_raise(
+        team_members_count = await self.repository.get_team_members_count_or_raise(
             team_id, contest_id
         )
         new_members_count = len(member_data.member_ids)
@@ -436,10 +442,10 @@ class TeamService:
         )
 
         # Validate users exist
-        self.repository.get_users_or_raise(user_ids=member_data.member_ids)
+        await self.repository.get_users_or_raise(user_ids=member_data.member_ids)
 
         # Validate members are not already in team
-        existing_team_members = self.repository.get_all_team_members(team_id)
+        existing_team_members = await self.repository.get_all_team_members(team_id)
         existing_member_ids = {tu.user_id for tu in existing_team_members}
         self.validator.validate_members_not_in_team(
             existing_member_ids, member_data.member_ids, contest_team.team.name
@@ -449,7 +455,7 @@ class TeamService:
             list(set(member_data.member_ids) | set(existing_member_ids)),
         )
         # Add members using repository
-        self.repository.add_team_members(
+        await self.repository.add_team_members(
             team_id=team_id,
             member_ids=member_data.member_ids,
             leader_id=member_data.leader_id,
@@ -497,11 +503,13 @@ class TeamService:
             InvalidTeamSizeError: If removal would violate minimum team size
         """
         # Check permission and get team
-        contest = self.repository.get_contest_or_raise(contest_id)
-        self.guard.check_remove_team_members(user_id=updated_by, contest=contest)
-        team = self.repository.get_team_or_raise(team_id, contest_id)
-        contest_team = self.repository.get_contest_team_or_raise(contest_id, team_id)
-        team_members = self.repository.get_all_team_members(team_id=team_id)
+        contest = await self.repository.get_contest_or_raise(contest_id)
+        await self.guard.check_remove_team_members(user_id=updated_by, contest=contest)
+        team = await self.repository.get_team_or_raise(team_id, contest_id)
+        contest_team = await self.repository.get_contest_team_or_raise(
+            contest_id, team_id
+        )
+        team_members = await self.repository.get_all_team_members(team_id=team_id)
         team_member_ids = {tm.user_id for tm in team_members}
         self.validator.validate_members_in_team(
             team_member_ids, set(member_data.member_ids), team.name
@@ -514,7 +522,7 @@ class TeamService:
             member_data.member_ids, member_data.new_leader_id, team.leader_id
         )
         # Remove members using repository
-        self.repository.remove_team_members(
+        await self.repository.remove_team_members(
             team_id=team_id, member_ids=member_data.member_ids
         )
 
@@ -522,7 +530,7 @@ class TeamService:
         update_data = UpdateTeamData(
             team_id=team_id, leader_id=member_data.new_leader_id
         )
-        self.repository.update_team(update_data, team, contest_team)
+        await self.repository.update_team(update_data, team, contest_team)
         return await self.get_team_members(contest_id, team_id, updated_by)
 
     @cache_get(
@@ -573,14 +581,16 @@ class TeamService:
             PermissionDeniedError: If user lacks read permission on contest
         """
         # Check permission and get team
-        contest = self.repository.get_contest_or_raise(contest_id)
-        self.guard.check_read_team(user_id=user_id, contest=contest)
+        contest = await self.repository.get_contest_or_raise(contest_id)
+        await self.guard.check_read_team(user_id=user_id, contest=contest)
 
-        contest_team = self.repository.get_contest_team_or_raise(contest_id, team_id)
+        contest_team = await self.repository.get_contest_team_or_raise(
+            contest_id, team_id
+        )
         team = contest_team.team
 
         # Delegate to repository for paginated member retrieval
-        total, results = self.repository.get_team_members_paginated(
+        total, results = await self.repository.get_team_members_paginated(
             team_id=team_id, search_term=search_term, skip=skip, limit=limit
         )
 
