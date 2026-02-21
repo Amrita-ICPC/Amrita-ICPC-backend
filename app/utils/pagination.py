@@ -19,6 +19,6 @@ def get_pagination(total: int, page: int, page_size: int) -> PaginationResponse:
         page=page,
         page_size=page_size,
         total_pages=(total + page_size - 1) // page_size if page_size else 0,
-        has_next=skip + page_size < total,
+        has_next=(skip + page_size < total) if page_size > 0 else False,
         has_previous=page > 1,
     )

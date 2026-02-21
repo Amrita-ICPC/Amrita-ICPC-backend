@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import (
     Boolean,
@@ -28,12 +28,12 @@ class Bank(Base):
 
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.utcnow
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
     )
 
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -81,21 +81,25 @@ class BankQuestion(Base):
     )
 
     bank_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("bank.id", ondelete="CASCADE"), primary_key=True
+        ForeignKey("bank.id", ondelete="CASCADE")
     )
     question_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("question.id", ondelete="CASCADE"), primary_key=True
+        ForeignKey("question.id", ondelete="CASCADE")
     )
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.utcnow
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
     )
 
     creator = relationship("User", back_populates="creator_bank_questions")
     bank = relationship("Bank", back_populates="questions")
     question = relationship("Question", back_populates="banks")
+
+    __table_args__ = (
+        UniqueConstraint("bank_id", "question_id", name="uk_bank_question_pair"),
+    )

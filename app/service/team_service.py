@@ -597,7 +597,4 @@ class TeamService:
             )
             members.append(member)
 
-        # Calculate page number (1-indexed)
-        (skip // limit) + 1 if limit > 0 else 1
-
         return total, members

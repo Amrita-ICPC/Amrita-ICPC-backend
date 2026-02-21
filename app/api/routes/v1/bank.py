@@ -395,7 +395,7 @@ async def unshare_bank(
     await service.unshare_bank(bank_id, unshare_data.user_ids, user_id)
 
     logger.info(
-        f"Bank with ID {bank_id} access removed for users {unshare_data.user_ids} by user {user_id}"
+        f"Bank with ID {bank_id} access removed for {len(unshare_data.user_ids)} users by user {user_id}"
     )
     return create_api_response(
         request, data=None, message="Users removed from bank share successfully"
