@@ -143,7 +143,7 @@ async def get_contest_teams(
         request (Request): Framework context.
         contest_id (UUID): The unique identifier of the contest.
         search (str | None): Optional string to search team names.
-        status (TeamStatus | None): Optional filter for team status.
+        team_status (TeamStatus | None): Optional filter for team status.
         page (int): Page number (starts from 1).
         page_size (int): Number of teams per page.
         user_id (UUID): Authenticated user ID.
@@ -273,7 +273,7 @@ async def add_team_members(
     Returns:
         APIResponse: Success confirmation with updated member list.
     """
-    total, members = await service.add_team_members(
+    _, members = await service.add_team_members(
         contest_id, team_id, member_data, user_id
     )
     logger.info(
@@ -315,7 +315,7 @@ async def remove_team_member(
     Returns:
         APIResponse: Success confirmation with updated member list.
     """
-    total, members = await service.remove_team_member(
+    _, members = await service.remove_team_member(
         contest_id, team_id, member_data, user_id
     )
     logger.info(

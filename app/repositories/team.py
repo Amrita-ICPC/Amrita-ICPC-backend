@@ -1,6 +1,8 @@
 from uuid import UUID
 
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from app.exceptions.contest import ContestNotFoundError
 from app.exceptions.team import TeamNotFoundError
@@ -49,11 +51,11 @@ class TeamRepository:
         - Provides clear error messages with entity IDs
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
 
     # contest team related operations
-    def get_contest_or_raise(self, contest_id: UUID) -> Contest:
+    async def get_contest_or_raise(self, contest_id: UUID) -> Contest:
         """
         Retrieve a contest by its ID or raise an exception if not found.
 
@@ -64,12 +66,13 @@ class TeamRepository:
         Raises:
             ContestNotFoundError: If the contest with the given ID does not exist.
         """
-        contest = self.db.query(Contest).filter(Contest.id == contest_id).first()
+        result = await self.db.execute(select(Contest).filter(Contest.id == contest_id))
+        contest = result.scalars().first()
         if not contest:
             raise ContestNotFoundError(contest_id)
         return contest
 
-    def get_user_or_raise(self, user_id: UUID) -> User:
+    async def get_user_or_raise(self, user_id: UUID) -> User:
         """
         Retrieve a user by their ID or raise an exception if not found.
 
@@ -80,12 +83,13 @@ class TeamRepository:
         Raises:
             UserNotFoundError: If the user with the given ID does not exist.
         """
-        user = self.db.query(User).filter(User.id == user_id).first()
+        result = await self.db.execute(select(User).filter(User.id == user_id))
+        user = result.scalars().first()
         if not user:
             raise UserNotFoundError(user_id)
         return user
 
-    def get_users_or_raise(self, user_ids: list[UUID]) -> list[User]:
+    async def get_users_or_raise(self, user_ids: list[UUID]) -> list[User]:
         """
         Retrieve multiple users by their IDs or raise an exception if any are not found.
 
@@ -97,14 +101,15 @@ class TeamRepository:
             UserNotFoundError: If any user with the given IDs does not exist.
         """
         unique_ids = set(user_ids)
-        users = self.db.query(User).filter(User.id.in_(unique_ids)).all()
+        result = await self.db.execute(select(User).filter(User.id.in_(unique_ids)))
+        users = list(result.scalars().all())
         if len(users) != len(user_ids):
             found_user_ids = {user.id for user in users}
             missing_user_ids = unique_ids - found_user_ids
             raise UserNotFoundError(str(next(iter(missing_user_ids))))
         return users
 
-    def find_team_by_name(self, contest_id: UUID, team_name: str) -> Team | None:
+    async def find_team_by_name(self, contest_id: UUID, team_name: str) -> Team | None:
         """
         Find a team by its name within a specific contest.
 
@@ -115,17 +120,19 @@ class TeamRepository:
         Returns:
             The Team object if found, otherwise None.
         """
-        return (
-            self.db.query(Team)
+        result = await self.db.execute(
+            select(Team)
             .join(ContestTeam)
             .filter(
                 ContestTeam.contest_id == contest_id,
                 Team.name == team_name,
             )
-            .first()
         )
+        return result.scalars().first()
 
-    def get_team_or_raise(self, team_id: UUID, contest_id: UUID | None = None) -> Team:
+    async def get_team_or_raise(
+        self, team_id: UUID, contest_id: UUID | None = None
+    ) -> Team:
         """
         Retrieve a team by its ID or raise an exception if not found.
 
@@ -137,14 +144,17 @@ class TeamRepository:
         Raises:
             TeamNotFoundError: If the team with the given ID does not exist.
         """
-        team = self.db.query(Team).filter(Team.id == team_id).first()
+        result = await self.db.execute(select(Team).filter(Team.id == team_id))
+        team = result.scalars().first()
         if not team:
             raise TeamNotFoundError(
                 str(team_id), str(contest_id) if contest_id else "unknown"
             )
         return team
 
-    def get_contest_team_or_raise(self, contest_id: UUID, team_id: UUID) -> ContestTeam:
+    async def get_contest_team_or_raise(
+        self, contest_id: UUID, team_id: UUID
+    ) -> ContestTeam:
         """
         Retrieve a ContestTeam by contest ID and team ID or raise an exception if not found.
 
@@ -157,20 +167,20 @@ class TeamRepository:
             TeamNotFoundError: If the ContestTeam with the given contest ID and team ID
             does not exist.
         """
-        contest_team = (
-            self.db.query(ContestTeam)
+        result = await self.db.execute(
+            select(ContestTeam)
             .options(joinedload(ContestTeam.team))
             .filter(
                 ContestTeam.contest_id == contest_id,
                 ContestTeam.team_id == team_id,
             )
-            .first()
         )
+        contest_team = result.scalars().first()
         if not contest_team:
             raise TeamNotFoundError(str(team_id), str(contest_id))
         return contest_team
 
-    def get_team_members_or_raise(
+    async def get_team_members_or_raise(
         self, team_id: UUID, contest_id: UUID | None = None
     ) -> list[User]:
         """
@@ -184,20 +194,21 @@ class TeamRepository:
         Raises:
             TeamNotFoundError: If the team with the given ID does not exist.
         """
-        team = self.db.query(Team).filter(Team.id == team_id).first()
+        result = await self.db.execute(select(Team).filter(Team.id == team_id))
+        team = result.scalars().first()
         if not team:
             raise TeamNotFoundError(
                 str(team_id), str(contest_id) if contest_id else "unknown"
             )
-        members = (
-            self.db.query(User)
+        result = await self.db.execute(
+            select(User)
             .join(TeamUser, TeamUser.user_id == User.id)
             .filter(TeamUser.team_id == team_id)
-            .all()
         )
+        members = list(result.scalars().all())
         return members
 
-    def get_team_members_count_or_raise(
+    async def get_team_members_count_or_raise(
         self, team_id: UUID, contest_id: UUID | None = None
     ) -> int:
         """
@@ -211,17 +222,19 @@ class TeamRepository:
         Raises:
             TeamNotFoundError: If the team with the given ID does not exist.
         """
-        team = self.db.query(Team).filter(Team.id == team_id).first()
+        result = await self.db.execute(select(Team).filter(Team.id == team_id))
+        team = result.scalars().first()
         if not team:
             raise TeamNotFoundError(
                 str(team_id), str(contest_id) if contest_id else "unknown"
             )
-        member_count = (
-            self.db.query(TeamUser).filter(TeamUser.team_id == team_id).count()
+        count_query = select(func.count()).select_from(
+            select(TeamUser).filter(TeamUser.team_id == team_id).subquery()
         )
+        member_count = (await self.db.execute(count_query)).scalar()
         return member_count
 
-    def get_all_team_members(self, team_id: UUID) -> list[TeamUser]:
+    async def get_all_team_members(self, team_id: UUID) -> list[TeamUser]:
         """
         Retrieve all TeamUser records for a team without pagination.
 
@@ -234,9 +247,12 @@ class TeamRepository:
         Returns:
             List of all TeamUser objects for the team
         """
-        return self.db.query(TeamUser).filter(TeamUser.team_id == team_id).all()
+        result = await self.db.execute(
+            select(TeamUser).filter(TeamUser.team_id == team_id)
+        )
+        return list(result.scalars().all())
 
-    def get_team_members_paginated(
+    async def get_team_members_paginated(
         self,
         team_id: UUID,
         search_term: str | None = None,
@@ -262,7 +278,7 @@ class TeamRepository:
         """
         # Build base query
         base_query = (
-            self.db.query(User, TeamUser)
+            select(User, TeamUser)
             .join(TeamUser, User.id == TeamUser.user_id)
             .filter(TeamUser.team_id == team_id)
         )
@@ -275,14 +291,18 @@ class TeamRepository:
             )
 
         # Get total count
-        total = base_query.count()
+        count_query = select(func.count()).select_from(
+            base_query.with_only_columns(User.id).subquery()
+        )
+        total = (await self.db.execute(count_query)).scalar()
 
         # Get paginated results
-        results = base_query.offset(skip).limit(limit).all()
+        result = await self.db.execute(base_query.offset(skip).limit(limit))
+        results = result.all()
 
         return total, results
 
-    def add_team_members(
+    async def add_team_members(
         self, team_id: UUID, member_ids: list[UUID], leader_id: UUID | None = None
     ) -> None:
         """
@@ -306,13 +326,14 @@ class TeamRepository:
 
         # Update leader if specified
         if leader_id:
-            team = self.db.query(Team).filter(Team.id == team_id).first()
+            result = await self.db.execute(select(Team).filter(Team.id == team_id))
+            team = result.scalars().first()
             if team:
                 team.leader_id = leader_id
 
-        self.db.flush()
+        await self.db.flush()
 
-    def remove_team_members(self, team_id: UUID, member_ids: list[UUID]) -> None:
+    async def remove_team_members(self, team_id: UUID, member_ids: list[UUID]) -> None:
         """
         Remove members from a team.
 
@@ -327,13 +348,13 @@ class TeamRepository:
             None - changes are flushed to the database
         """
         # Remove team members
-        self.db.query(TeamUser).filter(
+        select(TeamUser).filter(
             TeamUser.team_id == team_id, TeamUser.user_id.in_(member_ids)
         ).delete(synchronize_session=False)
 
-        self.db.flush()
+        await self.db.flush()
 
-    def get_contest_teams(
+    async def get_contest_teams(
         self,
         contest_id: UUID,
         filters: TeamFilters,
@@ -355,7 +376,7 @@ class TeamRepository:
         """
         # Build base query with eager loading of team relationship
         base_query = (
-            self.db.query(ContestTeam)
+            select(ContestTeam)
             .options(joinedload(ContestTeam.team))
             .join(Team, ContestTeam.team_id == Team.id)
             .filter(ContestTeam.contest_id == contest_id)
@@ -370,14 +391,20 @@ class TeamRepository:
             base_query = base_query.filter(ContestTeam.team_status == filters.status)
 
         # Get total count before pagination
-        total = base_query.count()
+        count_query = select(func.count()).select_from(
+            base_query.with_only_columns(ContestTeam.contest_id).subquery()
+        )
+        total = (await self.db.execute(count_query)).scalar()
 
         # Apply pagination
-        contest_teams = base_query.offset(pagination.skip).limit(pagination.limit).all()
+        result = await self.db.execute(
+            base_query.offset(pagination.skip).limit(pagination.limit)
+        )
+        contest_teams = list(result.unique().scalars().all())
 
         return PaginatedResult(total=total, items=contest_teams)
 
-    def get_team_by_id(self, contest_id: UUID, team_id: UUID) -> ContestTeam:
+    async def get_team_by_id(self, contest_id: UUID, team_id: UUID) -> ContestTeam:
         """
         Retrieve a specific team by ID within a contest.
 
@@ -394,22 +421,22 @@ class TeamRepository:
         Raises:
             TeamNotFoundError: If the team is not found in the contest
         """
-        contest_team = (
-            self.db.query(ContestTeam)
+        result = await self.db.execute(
+            select(ContestTeam)
             .options(joinedload(ContestTeam.team))
             .filter(
                 ContestTeam.contest_id == contest_id,
                 ContestTeam.team_id == team_id,
             )
-            .first()
         )
+        contest_team = result.scalars().first()
 
         if not contest_team:
             raise TeamNotFoundError(str(team_id), str(contest_id))
 
         return contest_team
 
-    def create_team(self, team_data: CreateTeamData) -> ContestTeam:
+    async def create_team(self, team_data: CreateTeamData) -> ContestTeam:
         """
         Create a new team in the database.
 
@@ -427,7 +454,7 @@ class TeamRepository:
             created_by=team_data.created_by,
         )
         self.db.add(team)
-        self.db.flush()  # Flush to get the team ID
+        await self.db.flush()  # Flush to get the team ID
 
         contest_team = ContestTeam(
             contest_id=team_data.contest_id,
@@ -447,19 +474,19 @@ class TeamRepository:
             for member_id in team_data.member_ids
         )
 
-        self.db.flush()  # Flush to save all changes and get IDs
+        await self.db.flush()  # Flush to save all changes and get IDs
 
-        return (
-            self.db.query(ContestTeam)
+        result = await self.db.execute(
+            select(ContestTeam)
             .options(joinedload(ContestTeam.team))
             .filter(
                 ContestTeam.team_id == team.id,
                 ContestTeam.contest_id == team_data.contest_id,
             )
-            .first()
         )
+        return result.scalars().first()
 
-    def update_team(
+    async def update_team(
         self, team_data: UpdateTeamData, team: Team, contest_team: ContestTeam
     ) -> ContestTeam:
         """
@@ -488,14 +515,14 @@ class TeamRepository:
         if team_data.leader_id is not None and team_data.leader_id != team.leader_id:
             team.leader_id = team_data.leader_id
 
-        self.db.flush()  # Flush to save changes
+        await self.db.flush()  # Flush to save changes
 
-        return (
-            self.db.query(ContestTeam)
+        result = await self.db.execute(
+            select(ContestTeam)
             .options(joinedload(ContestTeam.team))
             .filter(
                 ContestTeam.team_id == team.id,
                 ContestTeam.contest_id == contest_team.contest_id,
             )
-            .first()
         )
+        return result.scalars().first()

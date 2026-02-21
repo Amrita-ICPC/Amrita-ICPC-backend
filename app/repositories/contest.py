@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import or_
-from sqlalchemy.orm import Session
+from sqlalchemy import func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions.contest import ContestNotFoundError, InstructorNotAssignedError
 from app.models.contest import Contest, ContestInstructor
@@ -50,10 +50,10 @@ class ContestRepository:
         - Provides clear error messages with entity IDs
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
 
-    def get_contest_or_raise(self, contest_id: UUID) -> Contest:
+    async def get_contest_or_raise(self, contest_id: UUID) -> Contest:
         """
         Retrieve a contest by its ID or raise an exception if not found.
 
@@ -64,12 +64,13 @@ class ContestRepository:
         Raises:
             ContestNotFoundError: If the contest with the given ID does not exist.
         """
-        contest = self.db.query(Contest).filter(Contest.id == contest_id).first()
+        result = await self.db.execute(select(Contest).filter(Contest.id == contest_id))
+        contest = result.scalars().first()
         if not contest:
             raise ContestNotFoundError(contest_id)
         return contest
 
-    def get_contests_with_filters(
+    async def get_contests_with_filters(
         self,
         user_id: UUID,
         is_admin: bool,
@@ -91,7 +92,7 @@ class ContestRepository:
         Returns:
             PaginatedResult containing total count and list of Contest objects
         """
-        base_query = self.db.query(Contest)
+        base_query = select(Contest)
 
         # Non-admin users can only see contests they created or are assigned to as instructors
         if not is_admin:
@@ -123,14 +124,20 @@ class ContestRepository:
         base_query = base_query.distinct()
 
         # Get total count before pagination
-        total = base_query.count()
+        count_query = select(func.count()).select_from(
+            base_query.with_only_columns(Contest.id).subquery()
+        )
+        total = (await self.db.execute(count_query)).scalar()
 
         # Apply pagination
-        contests = base_query.offset(pagination.skip).limit(pagination.limit).all()
+        result = await self.db.execute(
+            base_query.offset(pagination.skip).limit(pagination.limit)
+        )
+        contests = list(result.unique().scalars().all())
 
         return PaginatedResult(total=total, items=contests)
 
-    def get_soft_deleted_contests(
+    async def get_soft_deleted_contests(
         self,
         user_id: UUID,
         is_admin: bool,
@@ -151,7 +158,7 @@ class ContestRepository:
         Returns:
             PaginatedResult containing total count and list of soft-deleted Contest objects
         """
-        base_query = self.db.query(Contest)
+        base_query = select(Contest)
 
         # Non-admin users can only see contests they created or are assigned to as instructors
         if not is_admin:
@@ -179,14 +186,20 @@ class ContestRepository:
         base_query = base_query.distinct()
 
         # Get total count before pagination
-        total = base_query.count()
+        count_query = select(func.count()).select_from(
+            base_query.with_only_columns(Contest.id).subquery()
+        )
+        total = (await self.db.execute(count_query)).scalar()
 
         # Apply pagination
-        contests = base_query.offset(pagination.skip).limit(pagination.limit).all()
+        result = await self.db.execute(
+            base_query.offset(pagination.skip).limit(pagination.limit)
+        )
+        contests = list(result.unique().scalars().all())
 
         return PaginatedResult(total=total, items=contests)
 
-    def create_contest(self, contest_data: CreateContestData) -> Contest:
+    async def create_contest(self, contest_data: CreateContestData) -> Contest:
         """
         Create a new contest in the database.
 
@@ -213,11 +226,11 @@ class ContestRepository:
             created_by=contest_data.created_by,
         )
         self.db.add(db_contest)
-        self.db.flush()
-        self.db.refresh(db_contest)
+        await self.db.flush()
+        await self.db.refresh(db_contest)
         return db_contest
 
-    def update_contest(
+    async def update_contest(
         self, contest: Contest, update_data: UpdateContestData, user_id: UUID
     ) -> Contest:
         """
@@ -238,21 +251,21 @@ class ContestRepository:
                 setattr(contest, field, value)
 
         contest.updated_by = user_id
-        self.db.flush()
-        self.db.refresh(contest)
+        await self.db.flush()
+        await self.db.refresh(contest)
         return contest
 
-    def delete_contest(self, contest: Contest) -> None:
+    async def delete_contest(self, contest: Contest) -> None:
         """
         Hard delete a contest from the database.
 
         Args:
             contest: Contest object to delete
         """
-        self.db.delete(contest)
-        self.db.flush()
+        await self.db.delete(contest)
+        await self.db.flush()
 
-    def soft_delete_contest(self, contest: Contest, user_id: UUID) -> None:
+    async def soft_delete_contest(self, contest: Contest, user_id: UUID) -> None:
         """
         Soft delete a contest by setting deletion flags.
 
@@ -263,9 +276,9 @@ class ContestRepository:
         contest.is_deleted = True
         contest.deleted_at = datetime.now(timezone.utc)
         contest.deleted_by = user_id
-        self.db.flush()
+        await self.db.flush()
 
-    def restore_contest(self, contest: Contest) -> Contest:
+    async def restore_contest(self, contest: Contest) -> Contest:
         """
         Restore a soft-deleted contest.
 
@@ -278,11 +291,11 @@ class ContestRepository:
         contest.is_deleted = False
         contest.deleted_at = None
         contest.deleted_by = None
-        self.db.flush()
-        self.db.refresh(contest)
+        await self.db.flush()
+        await self.db.refresh(contest)
         return contest
 
-    def publish_contest(self, contest: Contest, user_id: UUID) -> None:
+    async def publish_contest(self, contest: Contest, user_id: UUID) -> None:
         """
         Publish a contest by setting published timestamp and updating status.
 
@@ -302,9 +315,9 @@ class ContestRepository:
         else:
             contest.status = ContestStatus.FINISHED
 
-        self.db.flush()
+        await self.db.flush()
 
-    def get_all_instructors_for_contest(self, contest_id: UUID) -> list[User]:
+    async def get_all_instructors_for_contest(self, contest_id: UUID) -> list[User]:
         """
         Retrieve all instructors assigned to a contest.
 
@@ -314,15 +327,15 @@ class ContestRepository:
         Returns:
             List of User objects representing the instructors assigned to the contest
         """
-        instructors = (
-            self.db.query(User)
+        result = await self.db.execute(
+            select(User)
             .join(ContestInstructor, User.id == ContestInstructor.instructor_id)
             .filter(ContestInstructor.contest_id == contest_id)
-            .all()
         )
+        instructors = list(result.scalars().all())
         return instructors
 
-    def get_contest_instructors_paginated(
+    async def get_contest_instructors_paginated(
         self, contest_id: UUID, skip: int, limit: int
     ) -> tuple[int, list[User]]:
         """
@@ -337,17 +350,23 @@ class ContestRepository:
             Tuple of (total count, list of User objects)
         """
         base_query = (
-            self.db.query(User)
+            select(User)
             .join(ContestInstructor, User.id == ContestInstructor.instructor_id)
             .filter(ContestInstructor.contest_id == contest_id)
         )
 
-        total = base_query.count()
-        instructors = base_query.offset(skip).limit(limit).all()
+        count_query = select(func.count()).select_from(
+            base_query.with_only_columns(User.id).subquery()
+        )
+        total = (await self.db.execute(count_query)).scalar()
+        result = await self.db.execute(base_query.offset(skip).limit(limit))
+        instructors = list(result.unique().scalars().all())
 
         return total, instructors
 
-    def assign_instructor(self, contest_id: UUID, instructor_ids: list[UUID]) -> None:
+    async def assign_instructor(
+        self, contest_id: UUID, instructor_ids: list[UUID]
+    ) -> None:
         """
         Assign instructors to a contest.
 
@@ -355,14 +374,13 @@ class ContestRepository:
             contest_id: ID of the contest
             instructor_ids: List of instructor IDs to assign
         """
-        existing_assignments = (
-            self.db.query(ContestInstructor)
-            .filter(
+        result = await self.db.execute(
+            select(ContestInstructor).filter(
                 ContestInstructor.contest_id == contest_id,
                 ContestInstructor.instructor_id.in_(instructor_ids),
             )
-            .all()
         )
+        existing_assignments = list(result.scalars().all())
         existing_instructor_ids = {
             assignment.instructor_id for assignment in existing_assignments
         }
@@ -375,9 +393,11 @@ class ContestRepository:
         ]
         if instructors:
             self.db.add_all(instructors)
-            self.db.flush()
+            await self.db.flush()
 
-    def remove_instructor(self, contest_id: UUID, instructor_ids: list[UUID]) -> None:
+    async def remove_instructor(
+        self, contest_id: UUID, instructor_ids: list[UUID]
+    ) -> None:
         """
         Remove instructors from a contest.
 
@@ -385,14 +405,13 @@ class ContestRepository:
             contest_id: ID of the contest
             instructor_ids: List of instructor IDs to remove
         """
-        assignments = (
-            self.db.query(ContestInstructor)
-            .filter(
+        result = await self.db.execute(
+            select(ContestInstructor).filter(
                 ContestInstructor.contest_id == contest_id,
                 ContestInstructor.instructor_id.in_(instructor_ids),
             )
-            .all()
         )
+        assignments = list(result.scalars().all())
 
         # Check if all instructors were found
         found_instructor_ids = {assignment.instructor_id for assignment in assignments}
@@ -405,11 +424,13 @@ class ContestRepository:
 
         # Delete all assignments
         for assignment in assignments:
-            self.db.delete(assignment)
+            await self.db.delete(assignment)
 
-        self.db.flush()
+        await self.db.flush()
 
-    def is_instructor_assigned(self, contest_id: UUID, instructor_id: UUID) -> bool:
+    async def is_instructor_assigned(
+        self, contest_id: UUID, instructor_id: UUID
+    ) -> bool:
         """
         Check if an instructor is assigned to a contest.
 
@@ -420,17 +441,16 @@ class ContestRepository:
         Returns:
             True if the instructor is assigned, False otherwise
         """
-        assignment = (
-            self.db.query(ContestInstructor)
-            .filter(
+        result = await self.db.execute(
+            select(ContestInstructor).filter(
                 ContestInstructor.contest_id == contest_id,
                 ContestInstructor.instructor_id == instructor_id,
             )
-            .first()
         )
+        assignment = result.scalars().first()
         return assignment is not None
 
-    def get_creator(self, user_id: UUID) -> User | None:
+    async def get_creator(self, user_id: UUID) -> User | None:
         """
         Get a user by ID for creator information.
 
@@ -440,4 +460,4 @@ class ContestRepository:
         Returns:
             User object if found, None otherwise
         """
-        return self.db.query(User).filter(User.id == user_id).first()
+        return select(User).filter(User.id == user_id).first()

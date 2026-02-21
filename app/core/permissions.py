@@ -1,6 +1,7 @@
 from uuid import UUID
 
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions.auth import PermissionDeniedError
 from app.models.contest import Contest, ContestInstructor
@@ -8,22 +9,21 @@ from app.models.user import User
 from app.utils.enums import UserRole
 
 
-def is_admin(db: Session, user_id: UUID) -> bool:
+async def is_admin(db: AsyncSession, user_id: UUID) -> bool:
     """
     Check if the user has admin role.
     """
     return (
-        db.query(User.id)
-        .filter(User.id == user_id, User.role == UserRole.admin)
-        .first()
-        is not None
-    )
+        await db.execute(
+            select(User.id).filter(User.id == user_id, User.role == UserRole.admin)
+        )
+    ).first() is not None
 
 
 class ContestPermission:
     @staticmethod
-    def can_manage_contest(
-        db: Session,
+    async def can_manage_contest(
+        db: AsyncSession,
         *,
         user_id: UUID,
         contest: Contest,
@@ -36,19 +36,18 @@ class ContestPermission:
         if contest.created_by == user_id:
             return
 
-        if is_admin(db, user_id):
+        if await is_admin(db, user_id):
             return
 
         # instructor allowed
         is_instructor = (
-            db.query(ContestInstructor)
-            .filter(
-                ContestInstructor.contest_id == contest.id,
-                ContestInstructor.instructor_id == user_id,
+            await db.execute(
+                select(ContestInstructor).filter(
+                    ContestInstructor.contest_id == contest.id,
+                    ContestInstructor.instructor_id == user_id,
+                )
             )
-            .first()
-            is not None
-        )
+        ).first() is not None
 
         if is_instructor:
             return
@@ -56,8 +55,8 @@ class ContestPermission:
         raise PermissionDeniedError("You do not have permission to manage this contest")
 
     @staticmethod
-    def can_read_contest(
-        db: Session,
+    async def can_read_contest(
+        db: AsyncSession,
         *,
         user_id: UUID,
         contest: Contest,
@@ -74,19 +73,18 @@ class ContestPermission:
             return
 
         # Admins allowed
-        if is_admin(db, user_id):
+        if await is_admin(db, user_id):
             return
 
         # Instructors allowed
         is_instructor = (
-            db.query(ContestInstructor)
-            .filter(
-                ContestInstructor.contest_id == contest.id,
-                ContestInstructor.instructor_id == user_id,
+            await db.execute(
+                select(ContestInstructor).filter(
+                    ContestInstructor.contest_id == contest.id,
+                    ContestInstructor.instructor_id == user_id,
+                )
             )
-            .first()
-            is not None
-        )
+        ).first() is not None
         if is_instructor:
             return
 
@@ -99,8 +97,8 @@ class ContestPermission:
 
 class TeamPermission:
     @staticmethod
-    def is_student_allowed_for_contest(
-        db: Session,
+    async def is_student_allowed_for_contest(
+        db: AsyncSession,
         *,
         user_ids: list[UUID],
         contest_id: UUID,
@@ -113,14 +111,15 @@ class TeamPermission:
 
         # Check if user is already in a team for this contest
         existing_participation = (
-            db.query(TeamUser.user_id)
-            .join(ContestTeam, ContestTeam.team_id == TeamUser.team_id)
-            .filter(
-                ContestTeam.contest_id == contest_id,
-                TeamUser.user_id.in_(user_ids),
+            await db.execute(
+                select(TeamUser.user_id)
+                .join(ContestTeam, ContestTeam.team_id == TeamUser.team_id)
+                .filter(
+                    ContestTeam.contest_id == contest_id,
+                    TeamUser.user_id.in_(user_ids),
+                )
             )
-            .first()
-        )
+        ).first()
 
         if existing_participation:
             raise PermissionDeniedError(
@@ -128,8 +127,8 @@ class TeamPermission:
             )
 
     @staticmethod
-    def can_update_team(
-        db: Session,
+    async def can_update_team(
+        db: AsyncSession,
         *,
         user_id: UUID,
         contest: Contest,
@@ -142,4 +141,4 @@ class TeamPermission:
         """
         if user_id == team_leader_id:
             return
-        ContestPermission.can_manage_contest(db, user_id=user_id, contest=contest)
+        await ContestPermission.can_manage_contest(db, user_id=user_id, contest=contest)

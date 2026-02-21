@@ -13,7 +13,7 @@ The fixtures follow a hierarchy:
 """
 
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -37,26 +37,26 @@ patch("app.core.cache.decorators.cache_delete", lambda **kw: lambda f: f).start(
 def mock_contest_repository():
     """Mock ContestRepository with all database operations mocked.
 
-    All methods return MagicMock objects by default. Individual tests
+    All methods return AsyncMock objects by default. Individual tests
     can override specific method behaviors by setting return_value or side_effect.
 
     Returns:
-        MagicMock: Mock ContestRepository instance
+        AsyncMock: Mock ContestRepository instance
     """
-    return MagicMock(spec=ContestRepository)
+    return AsyncMock(spec=ContestRepository)
 
 
 @pytest.fixture
 def mock_user_repository():
     """Mock UserRepository for user-related database operations.
 
-    All methods return MagicMock objects by default. Tests can override
+    All methods return AsyncMock objects by default. Tests can override
     specific method behaviors as needed.
 
     Returns:
-        MagicMock: Mock UserRepository instance
+        AsyncMock: Mock UserRepository instance
     """
-    return MagicMock(spec=UserRepository)
+    return AsyncMock(spec=UserRepository)
 
 
 @pytest.fixture
@@ -67,9 +67,9 @@ def mock_guard():
     permission denial by setting side_effect on specific methods.
 
     Returns:
-        MagicMock: Mock ContestOperationGuard instance
+        AsyncMock: Mock ContestOperationGuard instance
     """
-    return MagicMock(spec=ContestOperationGuard)
+    return AsyncMock(spec=ContestOperationGuard)
 
 
 @pytest.fixture
@@ -80,9 +80,9 @@ def mock_validator():
     validation failures by setting side_effect on specific methods.
 
     Returns:
-        MagicMock: Mock ContestValidator instance
+        AsyncMock: Mock ContestValidator instance
     """
-    return MagicMock(spec=ContestValidator)
+    return AsyncMock(spec=ContestValidator)
 
 
 @pytest.fixture
@@ -128,10 +128,10 @@ def mock_contest(user_id):
         user_id: UUID from global fixture (contest creator)
 
     Returns:
-        MagicMock: Mock Contest object
+        AsyncMock: Mock Contest object
     """
     now = datetime.now(timezone.utc)
-    contest = MagicMock(spec=Contest)
+    contest = AsyncMock(spec=Contest)
     contest.id = __import__("uuid").uuid4()
     contest.name = "Test Contest"
     contest.description = "Test contest description"
@@ -164,9 +164,9 @@ def mock_user():
     """Mock User object with student role.
 
     Returns:
-        MagicMock: Mock User object with typical student attributes
+        AsyncMock: Mock User object with typical student attributes
     """
-    user = MagicMock(spec=User)
+    user = AsyncMock(spec=User)
     user.id = __import__("uuid").uuid4()
     user.name = "Test User"
     user.email = "test@example.com"
@@ -182,11 +182,11 @@ def mock_instructor(user_id):
         user_id: Can be any UUID, used as instructor ID
 
     Returns:
-        MagicMock: Mock User object with instructor attributes
+        AsyncMock: Mock User object with instructor attributes
     """
     from datetime import date, datetime
 
-    user = MagicMock(spec=User)
+    user = AsyncMock(spec=User)
     user.id = user_id
     user.user_id = "instructor_001"
     user.name = "Test Instructor"
@@ -208,9 +208,9 @@ def mock_contest_instructor(mock_contest, mock_instructor):
         mock_instructor: Mock User object with instructor role
 
     Returns:
-        MagicMock: Mock ContestInstructor with relationships
+        AsyncMock: Mock ContestInstructor with relationships
     """
-    contest_instructor = MagicMock(spec=ContestInstructor)
+    contest_instructor = AsyncMock(spec=ContestInstructor)
     contest_instructor.contest_id = mock_contest.id
     contest_instructor.instructor_id = mock_instructor.id
     contest_instructor.contest = mock_contest
@@ -285,10 +285,10 @@ def setup_valid_contest(mock_contest_repository, mock_contest):
         mock_contest: Mock Contest object
 
     Returns:
-        MagicMock: The configured mock contest
+        AsyncMock: The configured mock contest
 
     Example:
-        async def test_foo(contest_service, setup_valid_contest, ...):
+        def test_foo(contest_service, setup_valid_contest, ...):
             # Contest already configured, proceed with test logic
             pass
     """
@@ -315,7 +315,7 @@ def setup_valid_contest_with_creator(
         tuple: (mock_contest, mock_user) for direct access
 
     Example:
-        async def test_something(contest_service, setup_valid_contest_with_creator):
+        def test_something(contest_service, setup_valid_contest_with_creator):
             mock_contest, mock_user = setup_valid_contest_with_creator
             # Both are configured
     """

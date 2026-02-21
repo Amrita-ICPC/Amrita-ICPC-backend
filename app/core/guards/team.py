@@ -1,7 +1,7 @@
 # app/guards/team_guard.py
 from uuid import UUID
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.permissions import ContestPermission, TeamPermission
 from app.models.contest import Contest
@@ -38,10 +38,10 @@ class TeamOperationGuard:
         - Provides clear error messages for debugging
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
 
-    def check_create_team(
+    async def check_create_team(
         self,
         user_id: UUID,
         contest: Contest,
@@ -52,12 +52,14 @@ class TeamOperationGuard:
         - User has contest management permission
         - All members are eligible students for the contest
         """
-        ContestPermission.can_manage_contest(self.db, user_id=user_id, contest=contest)
-        TeamPermission.is_student_allowed_for_contest(
+        await ContestPermission.can_manage_contest(
+            self.db, user_id=user_id, contest=contest
+        )
+        await TeamPermission.is_student_allowed_for_contest(
             self.db, user_ids=member_ids, contest_id=contest.id
         )
 
-    def check_update_team(
+    async def check_update_team(
         self,
         user_id: UUID,
         contest: Contest,
@@ -66,9 +68,11 @@ class TeamOperationGuard:
         Validates:
         - User has contest management permission
         """
-        ContestPermission.can_manage_contest(self.db, user_id=user_id, contest=contest)
+        await ContestPermission.can_manage_contest(
+            self.db, user_id=user_id, contest=contest
+        )
 
-    def check_read_team(
+    async def check_read_team(
         self,
         user_id: UUID,
         contest: Contest,
@@ -77,9 +81,11 @@ class TeamOperationGuard:
         Validates:
         - User has read permission on the contest
         """
-        ContestPermission.can_read_contest(self.db, user_id=user_id, contest=contest)
+        await ContestPermission.can_read_contest(
+            self.db, user_id=user_id, contest=contest
+        )
 
-    def check_add_team_members(
+    async def check_add_team_members(
         self,
         user_id: UUID,
         contest: Contest,
@@ -90,12 +96,14 @@ class TeamOperationGuard:
         - User has contest management permission
         - All new members are eligible students for the contest
         """
-        ContestPermission.can_manage_contest(self.db, user_id=user_id, contest=contest)
-        TeamPermission.is_student_allowed_for_contest(
+        await ContestPermission.can_manage_contest(
+            self.db, user_id=user_id, contest=contest
+        )
+        await TeamPermission.is_student_allowed_for_contest(
             self.db, user_ids=member_ids, contest_id=contest.id
         )
 
-    def check_remove_team_members(
+    async def check_remove_team_members(
         self,
         user_id: UUID,
         contest: Contest,
@@ -104,4 +112,6 @@ class TeamOperationGuard:
         Validates:
         - User has contest management permission
         """
-        ContestPermission.can_manage_contest(self.db, user_id=user_id, contest=contest)
+        await ContestPermission.can_manage_contest(
+            self.db, user_id=user_id, contest=contest
+        )
