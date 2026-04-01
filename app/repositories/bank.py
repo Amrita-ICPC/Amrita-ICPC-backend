@@ -1,12 +1,14 @@
 from datetime import datetime, timezone
+from typing import List
 from uuid import UUID
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from app.exceptions.bank import BankNotFoundError
-from app.models.bank import Bank, BankShare
+from app.models.bank import Bank, BankQuestion, BankShare
+from app.models.question import Question
 from app.repositories.dto import BankFilters, PaginatedResult, PaginationParams
 from app.schema.bank import BankCreate
 from app.utils.enums import BankPermission
@@ -330,3 +332,87 @@ class BankRepository:
     async def batch_flush(self) -> None:
         """Flush the current session to commit bulk schema changes instantly."""
         await self.db.flush()
+
+    async def get_questions_in_bank_by_ids(
+        self, bank_id: UUID, question_ids: List[UUID]
+    ) -> List[BankQuestion]:
+        """Fetch associative objects matching an array of specific question inputs sequentially.
+
+        Efficiently verifies association linkage utilizing robust SQL targeting vectors exclusively.
+
+        Args:
+            bank_id (UUID): Originating structure context bounds checking actively.
+            question_ids (List[UUID]): Vector subsets checked across association sets cleanly explicitly.
+
+        Returns:
+            List[BankQuestion]: Found associative objects cleanly extracted efficiently directly correctly.
+        """
+        result = await self.db.execute(
+            select(BankQuestion).filter(
+                BankQuestion.bank_id == bank_id,
+                BankQuestion.question_id.in_(question_ids),
+            )
+        )
+        return list(result.scalars().all())
+
+    async def add_questions_to_bank(
+        self, bank_id: UUID, question_ids: List[UUID], user_id: UUID
+    ) -> None:
+        """Bind bulk collections mapping independent questions locally referencing specific structures seamlessly natively structurally explicitly securely.
+
+        Leverages flush queues injecting batched structures implicitly enforcing schema bindings consistently synchronously properly cleanly.
+
+        Args:
+            bank_id (UUID): Central structural context bindings capturing queries uniquely dynamically.
+            question_ids (List[UUID]): Unique target constraints globally appending collections natively.
+            user_id (UUID): Originator tracking metric explicit log attributes dynamically.
+        """
+        bqs = [
+            BankQuestion(bank_id=bank_id, question_id=q_id, created_by=user_id)
+            for q_id in question_ids
+        ]
+        self.db.add_all(bqs)
+        await self.db.flush()
+
+    async def remove_questions_from_bank(self, bqs: List[BankQuestion]) -> None:
+        """Sunder explicit tracked associations dynamically natively mapped targeting lists sequentially evaluating strictly.
+
+        Deploys vectorized SQL filtering implicitly evaluating criteria globally destroying relational nodes securely.
+
+        Args:
+            bqs (List[BankQuestion]): List of verified associative DB elements to detach completely.
+        """
+        if not bqs:
+            return
+        bq_ids = [bq.id for bq in bqs]
+        await self.db.execute(delete(BankQuestion).filter(BankQuestion.id.in_(bq_ids)))
+        await self.db.flush()
+
+    async def get_questions_in_bank(
+        self, bank_id: UUID, pagination: PaginationParams
+    ) -> PaginatedResult:
+        """Retrieve core subsets evaluated cleanly matching query metrics structurally paginated explicitly properly.
+
+        Extract dynamically linked Question records matching the parent origin Bank ID utilizing optimized SQL Join filtering.
+
+        Args:
+            bank_id (UUID): Source bounds restriction targets.
+            pagination (PaginationParams): Offset bounds safely passed to underlying slices explicitly cleanly.
+
+        Returns:
+            PaginatedResult: Dynamic chunk data collection mapped structurally cleanly successfully.
+        """
+        base_query = (
+            select(Question)
+            .join(BankQuestion, BankQuestion.question_id == Question.id)
+            .filter(BankQuestion.bank_id == bank_id)
+        )
+
+        count_query = select(func.count()).select_from(base_query.subquery())
+        total = (await self.db.execute(count_query)).scalar() or 0
+
+        result = await self.db.execute(
+            base_query.offset(pagination.skip).limit(pagination.limit)
+        )
+        questions = list(result.unique().scalars().all())
+        return PaginatedResult(total=total, items=questions)
