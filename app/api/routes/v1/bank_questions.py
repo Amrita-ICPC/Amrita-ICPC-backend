@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import can_read, can_update, get_current_user_id
 from app.core.clients.database import get_db
+from app.core.logger import logger
 from app.core.response import create_api_response
 from app.repositories.bank import BankRepository
 from app.repositories.question import QuestionRepository
@@ -59,6 +60,7 @@ async def add_questions_to_bank(
         BankQuestionAlreadyExistsError: Overlapping target arrays encountered.
     """
     await service.add_questions_to_bank(bank_id, payload.question_ids, user_id)
+    logger.info(f"Questions added to bank {bank_id} by user {user_id}")
     return create_api_response(
         request,
         message="Questions added to bank successfully",
@@ -98,6 +100,7 @@ async def remove_questions_from_bank(
         BankQuestionNotFoundError: Encountering subsets of question definitions unmapped locally.
     """
     await service.remove_questions_from_bank(bank_id, payload.question_ids, user_id)
+    logger.info(f"Questions removed from bank {bank_id} by user {user_id}")
     return create_api_response(
         request, message="Questions removed from bank successfully"
     )

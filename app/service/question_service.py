@@ -25,8 +25,8 @@ class QuestionService:
         self.guard = guard
         self.validator = validator
 
-    def _get_question_cache_key(self, question_id: UUID) -> str:
-        return f"question:{question_id}"
+    def _get_question_cache_keys(self, question_id: UUID) -> list[str]:
+        return [f"question:{question_id}", f"question:{question_id}:*"]
 
     async def create_question(
         self, question_data: QuestionCreate, user_id: UUID
@@ -52,9 +52,9 @@ class QuestionService:
         return QuestionResponse.model_validate(question)
 
     @cache_get(
-        key_builder=lambda self, question_id, user_id: self._get_question_cache_key(
-            question_id
-        ),
+        key_builder=lambda self,
+        question_id,
+        user_id: f"question:{question_id}:user:{user_id}",
         ttl=300,
     )
     async def get_question_by_id(
@@ -69,7 +69,7 @@ class QuestionService:
         key_builder=lambda self,
         question_id,
         *args,
-        **kwargs: self._get_question_cache_key(question_id)
+        **kwargs: self._get_question_cache_keys(question_id)
     )
     async def update_question(
         self, question_id: UUID, update_data: QuestionUpdate, user_id: UUID
@@ -102,7 +102,7 @@ class QuestionService:
         key_builder=lambda self,
         question_id,
         *args,
-        **kwargs: self._get_question_cache_key(question_id)
+        **kwargs: self._get_question_cache_keys(question_id)
     )
     async def delete_question(self, question_id: UUID, user_id: UUID) -> None:
         """Delete a question and invalidate the cache."""

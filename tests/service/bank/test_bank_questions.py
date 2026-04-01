@@ -95,7 +95,11 @@ def sample_question():
 
 @pytest.mark.asyncio
 async def test_add_question_to_bank_success(
-    bank_question_service, mock_repository, mock_validator, sample_bank
+    bank_question_service,
+    mock_repository,
+    mock_validator,
+    sample_bank,
+    mock_question_repo,
 ):
     user_id = sample_bank.created_by
     question_id = uuid4()
@@ -103,13 +107,11 @@ async def test_add_question_to_bank_success(
     mock_repository.get_bank_or_raise.return_value = sample_bank
     mock_repository.get_questions_in_bank_by_ids.return_value = []
 
-    with patch("app.service.bank_question_service.QuestionRepository") as mock_q_repo:
-        mock_q_repo_instance = mock_q_repo.return_value
-        mock_q_repo_instance.get_question_or_raise = AsyncMock(return_value=MagicMock())
+    mock_question_repo.get_question_or_raise = AsyncMock(return_value=MagicMock())
 
-        await bank_question_service.add_questions_to_bank(
-            sample_bank.id, [question_id], user_id
-        )
+    await bank_question_service.add_questions_to_bank(
+        sample_bank.id, [question_id], user_id
+    )
 
     mock_repository.add_questions_to_bank.assert_called_once_with(
         sample_bank.id, [question_id], user_id
@@ -118,7 +120,11 @@ async def test_add_question_to_bank_success(
 
 @pytest.mark.asyncio
 async def test_add_question_to_bank_already_exists(
-    bank_question_service, mock_repository, mock_validator, sample_bank
+    bank_question_service,
+    mock_repository,
+    mock_validator,
+    sample_bank,
+    mock_question_repo,
 ):
     user_id = sample_bank.created_by
     question_id = uuid4()
@@ -128,14 +134,12 @@ async def test_add_question_to_bank_already_exists(
         BankQuestion(bank_id=sample_bank.id, question_id=question_id)
     ]
 
-    with patch("app.service.bank_question_service.QuestionRepository") as mock_q_repo:
-        mock_q_repo_instance = mock_q_repo.return_value
-        mock_q_repo_instance.get_question_or_raise = AsyncMock(return_value=MagicMock())
+    mock_question_repo.get_question_or_raise = AsyncMock(return_value=MagicMock())
 
-        with pytest.raises(BankQuestionAlreadyExistsError):
-            await bank_question_service.add_questions_to_bank(
-                sample_bank.id, [question_id], user_id
-            )
+    with pytest.raises(BankQuestionAlreadyExistsError):
+        await bank_question_service.add_questions_to_bank(
+            sample_bank.id, [question_id], user_id
+        )
 
 
 @pytest.mark.asyncio
