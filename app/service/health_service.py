@@ -1,9 +1,9 @@
 import logging
 
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.exceptions.database import DatabaseUnavailableError
+from app.repositories.health import HealthRepository
 
 logger = logging.getLogger(__name__)
 
@@ -11,18 +11,17 @@ logger = logging.getLogger(__name__)
 class HealthService:
     """Service layer for Application Health Monitoring."""
 
-    @staticmethod
-    async def check_database(db: AsyncSession) -> None:
-        """Ping the database to verify connectivity.
+    def __init__(self, repository: HealthRepository):
+        self.repository = repository
 
-        Args:
-            db (AsyncSession): The active database session injected via dependency.
+    async def check_database(self) -> None:
+        """Ping the database to verify connectivity.
 
         Raises:
             DatabaseUnavailableError: If the execution fails or connection drops.
         """
         try:
-            await db.execute(text("SELECT 1"))
-        except Exception as e:
-            logger.error(f"Database health check failed: {e}")
+            await self.repository.ping()
+        except SQLAlchemyError as e:
+            logger.error("Database health check failed")
             raise DatabaseUnavailableError(detail=str(e))

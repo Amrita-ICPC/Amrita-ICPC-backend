@@ -96,16 +96,16 @@ class BankQuestionNotFoundError(AppBaseException):
 class BankQuestionAlreadyExistsError(AppBaseException):
     """Exception raised when linking a question to a bank that's already linked.
 
-    This error enforces uniqueness on the questions bound to a bank, preventing
-    duplicate association rows in bulk inserts natively explicitly tracking data constraints.
+    This error enforces uniqueness on questions bound to a bank, preventing
+    duplicate association rows in bulk inserts.
     """
 
     def __init__(self, bank_id: str, question_id: str):
-        """Initialize the exception with the conflicting IDs natively explicitly locally mapped.
+        """Initialize the exception with the conflicting IDs.
 
         Args:
-            bank_id (str): The specific bank ID causing conflicts structurally.
-            question_id (str): The duplicated question ID identified.
+            bank_id (str): The bank ID where the conflict occurred.
+            question_id (str): The question ID that already exists in the bank.
         """
         super().__init__(
             message=f"Question {question_id} is already in bank {bank_id}",

@@ -59,8 +59,7 @@ class BankQuestionService:
         bank = await self.repository.get_bank_or_raise(bank_id, load_relations=True)
         self.validator.check_edit_bank(user_id=user_id, bank=bank)
 
-        for q_id in question_ids:
-            await self.question_repo.get_question_or_raise(q_id)
+        await self.question_repo.validate_questions_exist(question_ids)
 
         existing = await self.repository.get_questions_in_bank_by_ids(
             bank_id, question_ids
