@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import (
@@ -13,8 +13,9 @@ from app.auth.dependencies import (
 from app.core.clients.database import get_db
 from app.core.guards.question import QuestionOperationGuard
 from app.core.logger import logger
+from app.core.response import create_api_response
 from app.repositories.question import QuestionRepository
-from app.schema.question import QuestionCreate, QuestionResponse, QuestionUpdate
+from app.schema.question import QuestionCreate, QuestionUpdate
 from app.service.question_service import QuestionService
 from app.validators.question import QuestionValidator
 
@@ -30,11 +31,11 @@ def get_question_service(db: AsyncSession = Depends(get_db)) -> QuestionService:
 
 @router.post(
     "/",
-    response_model=QuestionResponse,
     status_code=status.HTTP_201_CREATED,
     dependencies=[can_create("questions")],
 )
 async def create_question(
+    request: Request,
     data: QuestionCreate,
     user_id: UUID = Depends(get_current_user_id),
     service: QuestionService = Depends(get_question_service),
@@ -43,6 +44,7 @@ async def create_question(
     Create a new question.
 
     Args:
+        request: FastAPI request object
         data: QuestionCreate Pydantic model
         user_id: ID of the currently authenticated user
         service: Injected QuestionService
@@ -55,16 +57,21 @@ async def create_question(
     """
     question = await service.create_question(data, user_id)
     logger.info(f"Question created by user {user_id}: {question.id}")
-    return question
+    return create_api_response(
+        request,
+        data=question.model_dump(),
+        message="Question created successfully",
+        status_code=status.HTTP_201_CREATED,
+    )
 
 
 @router.get(
     "/{question_id}",
-    response_model=QuestionResponse,
     status_code=status.HTTP_200_OK,
     dependencies=[can_read("questions")],
 )
 async def get_question(
+    request: Request,
     question_id: UUID,
     user_id: UUID = Depends(get_current_user_id),
     service: QuestionService = Depends(get_question_service),
@@ -73,6 +80,7 @@ async def get_question(
     Retrieve a question by ID.
 
     Args:
+        request: FastAPI request object
         question_id: ID of the question
         user_id: ID of the currently authenticated user
         service: Injected QuestionService
@@ -84,16 +92,21 @@ async def get_question(
         QuestionNotFoundError: If the question does not exist
         QuestionPermissionError: If user lacks permission
     """
-    return await service.get_question_by_id(question_id, user_id)
+    question = await service.get_question_by_id(question_id, user_id)
+    return create_api_response(
+        request,
+        data=question.model_dump(),
+        message="Question fetched successfully",
+    )
 
 
 @router.patch(
     "/{question_id}",
-    response_model=QuestionResponse,
     status_code=status.HTTP_200_OK,
     dependencies=[can_update("questions")],
 )
 async def update_question(
+    request: Request,
     question_id: UUID,
     data: QuestionUpdate,
     user_id: UUID = Depends(get_current_user_id),
@@ -103,6 +116,7 @@ async def update_question(
     Update a question.
 
     Args:
+        request: FastAPI request object
         question_id: ID of the question
         data: QuestionUpdate Pydantic model
         user_id: ID of the currently authenticated user
@@ -118,7 +132,11 @@ async def update_question(
     """
     question = await service.update_question(question_id, data, user_id)
     logger.info(f"Question updated by user {user_id}: {question_id}")
-    return question
+    return create_api_response(
+        request,
+        data=question.model_dump(),
+        message="Question updated successfully",
+    )
 
 
 @router.delete(
@@ -127,6 +145,7 @@ async def update_question(
     dependencies=[can_delete("questions")],
 )
 async def delete_question(
+    request: Request,
     question_id: UUID,
     user_id: UUID = Depends(get_current_user_id),
     service: QuestionService = Depends(get_question_service),
@@ -135,6 +154,7 @@ async def delete_question(
     Delete a question by ID.
 
     Args:
+        request: FastAPI request object
         question_id: ID of the question
         user_id: ID of the currently authenticated user
         service: Injected QuestionService
@@ -145,3 +165,7 @@ async def delete_question(
     """
     await service.delete_question(question_id, user_id)
     logger.info(f"Question deleted by user {user_id}: {question_id}")
+    return create_api_response(
+        request,
+        message="Question deleted successfully",
+    )

@@ -114,3 +114,14 @@ class BankUnshareRequest(BaseModel):
     user_ids: List[UUID] = Field(
         ..., description="List of user IDs to remove access for"
     )
+
+
+class BankQuestionBulk(BaseModel):
+    """Schema for processing a bulk bank question manipulation target request.
+
+    Contains a robust list of keys executing against Bank operations explicitly.
+    """
+
+    question_ids: List[UUID] = Field(
+        ..., description="List of target question IDs to assign or strip array"
+    )

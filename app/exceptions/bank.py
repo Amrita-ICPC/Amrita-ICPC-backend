@@ -63,9 +63,51 @@ class BankPermissionError(AppBaseException):
     but attempts an operation that requires a higher permission level (e.g., EDIT or OWNER).
     """
 
-    def __init__(self):
+    def __init__(self, bank_id: str | None = None):
         """Initialize the permission error exception."""
         super().__init__(
-            message="You do not have permission to perform this action",
+            message=f"User lacks required permissions on bank with ID {bank_id}"
+            if bank_id
+            else "User lacks required permissions",
             status_code=status.HTTP_403_FORBIDDEN,
+        )
+
+
+class BankQuestionNotFoundError(AppBaseException):
+    """Exception raised when a requested question is not found in a bank.
+
+    This error is thrown when an operation attempts to unlink, access,
+    or modify a question that has not been structurally bound to the bank.
+    """
+
+    def __init__(self, bank_id: str, question_id: str):
+        """Initialize the exception with the missing link's IDs.
+
+        Args:
+            bank_id (str): The unique identifier of the bank.
+            question_id (str): The unique identifier of the question.
+        """
+        super().__init__(
+            message=f"Question {question_id} not found in bank {bank_id}",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+
+class BankQuestionAlreadyExistsError(AppBaseException):
+    """Exception raised when linking a question to a bank that's already linked.
+
+    This error enforces uniqueness on the questions bound to a bank, preventing
+    duplicate association rows in bulk inserts natively explicitly tracking data constraints.
+    """
+
+    def __init__(self, bank_id: str, question_id: str):
+        """Initialize the exception with the conflicting IDs natively explicitly locally mapped.
+
+        Args:
+            bank_id (str): The specific bank ID causing conflicts structurally.
+            question_id (str): The duplicated question ID identified.
+        """
+        super().__init__(
+            message=f"Question {question_id} is already in bank {bank_id}",
+            status_code=status.HTTP_409_CONFLICT,
         )
