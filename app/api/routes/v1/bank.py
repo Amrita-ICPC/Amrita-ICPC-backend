@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, status
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import (
     can_create,
@@ -31,7 +31,7 @@ from app.validators.bank import BankValidator
 router = APIRouter()
 
 
-def get_bank_service(db: Session = Depends(get_db)) -> BankService:
+def get_bank_service(db: AsyncSession = Depends(get_db)) -> BankService:
     """Dependency injector linking repository, guard, and validator into the service.
 
     Args:
@@ -77,7 +77,7 @@ async def create_bank(
 
     return create_api_response(
         request,
-        data=None,
+        data=created_bank,
         message="Bank created successfully",
         status_code=status.HTTP_201_CREATED,
     )

@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -348,9 +348,12 @@ class TeamRepository:
             None - changes are flushed to the database
         """
         # Remove team members
-        select(TeamUser).filter(
-            TeamUser.team_id == team_id, TeamUser.user_id.in_(member_ids)
-        ).delete(synchronize_session=False)
+
+        await self.db.execute(
+            delete(TeamUser).where(
+                TeamUser.team_id == team_id, TeamUser.user_id.in_(member_ids)
+            )
+        )
 
         await self.db.flush()
 

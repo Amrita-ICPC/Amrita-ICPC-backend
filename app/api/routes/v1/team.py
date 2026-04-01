@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, status
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import (
     can_read,
@@ -30,7 +30,7 @@ from app.validators.team import TeamValidator
 router = APIRouter()
 
 
-def get_team_service(db: Session = Depends(get_db)) -> TeamService:
+def get_team_service(db: AsyncSession = Depends(get_db)) -> TeamService:
     """
     Dependency injector linking repository, guard, and validator into the service.
 
@@ -74,14 +74,14 @@ async def create_team(
     Returns:
         APIResponse: Standardized response encapsulating creation metadata.
     """
-    await service.create_team(contest_id, team_data, user_id)
+    team = await service.create_team(contest_id, team_data, user_id)
     logger.info(
         f"Team '{team_data.name}' created in contest {contest_id} by user {user_id}"
     )
 
     return create_api_response(
         request,
-        data=None,
+        data=team,
         message="Team created successfully",
         status_code=status.HTTP_201_CREATED,
     )

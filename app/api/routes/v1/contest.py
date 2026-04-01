@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, status
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import (
     can_create,
@@ -33,7 +33,7 @@ from app.validators.contest import ContestValidator
 router = APIRouter()
 
 
-def get_contest_service(db: Session = Depends(get_db)) -> ContestService:
+def get_contest_service(db: AsyncSession = Depends(get_db)) -> ContestService:
     """
     Dependency injector linking repository, guard, and validator into the service.
 

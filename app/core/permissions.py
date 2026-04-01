@@ -119,7 +119,7 @@ class TeamPermission:
                     TeamUser.user_id.in_(user_ids),
                 )
             )
-        ).first()
+        ).scalar()
 
         if existing_participation:
             raise PermissionDeniedError(
