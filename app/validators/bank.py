@@ -32,7 +32,7 @@ class BankValidator:
             raise BankAlreadyExistsError(name)
 
     @staticmethod
-    def construct_valid_update_payload(update_dict: dict, existing_bank: Bank) -> dict:
+    def construct_valid_update_payload(update_dict: dict) -> dict:
         """Process out invalid fields and return a safe dictionary for updates.
 
         Skips empty names and unspecified optional fields.
@@ -47,6 +47,8 @@ class BankValidator:
         validated = {}
         for field, value in update_dict.items():
             if field == "name" and (value is None or value.strip() == ""):
+                continue
+            if value is None:
                 continue
             # Optionally validate description size here or rely on Pydantic's initial validation
             validated[field] = value

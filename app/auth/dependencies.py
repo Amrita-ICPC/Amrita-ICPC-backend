@@ -2,7 +2,7 @@ from typing import Any, Dict, List
 from uuid import UUID
 
 from fastapi import Depends, Request
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.clients.database import get_db
 from app.core.logger import logger
@@ -188,7 +188,7 @@ def can_update(resource: str):
 
 async def get_current_user_id(
     current_user: Dict[str, Any] = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> UUID:
     """
     Retrieve the current authenticated user's database ID.

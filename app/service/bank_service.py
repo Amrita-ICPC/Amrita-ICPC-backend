@@ -204,7 +204,7 @@ class BankService:
             bank_id (UUID): Pointer to exact resource.
             user_id (UUID): Deletion agent forcing execution.
         """
-        bank = await self.repository.get_bank_or_raise(bank_id)
+        bank = await self.repository.get_bank_or_raise(bank_id, load_relations=True)
         self.validator.check_manage_bank(user_id=user_id, bank=bank)
         await self.repository.delete_bank(bank)
 
@@ -252,7 +252,7 @@ class BankService:
             bank_id (UUID): Pointer to exact resource.
             user_id (UUID): Deletion agent forcing execution.
         """
-        bank = await self.repository.get_bank_or_raise(bank_id)
+        bank = await self.repository.get_bank_or_raise(bank_id, load_relations=True)
         self.validator.check_manage_bank(user_id=user_id, bank=bank)
         await self.repository.soft_delete_bank(bank, user_id)
 
@@ -301,7 +301,7 @@ class BankService:
             shares (List[BankShareItem]): Role assignment definitions per specific user node.
             current_user_id (UUID): Master controller forcing action.
         """
-        bank = await self.repository.get_bank_or_raise(bank_id)
+        bank = await self.repository.get_bank_or_raise(bank_id, load_relations=True)
         self.validator.check_manage_bank(user_id=current_user_id, bank=bank)
 
         for share_item in shares:
@@ -371,7 +371,7 @@ class BankService:
             user_ids (List[UUID]): Multiple identifiers selected.
             current_user_id (UUID): Master node executing directive.
         """
-        bank = await self.repository.get_bank_or_raise(bank_id)
+        bank = await self.repository.get_bank_or_raise(bank_id, load_relations=True)
         self.validator.check_manage_bank(user_id=current_user_id, bank=bank)
 
         for target_user_id in user_ids:
