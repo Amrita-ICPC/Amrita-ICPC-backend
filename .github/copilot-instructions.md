@@ -9,6 +9,7 @@
 - Do not use async ORM calls unless explicitly migrated.
 - Do not cache permission-sensitive list endpoints unless user_id is part of the cache key.
 - Do not log request bodies, secrets, tokens, or PII.
+- New or modified code must satisfy mypy type checking.
 
 ## Repository Layer
 - Encapsulate all database operations in repository classes.
@@ -60,6 +61,14 @@
 - Follow existing module naming and FastAPI patterns.
 - Keep router function names verb-first (e.g., `create_contest`, `get_bank`).
 - Keep dependency names descriptive (`get_db`, `get_current_user`).
+
+### Type checking standards (mypy)
+- Write explicit type annotations for new or modified public functions, methods, and class attributes.
+- Avoid `Any` unless strictly required by third-party boundaries; prefer precise unions/protocols/generics.
+- Keep repository, service, and schema interfaces fully typed so cross-layer DTO contracts are statically verifiable.
+- Ensure Optional/nullable values are narrowed before attribute access or method calls.
+- Use typed collections (`list[T]`, `dict[K, V]`, `set[T]`) and typed SQLAlchemy/Pydantic return values.
+- Validate changes with mypy for affected modules, and resolve introduced type errors before considering work complete.
 
 ### Technology stack declarations and preferred libraries
 - FastAPI for HTTP endpoints.
