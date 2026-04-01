@@ -1,3 +1,4 @@
+from typing import Any, Dict
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, status
@@ -8,7 +9,7 @@ from app.auth.dependencies import (
     can_delete,
     can_read,
     can_update,
-    get_current_user_id,
+    get_current_user,
 )
 from app.core.clients.database import get_db
 from app.core.guards.question import QuestionOperationGuard
@@ -17,6 +18,7 @@ from app.core.response import create_api_response
 from app.repositories.question import QuestionRepository
 from app.schema.question import QuestionCreate, QuestionUpdate
 from app.service.question_service import QuestionService
+from app.service.user_service import UserService
 from app.validators.question import QuestionValidator
 
 router = APIRouter()
@@ -37,7 +39,8 @@ def get_question_service(db: AsyncSession = Depends(get_db)) -> QuestionService:
 async def create_question(
     request: Request,
     data: QuestionCreate,
-    user_id: UUID = Depends(get_current_user_id),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
     service: QuestionService = Depends(get_question_service),
 ):
     """
@@ -46,7 +49,8 @@ async def create_question(
     Args:
         request: FastAPI request object
         data: QuestionCreate Pydantic model
-        user_id: ID of the currently authenticated user
+        current_user: Dictionary holding keycloak JWT claims
+        db: Injected database session
         service: Injected QuestionService
 
     Returns:
@@ -55,6 +59,7 @@ async def create_question(
     Raises:
         InvalidQuestionError: When validation logic fails
     """
+    user_id = (await UserService.get_user_by_keycloak_id(db, current_user["sub"])).id
     question = await service.create_question(data, user_id)
     logger.info(f"Question created by user {user_id}: {question.id}")
     return create_api_response(
@@ -73,7 +78,8 @@ async def create_question(
 async def get_question(
     request: Request,
     question_id: UUID,
-    user_id: UUID = Depends(get_current_user_id),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
     service: QuestionService = Depends(get_question_service),
 ):
     """
@@ -82,7 +88,8 @@ async def get_question(
     Args:
         request: FastAPI request object
         question_id: ID of the question
-        user_id: ID of the currently authenticated user
+        current_user: Dictionary holding keycloak JWT claims
+        db: Injected database session
         service: Injected QuestionService
 
     Returns:
@@ -92,6 +99,7 @@ async def get_question(
         QuestionNotFoundError: If the question does not exist
         QuestionPermissionError: If user lacks permission
     """
+    user_id = (await UserService.get_user_by_keycloak_id(db, current_user["sub"])).id
     question = await service.get_question_by_id(question_id, user_id)
     return create_api_response(
         request,
@@ -109,7 +117,8 @@ async def update_question(
     request: Request,
     question_id: UUID,
     data: QuestionUpdate,
-    user_id: UUID = Depends(get_current_user_id),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
     service: QuestionService = Depends(get_question_service),
 ):
     """
@@ -119,7 +128,8 @@ async def update_question(
         request: FastAPI request object
         question_id: ID of the question
         data: QuestionUpdate Pydantic model
-        user_id: ID of the currently authenticated user
+        current_user: Dictionary holding keycloak JWT claims
+        db: Injected database session
         service: Injected QuestionService
 
     Returns:
@@ -130,6 +140,7 @@ async def update_question(
         InvalidQuestionError: When validation logic fails
         QuestionPermissionError: If user lacks management permissions
     """
+    user_id = (await UserService.get_user_by_keycloak_id(db, current_user["sub"])).id
     question = await service.update_question(question_id, data, user_id)
     logger.info(f"Question updated by user {user_id}: {question_id}")
     return create_api_response(
@@ -147,7 +158,8 @@ async def update_question(
 async def delete_question(
     request: Request,
     question_id: UUID,
-    user_id: UUID = Depends(get_current_user_id),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
     service: QuestionService = Depends(get_question_service),
 ):
     """
@@ -156,13 +168,15 @@ async def delete_question(
     Args:
         request: FastAPI request object
         question_id: ID of the question
-        user_id: ID of the currently authenticated user
+        current_user: Dictionary holding keycloak JWT claims
+        db: Injected database session
         service: Injected QuestionService
 
     Raises:
         QuestionNotFoundError: If the question does not exist
         QuestionPermissionError: If user lacks management permissions
     """
+    user_id = (await UserService.get_user_by_keycloak_id(db, current_user["sub"])).id
     await service.delete_question(question_id, user_id)
     logger.info(f"Question deleted by user {user_id}: {question_id}")
     return create_api_response(

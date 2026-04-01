@@ -34,7 +34,7 @@ def mock_question_repo():
     from app.repositories.question import QuestionRepository
 
     mock = MagicMock(spec=QuestionRepository)
-    mock.get_question_or_raise = AsyncMock(return_value=MagicMock())
+    mock.validate_questions_exist = AsyncMock(return_value=None)
     return mock
 
 
@@ -107,11 +107,13 @@ async def test_add_question_to_bank_success(
     mock_repository.get_bank_or_raise.return_value = sample_bank
     mock_repository.get_questions_in_bank_by_ids.return_value = []
 
-    mock_question_repo.get_question_or_raise = AsyncMock(return_value=MagicMock())
+    mock_question_repo.validate_questions_exist = AsyncMock(return_value=None)
 
     await bank_question_service.add_questions_to_bank(
         sample_bank.id, [question_id], user_id
     )
+
+    mock_question_repo.validate_questions_exist.assert_awaited_once_with([question_id])
 
     mock_repository.add_questions_to_bank.assert_called_once_with(
         sample_bank.id, [question_id], user_id
@@ -134,12 +136,14 @@ async def test_add_question_to_bank_already_exists(
         BankQuestion(bank_id=sample_bank.id, question_id=question_id)
     ]
 
-    mock_question_repo.get_question_or_raise = AsyncMock(return_value=MagicMock())
+    mock_question_repo.validate_questions_exist = AsyncMock(return_value=None)
 
     with pytest.raises(BankQuestionAlreadyExistsError):
         await bank_question_service.add_questions_to_bank(
             sample_bank.id, [question_id], user_id
         )
+
+    mock_question_repo.validate_questions_exist.assert_awaited_once_with([question_id])
 
 
 @pytest.mark.asyncio

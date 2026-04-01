@@ -123,5 +123,7 @@ class BankQuestionBulk(BaseModel):
     """
 
     question_ids: List[UUID] = Field(
-        ..., description="List of target question IDs to assign or strip array"
+        ...,
+        min_length=1,
+        description="List of target question IDs to assign or strip array",
     )

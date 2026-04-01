@@ -38,6 +38,27 @@ class QuestionRepository:
             raise QuestionNotFoundError(str(question_id))
         return question
 
+    async def validate_questions_exist(self, question_ids: list[UUID]) -> None:
+        """Validate that all provided question IDs exist.
+
+        Args:
+            question_ids: List of question IDs to validate.
+
+        Raises:
+            QuestionNotFoundError: If any question ID does not exist.
+        """
+        if not question_ids:
+            return
+
+        unique_ids = set(question_ids)
+        result = await self.db.execute(
+            select(Question.id).filter(Question.id.in_(unique_ids))
+        )
+        found_ids = set(result.scalars().all())
+        if len(found_ids) != len(unique_ids):
+            missing_id = next(iter(unique_ids - found_ids))
+            raise QuestionNotFoundError(str(missing_id))
+
     async def create_question(self, data: CreateQuestionData) -> Question:
         """
         Create a new question in the database.
