@@ -32,10 +32,10 @@ router = APIRouter()
 
 
 def get_bank_service(db: AsyncSession = Depends(get_db)) -> BankService:
-    """Dependency injector linking repository, guard, and validator into the service.
+    """Dependency injector linking repository, validator into the service.
 
     Args:
-        db (Session): Database session passed from FastAPI dependencies.
+        db (AsyncSession): Database session passed from FastAPI dependencies.
 
     Returns:
         BankService: Fully configured service class instance.

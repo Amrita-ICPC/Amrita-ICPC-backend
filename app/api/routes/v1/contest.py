@@ -74,10 +74,18 @@ async def create_contest(
 
     Returns:
         APIResponse: Standardized response encapsulating creation metadata.
+
+    Raises:
+        UnauthorizedError: If the caller is not authenticated.
+        PermissionDeniedError: If the caller lacks create permission.
+        RequestValidationError: If request payload validation fails.
+        ContestAlreadyExistsError: If a contest with the same name already exists.
+        InvalidContestError: If contest business validation fails.
+        ContestOperationError: If contest creation fails unexpectedly.
     """
     created_contest = await service.create_contest(contest, user_id)
     logger.info(
-        f"Contest '{created_contest.name}' with ID {created_contest.id} created by user {user_id}"
+        f"Contest '{created_contest.name}' with ID {created_contest.id} created (actor=REDACTED)"
     )
 
     return create_api_response(
@@ -123,6 +131,12 @@ async def get_all_contests(
 
     Returns:
         APIResponse: Standardized response encapsulating the list of contests and pagination state.
+
+    Raises:
+        UnauthorizedError: If the caller is not authenticated.
+        PermissionDeniedError: If the caller lacks read permission.
+        RequestValidationError: If query parameter validation fails.
+        ContestOperationError: If contest retrieval fails unexpectedly.
     """
     skip = (page - 1) * page_size
     total, contests = await service.get_all_contests(
@@ -170,6 +184,12 @@ async def get_deleted_contests(
 
     Returns:
         APIResponse: Standardized response encapsulating the list of soft-deleted contests.
+
+    Raises:
+        UnauthorizedError: If the caller is not authenticated.
+        PermissionDeniedError: If the caller lacks read permission.
+        RequestValidationError: If query parameter validation fails.
+        ContestOperationError: If contest retrieval fails unexpectedly.
     """
     skip = (page - 1) * page_size
     total, contests = await service.get_soft_deleted_contests(
@@ -209,6 +229,12 @@ async def get_contest(
 
     Returns:
         APIResponse: Detailed information block for the contest.
+
+    Raises:
+        UnauthorizedError: If the caller is not authenticated.
+        PermissionDeniedError: If the caller lacks read permission.
+        ContestNotFoundError: If the contest does not exist.
+        ContestOperationError: If contest retrieval fails unexpectedly.
     """
     contest = await service.get_contest_by_id(contest_id, user_id)
     return create_api_response(
@@ -241,9 +267,17 @@ async def update_contest(
 
     Returns:
         APIResponse: Standardized response encapsulating the updated contest details.
+
+    Raises:
+        UnauthorizedError: If the caller is not authenticated.
+        PermissionDeniedError: If the caller lacks update permission.
+        RequestValidationError: If request payload validation fails.
+        ContestNotFoundError: If the contest does not exist.
+        InvalidContestError: If contest business validation fails.
+        ContestOperationError: If contest update fails unexpectedly.
     """
     contest = await service.update_contest(contest_id, contest_data, user_id)
-    logger.info(f"Contest with ID {contest_id} updated by user {user_id}")
+    logger.info(f"Contest with ID {contest_id} updated (actor=REDACTED)")
 
     return create_api_response(
         request,
@@ -276,9 +310,16 @@ async def publish_contest(
 
     Returns:
         APIResponse: Success confirmation.
+
+    Raises:
+        UnauthorizedError: If the caller is not authenticated.
+        PermissionDeniedError: If the caller lacks update permission.
+        ContestNotFoundError: If the contest does not exist.
+        InvalidContestError: If contest cannot be published in its current state.
+        ContestOperationError: If contest publish fails unexpectedly.
     """
     await service.publish_contest(contest_id, user_id)
-    logger.info(f"Contest with ID {contest_id} published by user {user_id}")
+    logger.info(f"Contest with ID {contest_id} published (actor=REDACTED)")
 
     return create_api_response(
         request,
@@ -311,9 +352,15 @@ async def delete_contest(
 
     Returns:
         APIResponse: Success confirmation.
+
+    Raises:
+        UnauthorizedError: If the caller is not authenticated.
+        PermissionDeniedError: If the caller lacks delete permission.
+        ContestNotFoundError: If the contest does not exist.
+        ContestOperationError: If contest deletion fails unexpectedly.
     """
     await service.delete_contest(contest_id, user_id)
-    logger.info(f"Contest with ID {contest_id} deleted by user {user_id}")
+    logger.info(f"Contest with ID {contest_id} deleted (actor=REDACTED)")
 
     return create_api_response(
         request,
@@ -346,9 +393,15 @@ async def soft_delete_contest(
 
     Returns:
         APIResponse: Success confirmation.
+
+    Raises:
+        UnauthorizedError: If the caller is not authenticated.
+        PermissionDeniedError: If the caller lacks delete permission.
+        ContestNotFoundError: If the contest does not exist.
+        ContestOperationError: If contest soft deletion fails unexpectedly.
     """
     await service.soft_delete_contest(contest_id, user_id)
-    logger.info(f"Contest {contest_id} soft deleted by user {user_id}")
+    logger.info(f"Contest {contest_id} soft deleted (actor=REDACTED)")
 
     return create_api_response(
         request,
@@ -383,9 +436,16 @@ async def restore_contest(
 
     Returns:
         APIResponse: Standardized response encapsulating the restored contest data.
+
+    Raises:
+        UnauthorizedError: If the caller is not authenticated.
+        PermissionDeniedError: If the caller lacks update permission.
+        ContestNotFoundError: If the contest does not exist.
+        InvalidContestError: If contest cannot be restored in its current state.
+        ContestOperationError: If contest restoration fails unexpectedly.
     """
     contest = await service.restore_contest(contest_id, user_id)
-    logger.info(f"Contest {contest_id} restored by user {user_id}")
+    logger.info(f"Contest {contest_id} restored (actor=REDACTED)")
     return create_api_response(
         request, data=contest, message="Contest restored successfully"
     )
@@ -417,10 +477,19 @@ async def assign_instructors_to_contest(
 
     Returns:
         APIResponse: Success confirmation.
+
+    Raises:
+        UnauthorizedError: If the caller is not authenticated.
+        PermissionDeniedError: If the caller lacks update permission.
+        RequestValidationError: If request payload validation fails.
+        ContestNotFoundError: If the contest does not exist.
+        InstructorNotFoundError: If an instructor ID is invalid.
+        InstructorAlreadyAssignedError: If an instructor is already assigned.
+        ContestOperationError: If instructor assignment fails unexpectedly.
     """
     await service.assign_instructors_to_contest(contest_id, instructor_request, user_id)
     logger.info(
-        f"Assigned {len(instructor_request.instructor_ids)} instructors to contest {contest_id} by user {user_id}"
+        f"Assigned {len(instructor_request.instructor_ids)} instructors to contest {contest_id} (actor=REDACTED)"
     )
 
     return create_api_response(
@@ -456,12 +525,20 @@ async def remove_instructors_from_contest(
 
     Returns:
         APIResponse: Success confirmation.
+
+    Raises:
+        UnauthorizedError: If the caller is not authenticated.
+        PermissionDeniedError: If the caller lacks update permission.
+        RequestValidationError: If request payload validation fails.
+        ContestNotFoundError: If the contest does not exist.
+        InstructorNotAssignedError: If an instructor is not currently assigned.
+        ContestOperationError: If instructor removal fails unexpectedly.
     """
     await service.remove_instructors_from_contest(
         contest_id, instructor_request, user_id
     )
     logger.info(
-        f"Removed {len(instructor_request.instructor_ids)} instructors from contest {contest_id} by user {user_id}"
+        f"Removed {len(instructor_request.instructor_ids)} instructors from contest {contest_id} (actor=REDACTED)"
     )
 
     return create_api_response(
@@ -500,6 +577,13 @@ async def get_contest_instructors(
 
     Returns:
         APIResponse: Standardized response with list of instructors and pagination state.
+
+    Raises:
+        UnauthorizedError: If the caller is not authenticated.
+        PermissionDeniedError: If the caller lacks read permission.
+        RequestValidationError: If query parameter validation fails.
+        ContestNotFoundError: If the contest does not exist.
+        ContestOperationError: If instructor retrieval fails unexpectedly.
     """
     skip = (page - 1) * page_size
     total, instructors = await service.get_contest_instructors(
