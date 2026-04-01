@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, cast
 from uuid import UUID
 
 from fastapi import Depends, Request
@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.clients.database import get_db
 from app.core.logger import logger
 from app.exceptions.auth import PermissionDeniedError, UnauthorizedError
+from app.schema.user import UserResponse
 from app.service.user_service import UserService
 
 
@@ -25,25 +26,24 @@ def get_current_user(request: Request) -> Dict[str, Any]:
 
     # If user is already a dict (custom mapper used), good.
     if isinstance(user, dict):
-        return user
+        return cast(Dict[str, Any], user)
 
-    try:
-        return user.__dict__
-    except AttributeError:
-        # Fallback if it's something else
-        return user
+    if hasattr(user, "__dict__"):
+        return cast(Dict[str, Any], user.__dict__)
+
+    raise UnauthorizedError("Invalid user object")
 
 
 def get_user_roles(user: Dict[str, Any]) -> List[str]:
     """Extract roles from user object."""
     # Roles are directly mapped
-    return user.get("roles", [])
+    return cast(List[str], user.get("roles", []))
 
 
 def get_user_groups(user: Dict[str, Any]) -> List[str]:
     """Extract groups from user object."""
     # Groups are directly mapped
-    return user.get("groups", [])
+    return cast(List[str], user.get("groups", []))
 
 
 class AccessControl:
@@ -54,9 +54,9 @@ class AccessControl:
 
     def __init__(
         self,
-        allowed_roles: List[str] = None,
-        allowed_groups: List[str] = None,
-        permission: str = None,  # Format: "resource:action" e.g., "teams:create"
+        allowed_roles: List[str] | None = None,
+        allowed_groups: List[str] | None = None,
+        permission: str | None = None,  # Format: "resource:action" e.g., "teams:create"
     ):
         self.allowed_roles = allowed_roles or []
         self.allowed_groups = allowed_groups or []
@@ -199,7 +199,7 @@ async def get_current_user_id(
     if kc_id is None:
         raise UnauthorizedError("No authenticated user found")
     # UserService.get_user_by_keycloak_id is cached, so efficient
-    user = await UserService.get_user_by_keycloak_id(db, kc_id)
+    user: UserResponse = await UserService.get_user_by_keycloak_id(db, kc_id)
     return user.id
 
 

@@ -4,7 +4,7 @@ from uuid import UUID
 from app.core.cache.decorators import cache_delete, cache_get, cache_set
 from app.core.guards.contest import ContestOperationGuard
 from app.core.logger import logger
-from app.exceptions.contest import ContestNotFoundError
+from app.exceptions.contest import ContestNotFoundError, InvalidContestError
 from app.repositories.contest import ContestRepository
 from app.repositories.dto import (
     ContestFilters,
@@ -274,6 +274,12 @@ class ContestService:
             if contest_data.max_team_size is not None
             else contest.max_team_size
         )
+        if new_start is None:
+            raise InvalidContestError("start_time cannot be None")
+        if new_end is None:
+            raise InvalidContestError("end_time cannot be None")
+        if new_reg_start is None or new_reg_end is None:
+            raise InvalidContestError("registration dates required")
 
         self.validator.validate_contest_dates(new_start, new_end)
         self.validator.validate_registration_dates(

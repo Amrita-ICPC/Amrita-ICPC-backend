@@ -12,11 +12,18 @@ repos:
     hooks:
       # Run the linter.
       - id: ruff
-        args: [ --fix ]
+        args: [--fix]
       # Run the formatter.
       - id: ruff-format
   - repo: local
     hooks:
+      - id: mypy
+        name: Run mypy type checks (commit blocked if typing fails)
+        entry: uv run mypy
+        language: system
+        pass_filenames: false
+        always_run: true
+
       - id: pytest
         name: Run tests with pytest (commit blocked if tests fail)
         entry: uv run pytest -x --tb=short -q

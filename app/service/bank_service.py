@@ -105,7 +105,8 @@ class BankService:
         Returns:
             BankDetailResponse: A complete detail breakdown of structure.
         """
-        cached_dto = await self._get_bank_from_cache(bank_id)
+        data = await self._get_bank_from_cache(bank_id)
+        cached_dto = BankDetailResponse.model_validate(data)
 
         if check_access:
             # We recreate a mock 'bank' locally from DTO since guard expects model interfaces
