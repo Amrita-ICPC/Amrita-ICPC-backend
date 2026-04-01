@@ -113,7 +113,7 @@ class BankQuestionService:
         bank_id,
         user_id,
         skip=0,
-        limit=100: f"banks:questions:{bank_id}:skip:{skip}:limit:{limit}",
+        limit=100: f"banks:questions:{bank_id}:user:{user_id}:skip:{skip}:limit:{limit}",
         ttl=300,
     )
     async def get_bank_questions(

@@ -91,6 +91,7 @@ class QuestionRepository:
         Args:
             question: Question object to delete.
         """
+        await self.db.delete(question)
         await self.db.flush()
 
     async def user_has_access_to_question_via_bank(
