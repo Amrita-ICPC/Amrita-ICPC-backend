@@ -13,6 +13,7 @@ trigger: always_on
 - Do not use async ORM calls unless explicitly migrated.
 - Do not cache permission-sensitive list endpoints unless user_id is in the cache key.
 - Do not log request bodies, secrets, tokens, or PII.
+- New or modified code must satisfy mypy type checking.
 - Conflict resolution: Golden Rules > Router Rules > Service Rules.
 - Default behavior: when unsure, prefer correctness, explicit permissions, and clarity over brevity.
 
@@ -27,6 +28,14 @@ trigger: always_on
 - Logging: log success events only; never log request bodies, secrets, tokens, or PII.
 - Responses: always return Pydantic schemas (no ORM models in API responses).
 - Status codes: use FastAPI `status` constants for responses and error mappings.
+
+## Type Checking Rules (mypy)
+- Add explicit type annotations for new or modified public functions, methods, and class attributes.
+- Avoid `Any` unless required at third-party boundaries; prefer precise unions, protocols, and generics.
+- Keep repository, service, and schema interfaces fully typed so DTO contracts are statically verifiable.
+- Narrow optional values before attribute access or method calls.
+- Use typed collections (`list[T]`, `dict[K, V]`, `set[T]`) and typed SQLAlchemy/Pydantic return values.
+- Run mypy for affected modules and fix introduced type errors before considering a task complete.
 
 ## File Structure (condensed)
 ```
