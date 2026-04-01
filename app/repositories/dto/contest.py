@@ -30,8 +30,8 @@ class CreateContestData:
     is_public: bool
     start_time: datetime
     end_time: datetime
-    registration_start: datetime
-    registration_end: datetime
+    registration_start: datetime | None
+    registration_end: datetime | None
     max_teams: int | None
     min_team_size: int
     max_team_size: int

@@ -16,3 +16,6 @@ wheels/
 
 #vscode generated files
 .vscode
+
+#mypy generated files
+.mypy_cache/

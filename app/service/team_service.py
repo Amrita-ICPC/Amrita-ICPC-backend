@@ -1,3 +1,4 @@
+from typing import cast
 from uuid import UUID
 
 from app.core.cache.decorators import cache_delete, cache_get, cache_set
@@ -140,7 +141,7 @@ class TeamService:
         await self.repository.get_users_or_raise(team_data.member_ids)
 
         self.validator.validate_leader_assignment(
-            team_data.leader_id, team_data.member_ids
+            team_data.leader_id, team_data.member_ids, team_data.name
         )
 
         # Convert DTO to repository data object
@@ -453,6 +454,7 @@ class TeamService:
         self.validator.validate_leader_assignment(
             member_data.leader_id,
             list(set(member_data.member_ids) | set(existing_member_ids)),
+            contest_team.team.name,
         )
         # Add members using repository
         await self.repository.add_team_members(
@@ -462,7 +464,10 @@ class TeamService:
         )
 
         # Return updated member list
-        return await self.get_team_members(contest_id, team_id, updated_by)
+        return cast(
+            tuple[int, list[TeamMemberResponse]],
+            await self.get_team_members(contest_id, team_id, updated_by),
+        )
 
     @cache_delete(
         key_builder=lambda self, contest_id, team_id, *args, **kwargs: [
@@ -519,7 +524,10 @@ class TeamService:
             len(un_removed_ids), contest, contest_team.team_status
         )
         self.validator.validate_leader_change(
-            member_data.member_ids, member_data.new_leader_id, team.leader_id
+            member_data.member_ids,
+            member_data.new_leader_id,
+            team.leader_id,
+            team.name,
         )
         # Remove members using repository
         await self.repository.remove_team_members(
@@ -531,7 +539,10 @@ class TeamService:
             team_id=team_id, leader_id=member_data.new_leader_id
         )
         await self.repository.update_team(update_data, team, contest_team)
-        return await self.get_team_members(contest_id, team_id, updated_by)
+        return cast(
+            tuple[int, list[TeamMemberResponse]],
+            await self.get_team_members(contest_id, team_id, updated_by),
+        )
 
     @cache_get(
         key_builder=lambda self,
@@ -595,7 +606,7 @@ class TeamService:
         )
 
         # Transform to response objects
-        members = []
+        members: list[TeamMemberResponse] = []
         for user, _ in results:
             member = TeamMemberResponse(
                 id=user.id,

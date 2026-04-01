@@ -18,7 +18,7 @@ class CreateTeamData:
     name: str
     description: str | None
     logo: str | None
-    leader_id: UUID
+    leader_id: UUID | None
     member_ids: list[UUID]
     status: TeamStatus
     created_by: UUID
