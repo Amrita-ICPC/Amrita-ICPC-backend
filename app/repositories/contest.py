@@ -5,6 +5,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions.contest import ContestNotFoundError, InstructorNotAssignedError
+from app.exceptions.user import UserNotFoundError
 from app.models.contest import Contest, ContestInstructor
 from app.models.user import User
 from app.repositories.dto import (
@@ -452,4 +453,7 @@ class ContestRepository:
 
     async def get_creator(self, user_id: UUID) -> User:
         result = await self.db.execute(select(User).filter(User.id == user_id))
-        return result.scalar_one()
+        user = result.scalar_one_or_none()
+        if not user:
+            raise UserNotFoundError(str(user_id))
+        return user

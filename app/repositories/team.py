@@ -298,9 +298,8 @@ class TeamRepository:
 
         # Get paginated results
         result = await self.db.execute(base_query.offset(skip).limit(limit))
-        result.all()
         results: list[tuple[User, TeamUser]] = [
-            (user, team_user) for user, team_user in result.all()
+            tuple(row) for row in result.all()
         ]  # List of (User, TeamUser) tuples
 
         return total, results
@@ -490,7 +489,10 @@ class TeamRepository:
                 ContestTeam.contest_id == team_data.contest_id,
             )
         )
-        return result.scalar_one()
+        created_contest_team: ContestTeam | None = result.scalar_one_or_none()
+        if not created_contest_team:
+            raise TeamNotFoundError(str(team.id), str(team_data.contest_id))
+        return created_contest_team
 
     async def update_team(
         self, team_data: UpdateTeamData, team: Team, contest_team: ContestTeam
@@ -531,4 +533,7 @@ class TeamRepository:
                 ContestTeam.contest_id == contest_team.contest_id,
             )
         )
-        return result.scalar_one()
+        updated_contest_team: ContestTeam | None = result.scalar_one_or_none()
+        if not updated_contest_team:
+            raise TeamNotFoundError(str(team.id), str(contest_team.contest_id))
+        return updated_contest_team
