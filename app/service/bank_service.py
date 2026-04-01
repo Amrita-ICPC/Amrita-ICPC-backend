@@ -181,9 +181,7 @@ class BankService:
         self.validator.check_edit_bank(user_id=user_id, bank=bank)
 
         update_data = bank_update.model_dump(exclude_unset=True)
-        validated_data = self.validator.construct_valid_update_payload(
-            update_data, bank
-        )
+        validated_data = self.validator.construct_valid_update_payload(update_data)
 
         for field, value in validated_data.items():
             setattr(bank, field, value)

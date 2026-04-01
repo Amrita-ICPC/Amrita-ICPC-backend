@@ -39,7 +39,6 @@ class BankValidator:
 
         Args:
             update_dict (dict): The incoming schema dictionary via Pydantic model_dump.
-            existing_bank (Bank): The existing model instance.
 
         Returns:
             dict: The validated, sanitized fields to apply.
