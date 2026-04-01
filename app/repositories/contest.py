@@ -67,7 +67,7 @@ class ContestRepository:
         result = await self.db.execute(select(Contest).filter(Contest.id == contest_id))
         contest = result.scalars().first()
         if not contest:
-            raise ContestNotFoundError(contest_id)
+            raise ContestNotFoundError(str(contest_id))
         return contest
 
     async def get_contests_with_filters(
@@ -127,7 +127,7 @@ class ContestRepository:
         count_query = select(func.count()).select_from(
             base_query.with_only_columns(Contest.id).subquery()
         )
-        total = (await self.db.execute(count_query)).scalar()
+        total = (await self.db.execute(count_query)).scalar() or 0
 
         # Apply pagination
         result = await self.db.execute(
@@ -189,7 +189,7 @@ class ContestRepository:
         count_query = select(func.count()).select_from(
             base_query.with_only_columns(Contest.id).subquery()
         )
-        total = (await self.db.execute(count_query)).scalar()
+        total = (await self.db.execute(count_query)).scalar() or 0
 
         # Apply pagination
         result = await self.db.execute(
@@ -358,9 +358,9 @@ class ContestRepository:
         count_query = select(func.count()).select_from(
             base_query.with_only_columns(User.id).subquery()
         )
-        total = (await self.db.execute(count_query)).scalar()
+        total = (await self.db.execute(count_query)).scalar() or 0
         result = await self.db.execute(base_query.offset(skip).limit(limit))
-        instructors = list(result.unique().scalars().all())
+        instructors: list[User] = list(result.unique().scalars().all())
 
         return total, instructors
 
@@ -450,14 +450,6 @@ class ContestRepository:
         assignment = result.scalars().first()
         return assignment is not None
 
-    async def get_creator(self, user_id: UUID) -> User | None:
-        """
-        Get a user by ID for creator information.
-
-        Args:
-            user_id: ID of the user
-
-        Returns:
-            User object if found, None otherwise
-        """
-        return select(User).filter(User.id == user_id).first()
+    async def get_creator(self, user_id: UUID) -> User:
+        result = await self.db.execute(select(User).filter(User.id == user_id))
+        return result.scalar_one()

@@ -60,9 +60,9 @@ class ContestValidator:
 
     @staticmethod
     def validate_registration_dates(
-        registration_start: datetime,
-        registration_end: datetime,
-        start_time: datetime,
+        registration_start: datetime | None,
+        registration_end: datetime | None,
+        start_time: datetime | None,
     ) -> None:
         """
         Validates that registration period is valid.
@@ -75,6 +75,9 @@ class ContestValidator:
         Raises:
             InvalidContestError: If registration dates are invalid
         """
+        if registration_end is None or registration_start is None or start_time is None:
+            raise InvalidContestError("Registration dates are required")
+
         if registration_end <= registration_start:
             raise InvalidContestError(
                 "registration_end must be after registration_start"

@@ -126,7 +126,7 @@ class BankRepository:
         )
         banks = list(result.unique().scalars().all())
 
-        return PaginatedResult(total=total, items=banks)
+        return PaginatedResult(total=total or 0, items=banks)
 
     async def get_bank_by_name_and_creator(
         self, name: str, user_id: UUID
@@ -222,7 +222,7 @@ class BankRepository:
         count_query = select(func.count()).select_from(
             base_query.with_only_columns(Bank.id).subquery()
         )
-        total = (await self.db.execute(count_query)).scalar()
+        total = (await self.db.execute(count_query)).scalar() or 0
 
         result = await self.db.execute(
             base_query.offset(pagination.skip).limit(pagination.limit)

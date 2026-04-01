@@ -69,7 +69,7 @@ class TeamRepository:
         result = await self.db.execute(select(Contest).filter(Contest.id == contest_id))
         contest = result.scalars().first()
         if not contest:
-            raise ContestNotFoundError(contest_id)
+            raise ContestNotFoundError(str(contest_id))
         return contest
 
     async def get_user_or_raise(self, user_id: UUID) -> User:
@@ -86,7 +86,7 @@ class TeamRepository:
         result = await self.db.execute(select(User).filter(User.id == user_id))
         user = result.scalars().first()
         if not user:
-            raise UserNotFoundError(user_id)
+            raise UserNotFoundError(str(user_id))
         return user
 
     async def get_users_or_raise(self, user_ids: list[UUID]) -> list[User]:
@@ -200,12 +200,12 @@ class TeamRepository:
             raise TeamNotFoundError(
                 str(team_id), str(contest_id) if contest_id else "unknown"
             )
-        result = await self.db.execute(
+        member_result = await self.db.execute(
             select(User)
             .join(TeamUser, TeamUser.user_id == User.id)
             .filter(TeamUser.team_id == team_id)
         )
-        members = list(result.scalars().all())
+        members: list[User] = list(member_result.scalars().all())
         return members
 
     async def get_team_members_count_or_raise(
@@ -231,7 +231,7 @@ class TeamRepository:
         count_query = select(func.count()).select_from(
             select(TeamUser).filter(TeamUser.team_id == team_id).subquery()
         )
-        member_count = (await self.db.execute(count_query)).scalar()
+        member_count = (await self.db.execute(count_query)).scalar() or 0
         return member_count
 
     async def get_all_team_members(self, team_id: UUID) -> list[TeamUser]:
@@ -294,11 +294,14 @@ class TeamRepository:
         count_query = select(func.count()).select_from(
             base_query.with_only_columns(User.id).subquery()
         )
-        total = (await self.db.execute(count_query)).scalar()
+        total = (await self.db.execute(count_query)).scalar_one()
 
         # Get paginated results
         result = await self.db.execute(base_query.offset(skip).limit(limit))
-        results = result.all()
+        result.all()
+        results: list[tuple[User, TeamUser]] = [
+            (user, team_user) for user, team_user in result.all()
+        ]  # List of (User, TeamUser) tuples
 
         return total, results
 
@@ -397,7 +400,7 @@ class TeamRepository:
         count_query = select(func.count()).select_from(
             base_query.with_only_columns(ContestTeam.contest_id).subquery()
         )
-        total = (await self.db.execute(count_query)).scalar()
+        total = (await self.db.execute(count_query)).scalar() or 0
 
         # Apply pagination
         result = await self.db.execute(
@@ -487,7 +490,7 @@ class TeamRepository:
                 ContestTeam.contest_id == team_data.contest_id,
             )
         )
-        return result.scalars().first()
+        return result.scalar_one()
 
     async def update_team(
         self, team_data: UpdateTeamData, team: Team, contest_team: ContestTeam
@@ -528,4 +531,4 @@ class TeamRepository:
                 ContestTeam.contest_id == contest_team.contest_id,
             )
         )
-        return result.scalars().first()
+        return result.scalar_one()

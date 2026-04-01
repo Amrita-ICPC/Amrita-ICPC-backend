@@ -640,7 +640,7 @@ class TestRemoveTeamMemberLeaderValidation:
             )
 
         mock_validator.validate_leader_change.assert_called_once_with(
-            [member_to_remove], new_leader_id, current_leader_id
+            [member_to_remove], new_leader_id, current_leader_id, mock_team.name
         )
 
 
