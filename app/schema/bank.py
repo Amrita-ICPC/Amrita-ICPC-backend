@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schema.question import QuestionResponse
 from app.utils.enums import BankPermission
@@ -124,6 +124,35 @@ class BankQuestionBulk(BaseModel):
 
     question_ids: List[UUID] = Field(
         ...,
-        min_length=1,
         description="List of target question IDs to assign or strip array",
     )
+
+
+class BankQuestionCopyRequest(BaseModel):
+    """Schema for copying questions from one bank to another.
+
+    Carries the destination bank, the optional set of questions to copy, and a flag
+    that allows copying the full source bank when requested.
+    """
+
+    target_bank_id: UUID = Field(..., description="Destination bank ID")
+    question_ids: List[UUID] | None = Field(
+        default=None,
+        min_length=0,
+        description="Optional list of question IDs to copy from the source bank",
+    )
+    copy_all: bool = Field(
+        default=False,
+        description="Copy all questions from the source bank when true",
+    )
+
+    @model_validator(mode="after")
+    def validate_question_selection(self) -> "BankQuestionCopyRequest":
+        """Require explicit question_ids only when copy_all is false."""
+        if self.copy_all:
+            return self
+
+        if not self.question_ids:
+            raise ValueError("Provide at least one question_id when copy_all is false")
+
+        return self

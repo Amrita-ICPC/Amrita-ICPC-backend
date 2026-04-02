@@ -355,6 +355,47 @@ class BankRepository:
         )
         return list(result.scalars().all())
 
+    async def get_question_entities_in_bank_by_ids(
+        self, bank_id: UUID, question_ids: List[UUID]
+    ) -> List[Question]:
+        """Fetch full Question entities linked to a bank for the given IDs.
+
+        Args:
+            bank_id: Source bank identifier.
+            question_ids: Specific question IDs to fetch from the source bank.
+
+        Returns:
+            List of Question entities that are linked to the provided bank.
+        """
+        if not question_ids:
+            return []
+
+        result = await self.db.execute(
+            select(Question)
+            .join(BankQuestion, BankQuestion.question_id == Question.id)
+            .filter(
+                BankQuestion.bank_id == bank_id,
+                Question.id.in_(question_ids),
+            )
+        )
+        return list(result.scalars().all())
+
+    async def get_all_question_entities_in_bank(self, bank_id: UUID) -> List[Question]:
+        """Fetch all Question entities linked to a bank.
+
+        Args:
+            bank_id: Source bank identifier.
+
+        Returns:
+            List of all Question entities linked to the provided bank.
+        """
+        result = await self.db.execute(
+            select(Question)
+            .join(BankQuestion, BankQuestion.question_id == Question.id)
+            .filter(BankQuestion.bank_id == bank_id)
+        )
+        return list(result.scalars().all())
+
     async def add_questions_to_bank(
         self, bank_id: UUID, question_ids: List[UUID], user_id: UUID
     ) -> None:

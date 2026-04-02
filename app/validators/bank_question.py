@@ -50,3 +50,26 @@ class BankQuestionValidator:
         missing = [q_id for q_id in question_ids if q_id not in existing_ids]
         if missing:
             raise BankQuestionNotFoundError(str(bank_id), str(missing[0]))
+
+    @staticmethod
+    def validate_clone_questions(
+        source_bank_id, target_bank_id, question_ids, copy_all
+    ):
+        """Validate that source and target banks are not the same for cloning.
+
+        Args:
+            source_bank_id: UUID of the source bank.
+            target_bank_id: UUID of the target bank.
+            question_ids: List of question UUIDs to be cloned.
+            copy_all: Boolean indicating if all questions are to be copied.
+        Raises:
+            ValueError: If source and target bank IDs are the same, or if copy_all is
+            false and no question_ids are provided.
+        """
+        if source_bank_id == target_bank_id:
+            raise ValueError("Source and target bank cannot be the same.")
+        if copy_all:
+            return
+
+        if question_ids is None or len(question_ids) == 0:
+            raise ValueError("Provide at least one question_id when copy_all is false")
