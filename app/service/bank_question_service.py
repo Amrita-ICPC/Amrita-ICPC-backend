@@ -3,7 +3,6 @@ from uuid import UUID
 
 from app.core.cache.decorators import cache_delete, cache_get
 from app.exceptions.bank import (
-    BankQuestionAlreadyExistsError,
     BankQuestionNotFoundError,
 )
 from app.repositories.bank import BankRepository
@@ -11,6 +10,7 @@ from app.repositories.dto.pagination import PaginationParams
 from app.repositories.question import QuestionRepository
 from app.schema.question import QuestionListSummaryResponse, QuestionResponse
 from app.validators.bank import BankValidator
+from app.validators.bank_question import BankQuestionValidator
 
 
 class BankQuestionService:
@@ -64,10 +64,9 @@ class BankQuestionService:
         existing = await self.repository.get_questions_in_bank_by_ids(
             bank_id, question_ids
         )
-        if existing:
-            raise BankQuestionAlreadyExistsError(
-                str(bank_id), str(existing[0].question_id)
-            )
+        BankQuestionValidator.validate_question_already_exist(
+            existing, bank_id, question_ids
+        )
 
         await self.repository.add_questions_to_bank(bank_id, question_ids, user_id)
 
@@ -99,11 +98,9 @@ class BankQuestionService:
         existing = await self.repository.get_questions_in_bank_by_ids(
             bank_id, question_ids
         )
-        existing_ids = {bq.question_id for bq in existing}
-
-        missing = [q_id for q_id in question_ids if q_id not in existing_ids]
-        if missing:
-            raise BankQuestionNotFoundError(str(bank_id), str(missing[0]))
+        BankQuestionValidator.validate_questions_linked_to_bank(
+            existing, bank_id, question_ids
+        )
 
         await self.repository.remove_questions_from_bank(existing)
 
