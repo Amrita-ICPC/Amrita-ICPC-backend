@@ -9,7 +9,7 @@ from app.core.logger import logger
 from app.core.response import create_api_response
 from app.repositories.bank import BankRepository
 from app.repositories.question import QuestionRepository
-from app.schema.bank import BankQuestionBulk
+from app.schema.bank import BankQuestionBulk, BankQuestionCopyRequest
 from app.schema.base import PaginationResponse
 from app.service.bank_question_service import BankQuestionService
 from app.validators.bank import BankValidator
@@ -103,6 +103,68 @@ async def remove_questions_from_bank(
     logger.info(f"Questions removed from bank {bank_id} by user {user_id}")
     return create_api_response(
         request, message="Questions removed from bank successfully"
+    )
+
+
+@router.post(
+    "/{source_bank_id}/questions/copy",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[can_update("banks")],
+)
+async def copy_questions_to_bank(
+    request: Request,
+    source_bank_id: UUID,
+    payload: BankQuestionCopyRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    service: BankQuestionService = Depends(get_bank_question_service),
+):
+    """Copy questions from one bank to another.
+
+    Validates edit permissions before cloning the selected or complete source bank
+    question set into the target bank.
+
+    Args:
+        request: The FastAPI execution request context.
+        source_bank_id: Primary UUID targeting the source Bank.
+        payload: Request body containing the target bank and copy options.
+        user_id: Unpacked authenticated UUID from authorization token.
+        service: Injected BankQuestionService handling cloning behavior.
+
+    Returns:
+        Standard structured APIResponse confirming the copy operation with counts and
+        source/target context.
+
+    Raises:
+        BankNotFoundError: If the source or target bank does not exist.
+        BankAccessDeniedError: If the user cannot read the source or edit the target bank.
+        BankQuestionAlreadyExistsError: If questions already exist in the target bank.
+        QuestionNotFoundError: If selected questions are missing from the source bank.
+    """
+    copied_count = await service.clone_questions_to_bank(
+        source_bank_id=source_bank_id,
+        target_bank_id=payload.target_bank_id,
+        user_id=user_id,
+        question_ids=payload.question_ids,
+        copy_all=payload.copy_all,
+    )
+    copied_ids = payload.question_ids if payload.question_ids is not None else []
+    logger.info(
+        f"{copied_count} questions copied from bank {source_bank_id} to bank {payload.target_bank_id} by user {user_id}"
+    )
+    return create_api_response(
+        request,
+        data={
+            "source_bank_id": source_bank_id,
+            "target_bank_id": payload.target_bank_id,
+            "copied_count": copied_count,
+            "copy_all": payload.copy_all,
+            "question_ids": copied_ids,
+        },
+        message=(
+            f"Copied {copied_count} question(s) from bank {source_bank_id} "
+            f"to bank {payload.target_bank_id}"
+        ),
+        status_code=status.HTTP_201_CREATED,
     )
 
 

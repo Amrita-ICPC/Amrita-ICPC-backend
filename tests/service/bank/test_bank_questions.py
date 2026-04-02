@@ -11,6 +11,7 @@ from app.exceptions.bank import (
 from app.models.bank import Bank, BankQuestion
 from app.models.question import Question
 from app.repositories.dto import PaginatedResult
+from app.utils.enums import QuestionDifficulty
 
 
 @pytest.fixture
@@ -195,3 +196,69 @@ async def test_get_bank_questions_success(
     assert len(questions) == 1
     assert questions[0].id == sample_question.id
     assert questions[0].testcase_count == 1
+
+
+@pytest.mark.asyncio
+async def test_clone_questions_to_bank_success(
+    bank_question_service,
+    mock_repository,
+    mock_validator,
+    mock_question_repo,
+    sample_bank,
+):
+    user_id = sample_bank.created_by
+    source_bank = sample_bank
+    target_bank = Bank(
+        id=uuid4(),
+        name="Target Bank",
+        created_by=uuid4(),
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+        is_deleted=False,
+    )
+    question_id = uuid4()
+    source_question = Question(
+        id=question_id,
+        question_text="Source question",
+        difficulty=QuestionDifficulty.EASY,
+        allowed_languages=["python"],
+        testcases=[{"input": "1", "output": "1", "is_hidden": False}],
+        time_limit_ms=1000,
+        memory_limit_mb=256,
+        created_by=user_id,
+    )
+
+    mock_repository.get_bank_or_raise.side_effect = [source_bank, target_bank]
+    mock_repository.get_question_entities_in_bank_by_ids.return_value = [
+        source_question
+    ]
+    mock_question_repo.bulk_create_questions.return_value = [
+        Question(
+            id=uuid4(),
+            question_text=source_question.question_text,
+            difficulty=source_question.difficulty,
+            allowed_languages=["python"],
+            testcases=[{"input": "1", "output": "1", "is_hidden": False}],
+            time_limit_ms=1000,
+            memory_limit_mb=256,
+            created_by=user_id,
+        )
+    ]
+
+    copied_count = await bank_question_service.clone_questions_to_bank(
+        source_bank_id=source_bank.id,
+        target_bank_id=target_bank.id,
+        user_id=user_id,
+        question_ids=[question_id],
+        copy_all=False,
+    )
+
+    mock_question_repo.bulk_create_questions.assert_awaited_once()
+    mock_repository.add_questions_to_bank.assert_called_once()
+    added_bank_id, added_question_ids, added_user_id = (
+        mock_repository.add_questions_to_bank.call_args.args
+    )
+    assert added_bank_id == target_bank.id
+    assert len(added_question_ids) == 1
+    assert added_user_id == user_id
+    assert copied_count == 1

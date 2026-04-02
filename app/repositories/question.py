@@ -83,6 +83,39 @@ class QuestionRepository:
         await self.db.refresh(db_question)
         return db_question
 
+    async def bulk_create_questions(
+        self, question_data_list: list[CreateQuestionData]
+    ) -> list[Question]:
+        """
+        Create multiple questions in the database.
+
+        Args:
+            question_data_list: List of CreateQuestionData objects containing question
+                creation data.
+
+        Returns:
+            List of created Question objects with IDs and timestamps populated.
+        """
+        if not question_data_list:
+            return []
+
+        db_questions = [
+            Question(
+                question_text=data.question_text,
+                difficulty=data.difficulty,
+                allowed_languages=data.allowed_languages,
+                testcases=data.testcases,
+                time_limit_ms=data.time_limit_ms,
+                memory_limit_mb=data.memory_limit_mb,
+                created_by=data.created_by,
+            )
+            for data in question_data_list
+        ]
+
+        self.db.add_all(db_questions)
+        await self.db.flush()
+        return db_questions
+
     async def update_question(
         self, question: Question, update_data: UpdateQuestionData
     ) -> Question:

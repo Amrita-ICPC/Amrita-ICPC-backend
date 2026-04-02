@@ -1,3 +1,4 @@
+import copy
 from typing import List
 from uuid import UUID
 
@@ -5,8 +6,10 @@ from app.core.cache.decorators import cache_delete, cache_get
 from app.exceptions.bank import (
     BankQuestionNotFoundError,
 )
+from app.exceptions.question import QuestionNotFoundError
 from app.repositories.bank import BankRepository
 from app.repositories.dto.pagination import PaginationParams
+from app.repositories.dto.question import CreateQuestionData
 from app.repositories.question import QuestionRepository
 from app.schema.question import QuestionListSummaryResponse, QuestionResponse
 from app.validators.bank import BankValidator
@@ -172,3 +175,92 @@ class BankQuestionService:
 
         question = await self.question_repo.get_question_or_raise(question_id)
         return QuestionResponse.model_validate(question)
+
+    @cache_delete(
+        key_builder=lambda self, source_bank_id, target_bank_id, *args, **kwargs: [
+            f"bank:{source_bank_id}",
+            f"bank:{target_bank_id}",
+            f"banks:questions:{source_bank_id}:*",
+            f"banks:questions:{target_bank_id}:*",
+        ]
+    )
+    async def clone_questions_to_bank(
+        self,
+        source_bank_id: UUID,
+        target_bank_id: UUID,
+        user_id: UUID,
+        question_ids: List[UUID] | None = None,
+        copy_all: bool = False,
+    ) -> int:
+        """
+        Clone questions from one bank to another.
+
+        Args:
+            source_bank_id: UUID of the bank to clone questions from.
+            target_bank_id: UUID of the bank to clone questions to.
+            user_id: UUID of the editing user initiating the clone.
+            question_ids: Optional list of specific question UUIDs to copy.
+            copy_all: If True, all questions from the source bank are copied.
+
+        Returns:
+            int: Number of questions copied into the target bank.
+
+        Raises:
+            BankNotFoundError: If either the source or target bank does not exist.
+            BankAccessDeniedError: If the user lacks permission to edit either bank.
+            BankQuestionAlreadyExistsError: If any of the questions to be copied already exist in the target bank.
+            QuestionNotFoundError: If any provided question ID does not exist in the source bank.
+        """
+        source_bank = await self.repository.get_bank_or_raise(
+            source_bank_id, load_relations=True
+        )
+        target_bank = await self.repository.get_bank_or_raise(
+            target_bank_id, load_relations=True
+        )
+
+        self.validator.check_read_bank(user_id=user_id, bank=source_bank)
+        self.validator.check_edit_bank(user_id=user_id, bank=target_bank)
+
+        BankQuestionValidator.validate_clone_questions(
+            source_bank_id, target_bank_id, question_ids, copy_all
+        )
+
+        if copy_all:
+            questions = await self.repository.get_all_question_entities_in_bank(
+                source_bank_id
+            )
+        else:
+            questions = await self.repository.get_question_entities_in_bank_by_ids(
+                source_bank_id, question_ids or []
+            )
+            if question_ids is None:
+                questions = []
+            elif len(questions) != len(question_ids):
+                raise QuestionNotFoundError(
+                    "One or more questions to clone were not found in the source bank."
+                )
+
+        new_questions = [
+            CreateQuestionData(
+                question_text=question_data.question_text,
+                difficulty=question_data.difficulty,
+                allowed_languages=copy.deepcopy(question_data.allowed_languages),
+                testcases=copy.deepcopy(question_data.testcases),
+                time_limit_ms=question_data.time_limit_ms,
+                memory_limit_mb=question_data.memory_limit_mb,
+                created_by=user_id,
+            )
+            for question_data in questions
+        ]
+
+        created_questions = await self.question_repo.bulk_create_questions(
+            new_questions
+        )
+        new_ids = [question.id for question in created_questions]
+        await self.repository.add_questions_to_bank(
+            target_bank_id,
+            new_ids,
+            user_id,
+        )
+
+        return len(created_questions)
