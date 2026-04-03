@@ -447,6 +447,7 @@ class BankRepository:
             select(Question)
             .join(BankQuestion, BankQuestion.question_id == Question.id)
             .filter(BankQuestion.bank_id == bank_id)
+            .order_by(BankQuestion.created_at, Question.id)
         )
 
         count_query = select(func.count()).select_from(base_query.subquery())

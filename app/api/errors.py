@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError, NoResultFound, SQLAlchemyError
 
 from app.core.logger import logger
+from app.exceptions.bank_validation import BankValidationError
 from app.exceptions.base import AppBaseException
 from app.exceptions.contest import (
     ContestAlreadyExistsError,
@@ -147,6 +148,17 @@ def setup_exception_handlers(app: FastAPI) -> None:
             status_code=exc.status_code,
             message=exc.message,
             error_code="CONTEST_ALREADY_EXISTS",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(BankValidationError)
+    async def bank_validation_error_handler(request: Request, exc: BankValidationError):
+        logger.warning(f"Bank validation failed: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="BANK_VALIDATION_ERROR",
             details=[exc.detail] if exc.detail else None,
         )
 
