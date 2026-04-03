@@ -1,4 +1,3 @@
-import copy
 from typing import List
 from uuid import UUID
 
@@ -9,7 +8,7 @@ from app.exceptions.bank import (
 from app.exceptions.question import QuestionNotFoundError
 from app.repositories.bank import BankRepository
 from app.repositories.dto.pagination import PaginationParams
-from app.repositories.dto.question import CreateQuestionData
+from app.repositories.dto.question import clone_question_to_create_data
 from app.repositories.question import QuestionRepository
 from app.schema.question import QuestionListSummaryResponse, QuestionResponse
 from app.validators.bank import BankValidator
@@ -241,15 +240,7 @@ class BankQuestionService:
                 )
 
         new_questions = [
-            CreateQuestionData(
-                question_text=question_data.question_text,
-                difficulty=question_data.difficulty,
-                allowed_languages=copy.deepcopy(question_data.allowed_languages),
-                testcases=copy.deepcopy(question_data.testcases),
-                time_limit_ms=question_data.time_limit_ms,
-                memory_limit_mb=question_data.memory_limit_mb,
-                created_by=user_id,
-            )
+            clone_question_to_create_data(question_data, user_id)
             for question_data in questions
         ]
 
