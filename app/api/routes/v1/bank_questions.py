@@ -109,7 +109,7 @@ async def remove_questions_from_bank(
 @router.post(
     "/{source_bank_id}/questions/copy",
     status_code=status.HTTP_201_CREATED,
-    dependencies=[can_update("banks")],
+    dependencies=[can_update("banks"), can_read("banks")],
 )
 async def copy_questions_to_bank(
     request: Request,

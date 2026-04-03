@@ -2,6 +2,7 @@ from app.exceptions.bank import (
     BankQuestionAlreadyExistsError,
     BankQuestionNotFoundError,
 )
+from app.exceptions.bank_validation import BankValidationError
 
 
 class BankQuestionValidator:
@@ -63,13 +64,15 @@ class BankQuestionValidator:
             question_ids: List of question UUIDs to be cloned.
             copy_all: Boolean indicating if all questions are to be copied.
         Raises:
-            ValueError: If source and target bank IDs are the same, or if copy_all is
-            false and no question_ids are provided.
+            BankValidationError: If source and target bank IDs are the same, or if
+            copy_all is false and no question_ids are provided.
         """
         if source_bank_id == target_bank_id:
-            raise ValueError("Source and target bank cannot be the same.")
+            raise BankValidationError("Source and target bank cannot be the same.")
         if copy_all:
             return
 
         if question_ids is None or len(question_ids) == 0:
-            raise ValueError("Provide at least one question_id when copy_all is false")
+            raise BankValidationError(
+                "Provide at least one question_id when copy_all is false"
+            )
