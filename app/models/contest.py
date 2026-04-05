@@ -1,6 +1,10 @@
 import uuid
 from datetime import datetime, timezone
 
+from sqlalchemy import Column, ForeignKey, UniqueConstraint
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+import uuid
+
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
@@ -300,3 +304,25 @@ class ContestTeamViolation(Base):
     contest = relationship("Contest", back_populates="team_violations")
     team = relationship("Team", back_populates="contest_violations")
     violator = relationship("User", foreign_keys=[violated_by])
+
+class ContestParticipant(Base):
+    __tablename__ = "contest_participants"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+
+    contest_id = Column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("contests.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    user_id = Column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    # Prevent duplicate registration
+    __table_args__ = (
+        UniqueConstraint("contest_id", "user_id", name="uq_contest_user"),
+    )
