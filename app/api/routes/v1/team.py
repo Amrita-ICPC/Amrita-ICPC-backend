@@ -120,6 +120,37 @@ async def update_team(
     return create_api_response(request, data=team, message="Team updated successfully")
 
 
+@router.patch(
+    "/contests/{contest_id}/teams/{team_id}/approve",
+    response_model=APIResponse[ContestTeamResponse],
+    summary="Approve a team in a contest",
+    dependencies=[can_update("teams")],
+)
+async def approve_team(
+    request: Request,
+    contest_id: UUID,
+    team_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: TeamService = Depends(get_team_service),
+):
+    """
+    Approve a contest team.
+
+    Args:
+        request (Request): Framework context.
+        contest_id (UUID): The unique identifier of the contest.
+        team_id (UUID): The unique identifier of the team.
+        user_id (UUID): Authenticated user ID.
+        service (TeamService): Injected domain service.
+
+    Returns:
+        APIResponse: Standardized response encapsulating the updated team data.
+    """
+    team = await service.approve_team(contest_id, team_id, user_id)
+    logger.info(f"Team {team_id} approved in contest {contest_id} by user {user_id}")
+    return create_api_response(request, data=team, message="Team approved successfully")
+
+
 @router.get(
     "/contests/{contest_id}/teams",
     response_model=APIResponse[list[ContestTeamResponse]],

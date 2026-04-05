@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
-from app.utils.enums import ContestStatus
+from app.utils.enums import ContestStatus, TeamApprovalMode
 
 
 @dataclass
@@ -37,6 +37,7 @@ class CreateContestData:
     max_team_size: int
     rules: str | None
     scoring_type: str
+    team_approval_mode: TeamApprovalMode
     created_by: UUID
 
 
@@ -63,3 +64,4 @@ class UpdateContestData:
     max_team_size: int | None = None
     rules: str | None = None
     scoring_type: str | None = None
+    team_approval_mode: TeamApprovalMode | None = None

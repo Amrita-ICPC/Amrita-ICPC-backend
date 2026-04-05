@@ -17,6 +17,7 @@ from app.repositories.dto import (
     TeamFilters,
     UpdateTeamData,
 )
+from app.utils.enums import TeamApprovalMode, TeamApprovalStatus, UserRole
 
 
 class TeamRepository:
@@ -461,10 +462,21 @@ class TeamRepository:
         self.db.add(team)
         await self.db.flush()  # Flush to get the team ID
 
+        contest = await self.get_contest_or_raise(team_data.contest_id)
+        creator = await self.get_user_or_raise(team_data.created_by)
+
+        approval_status = TeamApprovalStatus.APPROVED
+        if (
+            contest.team_approval_mode == TeamApprovalMode.INSTRUCTOR_REVIEW
+            and creator.role != UserRole.instructor
+        ):
+            approval_status = TeamApprovalStatus.WAITING
+
         contest_team = ContestTeam(
             contest_id=team_data.contest_id,
             team_id=team.id,
             team_status=team_data.status,
+            approval_status=approval_status,
         )
         self.db.add(contest_team)
 
@@ -536,4 +548,35 @@ class TeamRepository:
         updated_contest_team: ContestTeam | None = result.scalar_one_or_none()
         if not updated_contest_team:
             raise TeamNotFoundError(str(team.id), str(contest_team.contest_id))
+        return updated_contest_team
+
+    async def update_team_approval_status(
+        self, contest_team: ContestTeam, approval_status: TeamApprovalStatus
+    ) -> ContestTeam:
+        """
+        Update a team's approval status within a contest.
+
+        Args:
+            contest_team: ContestTeam object to update
+            approval_status: New approval status to persist
+
+        Returns:
+            The updated ContestTeam object with team relationship loaded
+        """
+        contest_team.approval_status = approval_status
+        await self.db.flush()
+
+        result = await self.db.execute(
+            select(ContestTeam)
+            .options(joinedload(ContestTeam.team))
+            .filter(
+                ContestTeam.team_id == contest_team.team_id,
+                ContestTeam.contest_id == contest_team.contest_id,
+            )
+        )
+        updated_contest_team: ContestTeam | None = result.scalar_one_or_none()
+        if not updated_contest_team:
+            raise TeamNotFoundError(
+                str(contest_team.team_id), str(contest_team.contest_id)
+            )
         return updated_contest_team

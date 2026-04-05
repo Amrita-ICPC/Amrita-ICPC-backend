@@ -224,6 +224,7 @@ class ContestRepository:
             max_team_size=contest_data.max_team_size,
             rules=contest_data.rules,
             scoring_type=contest_data.scoring_type,
+            team_approval_mode=contest_data.team_approval_mode,
             created_by=contest_data.created_by,
         )
         self.db.add(db_contest)
