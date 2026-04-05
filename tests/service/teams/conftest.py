@@ -23,7 +23,7 @@ from app.models.user import User
 from app.repositories.team import TeamRepository
 from app.schema.team import ContestTeamResponse, TeamCreate
 from app.service.team_service import TeamService
-from app.utils.enums import TeamStatus, UserRole
+from app.utils.enums import TeamApprovalStatus, TeamStatus, UserRole
 from app.validators.team import TeamValidator
 
 patch("app.core.cache.decorators.cache_get", lambda **kw: lambda f: f).start()
@@ -134,6 +134,7 @@ def mock_contest_team(mock_contest, mock_team):
     contest_team.contest_id = mock_contest.id
     contest_team.team_id = mock_team.id
     contest_team.team_status = TeamStatus.DRAFT
+    contest_team.approval_status = TeamApprovalStatus.WAITING
     contest_team.team = mock_team
     return contest_team
 

@@ -186,6 +186,7 @@ class TestCreateContestRepositoryContract:
         assert contest_data.name == contest_create_data.name
         assert contest_data.description == contest_create_data.description
         assert contest_data.is_public == contest_create_data.is_public
+        assert contest_data.team_approval_mode == contest_create_data.team_approval_mode
         assert contest_data.created_by == user_id
 
 

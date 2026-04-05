@@ -9,7 +9,7 @@ from pydantic import (
     model_validator,
 )
 
-from app.utils.enums import TeamStatus
+from app.utils.enums import TeamApprovalStatus, TeamStatus
 
 
 class TeamCreate(BaseModel):
@@ -118,6 +118,7 @@ class ContestTeamResponse(BaseModel):
     description: Optional[str]
     logo: Optional[str]
     status: TeamStatus
+    approval_status: TeamApprovalStatus
     leader_id: Optional[UUID]
     created_by: Optional[UUID]
     created_at: datetime
@@ -144,6 +145,7 @@ class ContestTeamResponse(BaseModel):
             description=team.description,
             logo=team.logo,
             status=contest_team.team_status,
+            approval_status=contest_team.approval_status,
             leader_id=team.leader_id,
             created_by=team.created_by,
             created_at=team.created_at,
@@ -190,6 +192,7 @@ class ContestTeamDetailResponse(TeamResponse):
     """
 
     status: TeamStatus
+    approval_status: TeamApprovalStatus
     members: List[TeamMemberResponse]
     leader_id: Optional[UUID]
     created_by: Optional[UUID]
@@ -230,6 +233,7 @@ class ContestTeamDetailResponse(TeamResponse):
             description=team.description,
             logo=team.logo,
             status=contest_team.team_status,
+            approval_status=contest_team.approval_status,
             members=members,
             leader_id=team.leader_id,
             created_by=team.created_by,

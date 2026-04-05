@@ -4,7 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.utils.enums import ContestStatus, ScoringType
+from app.utils.enums import ContestStatus, ScoringType, TeamApprovalMode
 
 
 class ContestBase(BaseModel):
@@ -32,6 +32,10 @@ class ContestBase(BaseModel):
     rules: Optional[str] = Field(None, description="Contest rules")
     scoring_type: ScoringType = Field(
         default=ScoringType.AUTO, description="Scoring type"
+    )
+    team_approval_mode: TeamApprovalMode = Field(
+        default=TeamApprovalMode.AUTO_APPROVE,
+        description="How teams are approved in this contest",
     )
 
     @model_validator(mode="after")
@@ -86,6 +90,10 @@ class ContestUpdate(BaseModel):
     max_team_size: Optional[int] = Field(None, description="Maximum team size")
     rules: Optional[str] = Field(None, description="Contest rules")
     scoring_type: Optional[ScoringType] = Field(None, description="Scoring type")
+    team_approval_mode: Optional[TeamApprovalMode] = Field(
+        None,
+        description="How teams are approved in this contest",
+    )
     show_leaderboard: Optional[bool] = Field(
         None, description="Whether to show leaderboard"
     )
@@ -116,6 +124,10 @@ class ContestSummaryResponse(BaseModel):
     status: ContestStatus = Field(..., description="Contest status")
     created_at: datetime = Field(..., description="Contest creation time (UTC)")
     is_public: bool = Field(..., description="Whether contest is public")
+    team_approval_mode: TeamApprovalMode = Field(
+        ...,
+        description="How teams are approved in this contest",
+    )
 
     model_config = ConfigDict(from_attributes=True)
 

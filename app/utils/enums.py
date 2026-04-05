@@ -99,6 +99,19 @@ class ScoringType(str, enum.Enum):
     HYBRID = "HYBRID"
 
 
+class TeamApprovalMode(str, enum.Enum):
+    """
+    Enumeration of contest-level team approval modes.
+
+    Attributes:
+        AUTO_APPROVE: Teams are approved automatically when created.
+        INSTRUCTOR_REVIEW: Teams are kept waiting until an instructor approves.
+    """
+
+    AUTO_APPROVE = "AUTO_APPROVE"
+    INSTRUCTOR_REVIEW = "INSTRUCTOR_REVIEW"
+
+
 class TeamStatus(str, enum.Enum):
     """
     Enumeration of team statuses within a contest.
@@ -110,6 +123,19 @@ class TeamStatus(str, enum.Enum):
 
     DRAFT = "DRAFT"
     CONFIRMED = "CONFIRMED"
+
+
+class TeamApprovalStatus(str, enum.Enum):
+    """
+    Enumeration of approval states for a team's contest enrollment.
+
+    Attributes:
+        WAITING: Team is awaiting instructor review.
+        APPROVED: Team enrollment is approved.
+    """
+
+    WAITING = "WAITING"
+    APPROVED = "APPROVED"
 
 
 class ViolationType(str, enum.Enum):

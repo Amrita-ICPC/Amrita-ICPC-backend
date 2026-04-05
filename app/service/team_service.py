@@ -13,7 +13,7 @@ from app.schema.team import (
     TeamMemberResponse,
     TeamUpdate,
 )
-from app.utils.enums import TeamStatus
+from app.utils.enums import TeamApprovalMode, TeamApprovalStatus, TeamStatus
 from app.validators.team import TeamValidator
 
 
@@ -259,6 +259,48 @@ class TeamService:
             contest_team,
         )
         return ContestTeamResponse.from_contest_team(updated_contest_team)
+
+    @cache_delete(
+        key_builder=lambda self, contest_id, team_id, *args, **kwargs: [
+            f"contest:{contest_id}:team:{team_id}:*",
+            f"contest:{contest_id}:teams:*",
+        ]
+    )
+    async def approve_team(
+        self, contest_id: UUID, team_id: UUID, approved_by: UUID
+    ) -> ContestTeamResponse:
+        """
+        Approve a team in a contest.
+
+        Args:
+            contest_id: UUID of the contest containing the team
+            team_id: UUID of the team to approve
+            approved_by: UUID of the user approving the team
+
+        Returns:
+            ContestTeamResponse: Updated team approval state
+
+        Raises:
+            ContestNotFoundError: If the contest does not exist
+            TeamNotFoundError: If the team is not found in the contest
+            PermissionDeniedError: If the user lacks contest management permission
+        """
+        contest = await self.repository.get_contest_or_raise(contest_id)
+        await self.guard.check_update_team(user_id=approved_by, contest=contest)
+
+        contest_team = await self.repository.get_contest_team_or_raise(
+            contest_id, team_id
+        )
+
+        if contest_team.approval_status == TeamApprovalStatus.APPROVED:
+            return ContestTeamResponse.from_contest_team(contest_team)
+
+        if contest.team_approval_mode == TeamApprovalMode.INSTRUCTOR_REVIEW:
+            contest_team = await self.repository.update_team_approval_status(
+                contest_team, TeamApprovalStatus.APPROVED
+            )
+
+        return ContestTeamResponse.from_contest_team(contest_team)
 
     @cache_get(
         key_builder=lambda self,

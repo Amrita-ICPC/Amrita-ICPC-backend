@@ -12,6 +12,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.models.contest import Contest
+from app.utils.enums import TeamApprovalMode
 
 
 @pytest.fixture
@@ -88,4 +89,5 @@ def mock_contest():
     contest.id = uuid4()
     contest.min_team_size = 2
     contest.max_team_size = 5
+    contest.team_approval_mode = TeamApprovalMode.AUTO_APPROVE
     return contest

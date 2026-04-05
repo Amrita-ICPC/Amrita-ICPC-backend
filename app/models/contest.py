@@ -20,6 +20,8 @@ from app.models.team import Team
 from app.utils.enums import (
     ContestStatus,
     ScoringType,
+    TeamApprovalMode,
+    TeamApprovalStatus,
     TeamStatus,
     ViolationSeverity,
     ViolationType,
@@ -58,6 +60,11 @@ class Contest(Base):
     )
     scoring_type: Mapped[ScoringType] = mapped_column(
         Enum(ScoringType, name="scoringtype"), default=ScoringType.AUTO
+    )
+    team_approval_mode: Mapped[TeamApprovalMode] = mapped_column(
+        Enum(TeamApprovalMode, name="teamapprovalmode"),
+        default=TeamApprovalMode.AUTO_APPROVE,
+        nullable=False,
     )
 
     # Publishing related details
@@ -241,6 +248,11 @@ class ContestTeam(Base):
     )
     team_status: Mapped[TeamStatus] = mapped_column(
         Enum(TeamStatus), nullable=False, default=TeamStatus.DRAFT, name="team_status"
+    )
+    approval_status: Mapped[TeamApprovalStatus] = mapped_column(
+        Enum(TeamApprovalStatus, name="teamapprovalstatus"),
+        nullable=False,
+        default=TeamApprovalStatus.APPROVED,
     )
 
     contest = relationship("Contest", back_populates="teams", foreign_keys=[contest_id])
