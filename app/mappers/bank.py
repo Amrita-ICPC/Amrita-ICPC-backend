@@ -1,13 +1,10 @@
-from typing import TYPE_CHECKING
+from uuid import UUID
 
 from app.models.bank import Bank
 from app.repositories.dto.bank import BankFilters
 from app.repositories.dto.pagination import PaginationParams
 from app.schema.bank import BankDetailResponse, BankResponse, BankShareBase
 from app.schema.question import QuestionResponse
-
-if TYPE_CHECKING:
-    from app.models.bank import Bank
 
 
 def build_bank_query_params(
@@ -60,7 +57,7 @@ def clone_bank_detail_response(bank_detail: BankDetailResponse) -> BankDetailRes
     return bank_detail.model_copy(deep=True)
 
 
-def build_bank_entity(*, name: str, description: str | None, user_id) -> Bank:
+def build_bank_entity(*, name: str, description: str | None, user_id: UUID) -> Bank:
     """Map validated bank payload to ORM entity."""
     return Bank(
         name=name,

@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from app.models.contest import Contest
-from app.repositories.dto.contest import CreateContestData, UpdateContestData
+from app.repositories.dto.contest import UNSET, CreateContestData, UpdateContestData
 from app.schema.contest import (
     ContestCreate,
     ContestResponse,
@@ -35,30 +35,47 @@ def build_create_contest_dto(
 
 def build_update_contest_dto(contest_data: ContestUpdate) -> UpdateContestData:
     """Map contest update schema to repository update DTO."""
+    fields_set = contest_data.model_fields_set
     return UpdateContestData(
-        name=contest_data.name,
-        description=contest_data.description,
-        image=contest_data.image,
-        is_public=contest_data.is_public,
-        start_time=contest_data.start_time,
-        end_time=contest_data.end_time,
-        registration_start=contest_data.registration_start,
-        registration_end=contest_data.registration_end,
-        max_teams=contest_data.max_teams,
-        min_team_size=contest_data.min_team_size,
-        max_team_size=contest_data.max_team_size,
-        rules=contest_data.rules,
-        scoring_type=contest_data.scoring_type,
-        team_approval_mode=contest_data.team_approval_mode,
+        name=contest_data.name if "name" in fields_set else UNSET,
+        description=contest_data.description if "description" in fields_set else UNSET,
+        image=contest_data.image if "image" in fields_set else UNSET,
+        is_public=contest_data.is_public if "is_public" in fields_set else UNSET,
+        start_time=contest_data.start_time if "start_time" in fields_set else UNSET,
+        end_time=contest_data.end_time if "end_time" in fields_set else UNSET,
+        registration_start=(
+            contest_data.registration_start
+            if "registration_start" in fields_set
+            else UNSET
+        ),
+        registration_end=(
+            contest_data.registration_end if "registration_end" in fields_set else UNSET
+        ),
+        max_teams=contest_data.max_teams if "max_teams" in fields_set else UNSET,
+        min_team_size=(
+            contest_data.min_team_size if "min_team_size" in fields_set else UNSET
+        ),
+        max_team_size=(
+            contest_data.max_team_size if "max_team_size" in fields_set else UNSET
+        ),
+        rules=contest_data.rules if "rules" in fields_set else UNSET,
+        scoring_type=(
+            contest_data.scoring_type if "scoring_type" in fields_set else UNSET
+        ),
+        team_approval_mode=(
+            contest_data.team_approval_mode
+            if "team_approval_mode" in fields_set
+            else UNSET
+        ),
     )
 
 
-def to_contest_response(contest) -> ContestResponse:
+def to_contest_response(contest: Contest) -> ContestResponse:
     """Map contest ORM object to detail response schema."""
     return ContestResponse.model_validate(contest)
 
 
-def to_contest_summary_response(contest) -> ContestSummaryResponse:
+def to_contest_summary_response(contest: Contest) -> ContestSummaryResponse:
     """Map contest ORM object to summary response schema."""
     return ContestSummaryResponse.model_validate(contest)
 
@@ -88,5 +105,5 @@ def apply_contest_updates(contest: Contest, update_data: UpdateContestData) -> N
     """Apply contest update DTO values onto ORM entity."""
     update_dict = update_data.__dict__
     for field, value in update_dict.items():
-        if value is not None:
+        if value is not UNSET:
             setattr(contest, field, value)

@@ -584,7 +584,11 @@ class TeamService:
         )
 
         # Update team leader (always call to handle leader changes)
-        update_data = build_leader_update_dto(team_id, member_data.new_leader_id)
+        update_data = build_leader_update_dto(
+            team_id,
+            member_data.new_leader_id,
+            leader_id_set="new_leader_id" in member_data.model_fields_set,
+        )
         apply_team_updates(team_data=update_data, team=team, contest_team=contest_team)
         await self.repository.update_team(team, contest_team)
         return cast(

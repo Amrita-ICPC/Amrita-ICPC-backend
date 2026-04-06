@@ -1,9 +1,9 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 from uuid import UUID
 
 from app.models.contest import Contest, ContestTeam, ContestTeamProgress
 from app.models.team import Team, TeamUser
-from app.repositories.dto.team import CreateTeamData, UpdateTeamData
+from app.repositories.dto.team import UNSET, CreateTeamData, UpdateTeamData
 from app.schema.team import (
     ContestTeamResponse,
     TeamCreate,
@@ -38,19 +38,25 @@ def build_create_team_dto(
 
 def build_update_team_dto(team_id: UUID, team_data: TeamUpdate) -> UpdateTeamData:
     """Map team update schema to repository update DTO."""
+    fields_set = team_data.model_fields_set
     return UpdateTeamData(
         team_id=team_id,
         name=team_data.name,
         description=team_data.description,
         logo=team_data.logo,
         status=team_data.status,
-        leader_id=team_data.leader_id,
+        leader_id=team_data.leader_id if "leader_id" in fields_set else UNSET,
     )
 
 
-def build_leader_update_dto(team_id: UUID, leader_id: UUID | None) -> UpdateTeamData:
+def build_leader_update_dto(
+    team_id: UUID, leader_id: UUID | None, *, leader_id_set: bool
+) -> UpdateTeamData:
     """Build minimal DTO for leader-only updates."""
-    return UpdateTeamData(team_id=team_id, leader_id=leader_id)
+    return UpdateTeamData(
+        team_id=team_id,
+        leader_id=leader_id if leader_id_set else UNSET,
+    )
 
 
 def to_contest_team_response(contest_team: "ContestTeam") -> ContestTeamResponse:
@@ -137,5 +143,5 @@ def apply_team_updates(
         team.logo = team_data.logo
     if team_data.status is not None and team_data.status != contest_team.team_status:
         contest_team.team_status = team_data.status
-    if team_data.leader_id is not None and team_data.leader_id != team.leader_id:
-        team.leader_id = team_data.leader_id
+    if team_data.leader_id is not UNSET and team_data.leader_id != team.leader_id:
+        team.leader_id = cast(UUID | None, team_data.leader_id)

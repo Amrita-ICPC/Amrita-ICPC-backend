@@ -260,17 +260,7 @@ def contest_update_data():
     return ContestUpdate(
         name="Updated Contest Name",
         description="Updated description",
-        image=None,
         is_public=True,
-        start_time=None,
-        end_time=None,
-        registration_start=None,
-        registration_end=None,
-        max_teams=None,
-        min_team_size=None,
-        max_team_size=None,
-        rules=None,
-        scoring_type=None,
     )
 
 
