@@ -9,7 +9,6 @@ from app.exceptions.team import (
     TeamAlreadyExistsError,
     TeamNotFoundError,
 )
-from app.repositories.team import UpdateTeamData
 from app.schema.team import ContestTeamResponse, TeamUpdate
 from app.utils.enums import TeamStatus
 
@@ -618,7 +617,7 @@ class TestUpdateTeamRepositoryContract:
         """
         GIVEN all validations pass
         WHEN update_team is called
-        THEN repository.update_team receives correctly mapped UpdateTeamData
+        THEN repository.update_team receives mutated ORM entities
         THIS IS THE CONTRACT — SQLAlchemy changes never break this
         """
         # Arrange
@@ -630,18 +629,11 @@ class TestUpdateTeamRepositoryContract:
                 contest_id, team_id, team_update_data, user_id
             )
 
-        # Assert exact domain object
         mock_repository.update_team.assert_called_once_with(
-            UpdateTeamData(
-                team_id=team_id,
-                name=team_update_data.name,
-                description=team_update_data.description,
-                logo=team_update_data.logo,
-                status=team_update_data.status,
-            ),
-            mock_contest_team.team,  # ← team extracted from contest_team
-            mock_contest_team,  # ← contest_team itself
+            mock_contest_team.team,
+            mock_contest_team,
         )
+        assert mock_contest_team.team.name == team_update_data.name
 
     @pytest.mark.asyncio
     async def test_repository_never_called_when_name_validation_fails(

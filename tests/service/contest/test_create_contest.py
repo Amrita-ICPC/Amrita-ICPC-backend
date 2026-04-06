@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.repositories.contest import CreateContestData
+from app.models.contest import Contest
 from app.schema.contest import ContestCreate, ContestResponse
 from app.utils.enums import ScoringType
 
@@ -172,22 +172,24 @@ class TestCreateContestRepositoryContract:
         contest_create_data,
         user_id,
     ):
-        """Test that repository receives correctly mapped CreateContestData object."""
+        """Test that repository receives correctly mapped Contest ORM entity."""
         mock_contest_repository.create_contest.return_value = mock_contest
 
         with patch.object(ContestResponse, "model_validate"):
             await contest_service.create_contest(contest_create_data, user_id)
 
-        # Verify repository was called with CreateContestData
+        # Verify repository was called with Contest ORM entity
         call_args = mock_contest_repository.create_contest.call_args[0]
-        contest_data = call_args[0]
+        contest_entity = call_args[0]
 
-        assert isinstance(contest_data, CreateContestData)
-        assert contest_data.name == contest_create_data.name
-        assert contest_data.description == contest_create_data.description
-        assert contest_data.is_public == contest_create_data.is_public
-        assert contest_data.team_approval_mode == contest_create_data.team_approval_mode
-        assert contest_data.created_by == user_id
+        assert isinstance(contest_entity, Contest)
+        assert contest_entity.name == contest_create_data.name
+        assert contest_entity.description == contest_create_data.description
+        assert contest_entity.is_public == contest_create_data.is_public
+        assert (
+            contest_entity.team_approval_mode == contest_create_data.team_approval_mode
+        )
+        assert contest_entity.created_by == user_id
 
 
 class TestCreateContestExecutionOrder:

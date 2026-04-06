@@ -2,9 +2,15 @@ from typing import List
 from uuid import UUID
 
 from app.core.cache.decorators import cache_delete, cache_get, cache_set
+from app.mappers.bank import (
+    build_bank_entity,
+    build_bank_query_params,
+    clone_bank_detail_response,
+    to_bank_detail_response,
+    to_bank_response,
+    to_bank_response_list,
+)
 from app.repositories.bank import BankRepository
-from app.repositories.dto.bank import BankFilters
-from app.repositories.dto.pagination import PaginationParams
 from app.schema.bank import (
     BankCreate,
     BankDetailResponse,
@@ -65,14 +71,19 @@ class BankService:
         )
         self.validator.validate_unique_bank_creation(existing, bank.name)
 
-        db_bank = await self.repository.create_bank(bank_data=bank, user_id=user_id)
+        bank_entity = build_bank_entity(
+            name=bank.name,
+            description=bank.description,
+            user_id=user_id,
+        )
+        db_bank = await self.repository.create_bank(bank_entity)
 
         # Grant ownership instantly via share relationships
         await self.repository.add_share(
             bank_id=db_bank.id, user_id=user_id, permission=BankPermission.owner
         )
 
-        return BankResponse.model_validate(db_bank)
+        return to_bank_response(db_bank)
 
     @cache_get(
         key_builder=lambda self, bank_id: f"bank:{bank_id}",
@@ -90,7 +101,7 @@ class BankService:
             BankDetailResponse: Serialized data representation from DB.
         """
         bank = await self.repository.get_bank_or_raise(bank_id, load_relations=True)
-        return BankDetailResponse.model_validate(bank)
+        return to_bank_detail_response(bank)
 
     async def get_bank_by_id(
         self, bank_id: UUID, user_id: UUID, check_access: bool = True
@@ -106,7 +117,7 @@ class BankService:
             BankDetailResponse: A complete detail breakdown of structure.
         """
         data = await self._get_bank_from_cache(bank_id)
-        cached_dto = BankDetailResponse.model_validate(data)
+        cached_dto = clone_bank_detail_response(data)
 
         if check_access:
             # We recreate a mock 'bank' locally from DTO since guard expects model interfaces
@@ -144,14 +155,13 @@ class BankService:
         Returns:
             tuple[int, List[BankResponse]]: Total row size available globally vs fetched subset.
         """
-        filters = BankFilters()
-        pagination = PaginationParams(skip=skip, limit=limit)
+        filters, pagination = build_bank_query_params(skip=skip, limit=limit)
 
         result = await self.repository.get_banks_with_filters(
             user_id=user_id, filters=filters, pagination=pagination
         )
 
-        responses = [BankResponse.model_validate(b) for b in result.items]
+        responses = to_bank_response_list(result.items)
         return result.total, responses
 
     @cache_delete(
@@ -188,7 +198,7 @@ class BankService:
             setattr(bank, field, value)
 
         updated_bank = await self.repository.update_bank(bank)
-        return BankResponse.model_validate(updated_bank)
+        return to_bank_response(updated_bank)
 
     @cache_delete(
         key_builder=lambda self, bank_id, user_id: [
@@ -227,14 +237,13 @@ class BankService:
         Returns:
             tuple[int, List[BankResponse]]: Total row size available vs fetched subset.
         """
-        filters = BankFilters()
-        pagination = PaginationParams(skip=skip, limit=limit)
+        filters, pagination = build_bank_query_params(skip=skip, limit=limit)
 
         result = await self.repository.get_soft_deleted_banks(
             user_id=user_id, filters=filters, pagination=pagination
         )
 
-        responses = [BankResponse.model_validate(b) for b in result.items]
+        responses = to_bank_response_list(result.items)
         return result.total, responses
 
     @cache_delete(
@@ -280,7 +289,7 @@ class BankService:
         bank = await self.repository.get_deleted_bank_or_raise(bank_id)
         self.validator.check_manage_bank(user_id=user_id, bank=bank)
         restored_bank = await self.repository.restore_bank(bank)
-        return BankResponse.model_validate(restored_bank)
+        return to_bank_response(restored_bank)
 
     @cache_delete(
         key_builder=lambda self, bank_id, shares, current_user_id: [

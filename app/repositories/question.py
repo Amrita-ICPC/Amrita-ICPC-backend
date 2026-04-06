@@ -8,10 +8,8 @@ from sqlalchemy.orm import selectinload
 from app.exceptions.question import QuestionNotFoundError
 from app.models.bank import Bank, BankQuestion, BankShare
 from app.models.contest import Contest, ContestInstructor, ContestQuestion, ContestTeam
-from app.models.question import Question, QuestionLanguage, QuestionTemplate, TestCase
-from app.models.tag import QuestionTag
+from app.models.question import Question, QuestionLanguage, QuestionTemplate
 from app.models.team import TeamUser
-from app.repositories.dto.question import CreateQuestionData, UpdateQuestionData
 
 
 class QuestionRepository:
@@ -81,7 +79,7 @@ class QuestionRepository:
             missing_id = next(iter(unique_ids - found_ids))
             raise QuestionNotFoundError(str(missing_id))
 
-    async def create_question(self, data: CreateQuestionData) -> Question:
+    async def create_question(self, question: Question) -> Question:
         """
         Create a new question in the database.
 
@@ -91,47 +89,11 @@ class QuestionRepository:
         Returns:
             The created Question object with ID and timestamps populated.
         """
-        db_question = Question(
-            id=data.id,
-            question_text=data.question_text,
-            difficulty=data.difficulty,
-            time_limit_ms=data.time_limit_ms,
-            memory_limit_mb=data.memory_limit_mb,
-            created_by=data.created_by,
-            languages=[
-                QuestionLanguage(language_id=language_id)
-                for language_id in data.allowed_language_ids
-            ],
-            tags=[QuestionTag(tag_id=tag_id) for tag_id in data.tag_ids],
-            testcases=[
-                TestCase(
-                    input=testcase.input,
-                    output=testcase.output,
-                    is_hidden=testcase.is_hidden,
-                    weight=testcase.weight,
-                    order=testcase.order,
-                    created_by=data.created_by,
-                )
-                for testcase in data.testcases
-            ],
-            templates=[
-                QuestionTemplate(
-                    id=template.id,
-                    language_id=template.language_id,
-                    starter_code=template.starter_code,
-                    driver_code=template.driver_code,
-                    solution_code=template.solution_code,
-                )
-                for template in data.templates
-            ],
-        )
-        self.db.add(db_question)
+        self.db.add(question)
         await self.db.flush()
-        return await self._fetch_question_or_raise(db_question.id)
+        return await self._fetch_question_or_raise(question.id)
 
-    async def bulk_create_questions(
-        self, question_data_list: list[CreateQuestionData]
-    ) -> list[Question]:
+    async def bulk_create_questions(self, questions: list[Question]) -> list[Question]:
         """
         Create multiple questions in the database.
 
@@ -142,54 +104,14 @@ class QuestionRepository:
         Returns:
             List of created Question objects with IDs and timestamps populated.
         """
-        if not question_data_list:
+        if not questions:
             return []
 
-        db_questions = [
-            Question(
-                id=data.id,
-                question_text=data.question_text,
-                difficulty=data.difficulty,
-                time_limit_ms=data.time_limit_ms,
-                memory_limit_mb=data.memory_limit_mb,
-                created_by=data.created_by,
-                languages=[
-                    QuestionLanguage(language_id=language_id)
-                    for language_id in data.allowed_language_ids
-                ],
-                tags=[QuestionTag(tag_id=tag_id) for tag_id in data.tag_ids],
-                testcases=[
-                    TestCase(
-                        input=testcase.input,
-                        output=testcase.output,
-                        is_hidden=testcase.is_hidden,
-                        weight=testcase.weight,
-                        order=testcase.order,
-                        created_by=data.created_by,
-                    )
-                    for testcase in data.testcases
-                ],
-                templates=[
-                    QuestionTemplate(
-                        id=template.id,
-                        language_id=template.language_id,
-                        starter_code=template.starter_code,
-                        driver_code=template.driver_code,
-                        solution_code=template.solution_code,
-                    )
-                    for template in data.templates
-                ],
-            )
-            for data in question_data_list
-        ]
-
-        self.db.add_all(db_questions)
+        self.db.add_all(questions)
         await self.db.flush()
-        return db_questions
+        return questions
 
-    async def update_question(
-        self, question: Question, update_data: UpdateQuestionData
-    ) -> Question:
+    async def update_question(self, question: Question) -> Question:
         """
         Update an existing question in the database.
 
@@ -200,45 +122,6 @@ class QuestionRepository:
         Returns:
             The updated Question object.
         """
-        update_dict = update_data.__dict__
-        for field, value in update_dict.items():
-            if value is not None:
-                if field == "allowed_languages":
-                    question.languages = [
-                        QuestionLanguage(language_id=language_id)
-                        for language_id in value
-                    ]
-                    continue
-                if field == "testcases":
-                    question.testcases = [
-                        TestCase(
-                            input=testcase.input,
-                            output=testcase.output,
-                            is_hidden=testcase.is_hidden,
-                            weight=testcase.weight,
-                            order=testcase.order,
-                            created_by=question.created_by,
-                        )
-                        for testcase in value
-                    ]
-                    continue
-                if field == "tag_ids":
-                    question.tags = [QuestionTag(tag_id=tag_id) for tag_id in value]
-                    continue
-                if field == "templates":
-                    question.templates = [
-                        QuestionTemplate(
-                            id=template.id,
-                            language_id=template.language_id,
-                            starter_code=template.starter_code,
-                            driver_code=template.driver_code,
-                            solution_code=template.solution_code,
-                        )
-                        for template in value
-                    ]
-                    continue
-                setattr(question, field, value)
-
         await self.db.flush()
         return await self._fetch_question_or_raise(question.id)
 

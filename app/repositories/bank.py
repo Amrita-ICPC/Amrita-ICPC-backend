@@ -8,9 +8,8 @@ from sqlalchemy.orm import joinedload, selectinload
 
 from app.exceptions.bank import BankNotFoundError
 from app.models.bank import Bank, BankQuestion, BankShare
-from app.models.question import Question, QuestionLanguage, QuestionTemplate
+from app.models.question import Question, QuestionLanguage, QuestionTemplate, TestCase
 from app.repositories.dto import BankFilters, PaginatedResult, PaginationParams
-from app.schema.bank import BankCreate
 from app.utils.enums import BankPermission
 
 
@@ -54,7 +53,23 @@ class BankRepository:
         query = select(Bank)
 
         if load_relations:
-            query = query.options(joinedload(Bank.questions), joinedload(Bank.shares))
+            query = query.options(
+                joinedload(Bank.questions)
+                .joinedload(BankQuestion.question)
+                .selectinload(Question.languages)
+                .selectinload(QuestionLanguage.language),
+                joinedload(Bank.questions)
+                .joinedload(BankQuestion.question)
+                .selectinload(Question.testcases),
+                joinedload(Bank.questions)
+                .joinedload(BankQuestion.question)
+                .selectinload(Question.templates)
+                .selectinload(QuestionTemplate.language),
+                joinedload(Bank.questions)
+                .joinedload(BankQuestion.question)
+                .selectinload(Question.tags),
+                joinedload(Bank.shares),
+            )
 
         result = await self.db.execute(
             query.filter(Bank.id == bank_id, Bank.is_deleted.is_(False))
@@ -148,7 +163,7 @@ class BankRepository:
 
         return result.scalars().first()
 
-    async def create_bank(self, bank_data: BankCreate, user_id: UUID) -> Bank:
+    async def create_bank(self, bank: Bank) -> Bank:
         """Create a new bank in the database.
 
         Args:
@@ -158,16 +173,10 @@ class BankRepository:
         Returns:
             Bank: The newly created bank instance populated with default values.
         """
-        db_bank = Bank(
-            name=bank_data.name,
-            description=bank_data.description,
-            created_by=user_id,
-            is_deleted=False,
-        )
-        self.db.add(db_bank)
+        self.db.add(bank)
         await self.db.flush()
-        await self.db.refresh(db_bank)
-        return db_bank
+        await self.db.refresh(bank)
+        return bank
 
     async def update_bank(self, bank: Bank) -> Bank:
         """Commit an updated bank model to the database.
@@ -471,7 +480,6 @@ class BankRepository:
                     QuestionLanguage.language
                 ),
                 selectinload(Question.tags),
-                selectinload(Question.testcases),
                 selectinload(Question.templates).selectinload(
                     QuestionTemplate.language
                 ),
@@ -487,4 +495,16 @@ class BankRepository:
             base_query.offset(pagination.skip).limit(pagination.limit)
         )
         questions = list(result.unique().scalars().all())
+
+        if questions:
+            question_ids = [question.id for question in questions]
+            count_result = await self.db.execute(
+                select(TestCase.question_id, func.count(TestCase.id))
+                .where(TestCase.question_id.in_(question_ids))
+                .group_by(TestCase.question_id)
+            )
+            testcase_counts = {qid: count for qid, count in count_result.all()}
+            for question in questions:
+                setattr(question, "testcase_count", testcase_counts.get(question.id, 0))
+
         return PaginatedResult(total=total, items=questions)

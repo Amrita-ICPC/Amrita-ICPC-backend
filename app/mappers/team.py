@@ -1,0 +1,141 @@
+from typing import TYPE_CHECKING
+from uuid import UUID
+
+from app.models.contest import Contest, ContestTeam, ContestTeamProgress
+from app.models.team import Team, TeamUser
+from app.repositories.dto.team import CreateTeamData, UpdateTeamData
+from app.schema.team import (
+    ContestTeamResponse,
+    TeamCreate,
+    TeamMemberResponse,
+    TeamUpdate,
+)
+from app.utils.enums import TeamApprovalMode, TeamApprovalStatus, UserRole
+
+if TYPE_CHECKING:
+    from app.models.contest import ContestTeam
+    from app.models.team import Team
+    from app.models.user import User
+
+
+def build_create_team_dto(
+    contest_id: UUID,
+    team_data: TeamCreate,
+    created_by: UUID,
+) -> CreateTeamData:
+    """Map team create schema to repository create DTO."""
+    return CreateTeamData(
+        contest_id=contest_id,
+        created_by=created_by,
+        name=team_data.name,
+        description=team_data.description,
+        logo=team_data.logo,
+        leader_id=team_data.leader_id,
+        member_ids=team_data.member_ids,
+        status=team_data.status,
+    )
+
+
+def build_update_team_dto(team_id: UUID, team_data: TeamUpdate) -> UpdateTeamData:
+    """Map team update schema to repository update DTO."""
+    return UpdateTeamData(
+        team_id=team_id,
+        name=team_data.name,
+        description=team_data.description,
+        logo=team_data.logo,
+        status=team_data.status,
+        leader_id=team_data.leader_id,
+    )
+
+
+def build_leader_update_dto(team_id: UUID, leader_id: UUID | None) -> UpdateTeamData:
+    """Build minimal DTO for leader-only updates."""
+    return UpdateTeamData(team_id=team_id, leader_id=leader_id)
+
+
+def to_contest_team_response(contest_team: "ContestTeam") -> ContestTeamResponse:
+    """Map contest team ORM object to response schema."""
+    return ContestTeamResponse.from_contest_team(contest_team)
+
+
+def to_contest_team_response_list(
+    contest_teams: list["ContestTeam"],
+) -> list[ContestTeamResponse]:
+    """Map contest team ORM list to response schema list."""
+    return [to_contest_team_response(contest_team) for contest_team in contest_teams]
+
+
+def to_team_member_responses(
+    users: list["User"],
+    *,
+    team: "Team",
+) -> list[TeamMemberResponse]:
+    """Map user ORM list to team member responses."""
+    return [
+        TeamMemberResponse(
+            id=user.id,
+            user_id=user.user_id,
+            name=user.name,
+            email=user.email,
+            role=user.role.value,
+            is_leader=(team.leader_id == user.id),
+        )
+        for user in users
+    ]
+
+
+def build_team_creation_entities(
+    team_data: CreateTeamData,
+    *,
+    contest: Contest,
+    creator_role: UserRole,
+) -> tuple[Team, ContestTeam, ContestTeamProgress, list[TeamUser]]:
+    """Build team creation ORM entities from repository DTO and context."""
+    team = Team(
+        name=team_data.name,
+        description=team_data.description,
+        logo=team_data.logo,
+        leader_id=team_data.leader_id,
+        created_by=team_data.created_by,
+    )
+
+    approval_status = TeamApprovalStatus.APPROVED
+    if (
+        contest.team_approval_mode == TeamApprovalMode.INSTRUCTOR_REVIEW
+        and creator_role != UserRole.instructor
+    ):
+        approval_status = TeamApprovalStatus.WAITING
+
+    contest_team = ContestTeam(
+        contest_id=team_data.contest_id,
+        team=team,
+        team_status=team_data.status,
+        approval_status=approval_status,
+    )
+
+    progress = ContestTeamProgress(contest_id=team_data.contest_id)
+    contest_team.progress = progress
+
+    team_users = [
+        TeamUser(team=team, user_id=member_id) for member_id in team_data.member_ids
+    ]
+    return team, contest_team, progress, team_users
+
+
+def apply_team_updates(
+    *,
+    team_data: UpdateTeamData,
+    team: Team,
+    contest_team: ContestTeam,
+) -> None:
+    """Apply team update DTO values onto team and contest-team ORM entities."""
+    if team_data.name is not None and team_data.name != team.name:
+        team.name = team_data.name
+    if team_data.description is not None and team_data.description != team.description:
+        team.description = team_data.description
+    if team_data.logo is not None and team_data.logo != team.logo:
+        team.logo = team_data.logo
+    if team_data.status is not None and team_data.status != contest_team.team_status:
+        contest_team.team_status = team_data.status
+    if team_data.leader_id is not None and team_data.leader_id != team.leader_id:
+        team.leader_id = team_data.leader_id

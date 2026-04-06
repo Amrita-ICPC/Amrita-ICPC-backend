@@ -184,9 +184,8 @@ class TestRemoveTeamMemberSuccess:
         # Verify update_team is called with proper arguments
         assert mock_repository.update_team.call_count == 1
         call_args = mock_repository.update_team.call_args
-        update_data, team, contest_team = call_args[0]
-        assert update_data.team_id == team_id
-        assert update_data.leader_id == new_leader_id
+        team, _contest_team = call_args[0]
+        assert team.leader_id == new_leader_id
 
     @pytest.mark.asyncio
     async def test_removes_non_leader_member_without_leader_change(
@@ -226,9 +225,8 @@ class TestRemoveTeamMemberSuccess:
         # Verify update_team is called with proper arguments
         assert mock_repository.update_team.call_count == 1
         call_args = mock_repository.update_team.call_args
-        update_data, team, contest_team = call_args[0]
-        assert update_data.team_id == team_id
-        assert update_data.leader_id is None
+        team, _contest_team = call_args[0]
+        assert team.leader_id == leader_id
 
 
 class TestRemoveTeamMemberContestValidation:
@@ -841,9 +839,8 @@ class TestRemoveTeamMemberRepositoryContract:
         # Verify update_team is called with proper arguments
         assert mock_repository.update_team.call_count == 1
         call_args = mock_repository.update_team.call_args
-        update_data, team, contest_team = call_args[0]
-        assert update_data.team_id == team_id
-        assert update_data.leader_id == new_leader_id
+        team, _contest_team = call_args[0]
+        assert team.leader_id == new_leader_id
 
     @pytest.mark.asyncio
     async def test_update_team_called_with_none_when_no_leader(
@@ -879,9 +876,8 @@ class TestRemoveTeamMemberRepositoryContract:
         # Verify update_team is called with proper arguments
         assert mock_repository.update_team.call_count == 1
         call_args = mock_repository.update_team.call_args
-        update_data, team, contest_team = call_args[0]
-        assert update_data.team_id == team_id
-        assert update_data.leader_id is None
+        team, _contest_team = call_args[0]
+        assert team.leader_id is None
 
     @pytest.mark.asyncio
     async def test_get_team_members_called_after_removal(
