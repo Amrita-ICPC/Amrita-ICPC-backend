@@ -291,6 +291,7 @@ class TeamService:
             ContestNotFoundError: If the contest does not exist
             TeamNotFoundError: If the team is not found in the contest
             PermissionDeniedError: If the user lacks contest management permission
+            ApprovalNotAllowedError: If the user is not allowed to approve this team
         """
         contest = await self.repository.get_contest_or_raise(contest_id)
         await self.guard.check_update_team(user_id=approved_by, contest=contest)

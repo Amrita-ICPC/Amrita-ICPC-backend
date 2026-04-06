@@ -242,6 +242,8 @@ class QuestionService:
             )
 
         slug_value = (payload.slug or match.name.lower().replace(" ", "-")).strip()
+        if not slug_value:
+            raise InvalidQuestionError("Language slug cannot be blank")
         duplicate_slug = await self.language_repository.get_by_slug(slug_value)
         if duplicate_slug is not None:
             raise InvalidQuestionError(f"Language slug '{slug_value}' already exists")
@@ -539,7 +541,25 @@ class QuestionService:
         Raises:
             QuestionNotFoundError: If the question does not exist.
             QuestionPermissionError: If user cannot manage the question.
+            CodeStorageError: If object storage cleanup fails.
         """
         question = await self.repository.get_question_or_raise(question_id)
         await self.guard.check_manage_question(user_id=user_id, question=question)
+
+        solution_blob_keys: set[str] = set()
+        for template in question.templates:
+            solution_code = template.solution_code
+            if not solution_code:
+                continue
+            if self._is_storage_object_key(solution_code):
+                solution_blob_keys.add(solution_code)
+
+        for blob_key in solution_blob_keys:
+            try:
+                await self.code_storage_service.delete_code(blob_key)
+            except Exception as error:
+                raise CodeStorageError(
+                    f"Failed to delete solution code payload from storage: {error}"
+                ) from error
+
         await self.repository.delete_question(question)
