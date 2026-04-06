@@ -291,7 +291,6 @@ async def delete_question(
     """Delete a question by ID.
 
     Args:
-        request: FastAPI request object.
         question_id: Target question ID.
         current_user: Authenticated user claims.
         db: Async database session.
