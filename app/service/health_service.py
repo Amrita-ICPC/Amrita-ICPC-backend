@@ -23,5 +23,5 @@ class HealthService:
         try:
             await self.repository.ping()
         except SQLAlchemyError as e:
-            logger.error("Database health check failed")
-            raise DatabaseUnavailableError(detail=str(e))
+            logger.exception("Database health check failed")
+            raise DatabaseUnavailableError(detail="Database unavailable") from e

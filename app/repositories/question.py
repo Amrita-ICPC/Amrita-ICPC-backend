@@ -9,6 +9,7 @@ from app.exceptions.question import QuestionNotFoundError
 from app.models.bank import Bank, BankQuestion, BankShare
 from app.models.contest import Contest, ContestInstructor, ContestQuestion, ContestTeam
 from app.models.question import Question, QuestionLanguage, QuestionTemplate, TestCase
+from app.models.tag import QuestionTag
 from app.models.team import TeamUser
 from app.repositories.dto.question import CreateQuestionData, UpdateQuestionData
 
@@ -22,9 +23,10 @@ class QuestionRepository:
     @staticmethod
     def _question_with_relations_query():
         return select(Question).options(
-            selectinload(Question.languages),
+            selectinload(Question.languages).selectinload(QuestionLanguage.language),
+            selectinload(Question.tags),
             selectinload(Question.testcases),
-            selectinload(Question.templates),
+            selectinload(Question.templates).selectinload(QuestionTemplate.language),
         )
 
     @staticmethod
@@ -100,6 +102,7 @@ class QuestionRepository:
                 QuestionLanguage(language_id=language_id)
                 for language_id in data.allowed_language_ids
             ],
+            tags=[QuestionTag(tag_id=tag_id) for tag_id in data.tag_ids],
             testcases=[
                 TestCase(
                     input=testcase.input,
@@ -154,6 +157,7 @@ class QuestionRepository:
                     QuestionLanguage(language_id=language_id)
                     for language_id in data.allowed_language_ids
                 ],
+                tags=[QuestionTag(tag_id=tag_id) for tag_id in data.tag_ids],
                 testcases=[
                     TestCase(
                         input=testcase.input,
@@ -217,6 +221,9 @@ class QuestionRepository:
                         )
                         for testcase in value
                     ]
+                    continue
+                if field == "tag_ids":
+                    question.tags = [QuestionTag(tag_id=tag_id) for tag_id in value]
                     continue
                 if field == "templates":
                     question.templates = [

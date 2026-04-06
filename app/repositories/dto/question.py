@@ -46,6 +46,7 @@ class CreateQuestionData:
     question_text: str
     difficulty: QuestionDifficulty
     allowed_language_ids: list[int]
+    tag_ids: list[UUID]
     testcases: list[CreateQuestionTestCaseData]
     templates: list[CreateQuestionTemplateData]
     time_limit_ms: int
@@ -64,6 +65,7 @@ class UpdateQuestionData:
     question_text: str | None = None
     difficulty: QuestionDifficulty | None = None
     allowed_languages: list[int] | None = None
+    tag_ids: list[UUID] | None = None
     testcases: list[CreateQuestionTestCaseData] | None = None
     templates: list[CreateQuestionTemplateData] | None = None
     time_limit_ms: int | None = None

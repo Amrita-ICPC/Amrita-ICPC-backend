@@ -1,6 +1,8 @@
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.exceptions.question import LanguageConflictError
 from app.models.language import Language
 
 
@@ -46,8 +48,13 @@ class LanguageRepository:
             monaco_language=monaco_language,
         )
         self.db.add(language)
-        await self.db.flush()
-        await self.db.refresh(language)
+        try:
+            await self.db.flush()
+            await self.db.refresh(language)
+        except IntegrityError as error:
+            raise LanguageConflictError(
+                f"Platform language conflict for id={language_id} or slug='{slug}'"
+            ) from error
         return language
 
     async def list_languages(self) -> list[Language]:

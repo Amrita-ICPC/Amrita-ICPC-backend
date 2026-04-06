@@ -13,9 +13,24 @@ class BankQuestionValidator:
     prerequisites before state changes occur.
 
     Methods:
+        validate_unique_question_ids: Ensure incoming IDs are unique
         validate_question_already_exist: Ensure no duplicate question associations
         validate_questions_linked_to_bank: Ensure all required questions are associated
     """
+
+    @staticmethod
+    def validate_unique_question_ids(question_ids):
+        """Validate that question_ids payload has no duplicate UUIDs.
+
+        Args:
+            question_ids: List of question UUIDs from the request payload.
+
+        Raises:
+            BankValidationError: If duplicate UUIDs are present.
+        """
+        unique_ids = set(question_ids)
+        if len(unique_ids) != len(question_ids):
+            raise BankValidationError("Duplicate question_ids are not allowed")
 
     @staticmethod
     def validate_question_already_exist(existing, bank_id, question_ids):

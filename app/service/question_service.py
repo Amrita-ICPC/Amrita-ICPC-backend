@@ -79,7 +79,12 @@ class QuestionService:
         Returns:
             Cache key/pattern list covering direct and user-scoped entries.
         """
-        return [f"question:{question_id}", f"question:{question_id}:*"]
+        return [
+            f"question:{question_id}",
+            f"question:{question_id}:*",
+            f"bank:question:*:{question_id}:*",
+            "banks:questions:*",
+        ]
 
     @staticmethod
     def _is_storage_object_key(value: str | None) -> bool:
@@ -281,6 +286,9 @@ class QuestionService:
             CodeStorageError: If template solution upload fails.
             Exception: Re-raises underlying persistence/storage errors after rollback.
         """
+        # TODO(transaction-consistency): Decide final approach for side effects.
+        # Option A: defer MinIO uploads and cache updates until after DB commit.
+        # Option B: adopt an outbox pattern for reliable async side-effect processing.
         uploaded_keys: list[str] = []
         try:
             self.validator.validate_testcases_format(question_data.testcases)
@@ -348,6 +356,7 @@ class QuestionService:
                 question_text=question_data.question_text,
                 difficulty=question_data.difficulty,
                 allowed_language_ids=question_data.allowed_languages,
+                tag_ids=question_data.tag_ids,
                 testcases=testcase_dtos,
                 templates=template_dtos,
                 time_limit_ms=question_data.time_limit_ms,
@@ -356,8 +365,8 @@ class QuestionService:
             )
 
             question = await self.repository.create_question(create_dto)
-            response = QuestionResponse.model_validate(question)
-            return response
+            response = QuestionResponse.from_question(question)
+            return await self._hydrate_question_template_codes(response)
         except Exception:
             await self.repository.rollback()
 
@@ -394,7 +403,7 @@ class QuestionService:
         """
         question = await self.repository.get_question_or_raise(question_id)
         await self.guard.check_read_question(user_id=user_id, question=question)
-        response = QuestionResponse.model_validate(question)
+        response = QuestionResponse.from_question(question)
         return await self._hydrate_question_template_codes(response)
 
     @cache_set(
@@ -432,6 +441,9 @@ class QuestionService:
             CodeStorageError: If updated template solution upload fails.
             Exception: Re-raises underlying errors after rollback/cleanup.
         """
+        # TODO(transaction-consistency): Decide final approach for side effects.
+        # Option A: defer MinIO uploads/deletes and cache updates until commit succeeds.
+        # Option B: enqueue side effects via outbox for post-commit execution.
         uploaded_keys: list[str] = []
         old_template_keys_to_delete: list[str] = []
         try:
@@ -515,6 +527,7 @@ class QuestionService:
                 question_text=update_data.question_text,
                 difficulty=update_data.difficulty,
                 allowed_languages=update_data.allowed_languages,
+                tag_ids=update_data.tag_ids,
                 testcases=testcase_dtos,
                 templates=template_dtos,
                 time_limit_ms=update_data.time_limit_ms,
@@ -531,7 +544,8 @@ class QuestionService:
                 except Exception:
                     pass
 
-            return QuestionResponse.model_validate(updated_question)
+            response = QuestionResponse.from_question(updated_question)
+            return await self._hydrate_question_template_codes(response)
         except Exception:
             await self.repository.rollback()
 

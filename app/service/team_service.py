@@ -3,6 +3,7 @@ from uuid import UUID
 
 from app.core.cache.decorators import cache_delete, cache_get, cache_set
 from app.core.guards.team import TeamOperationGuard
+from app.exceptions.team import ApprovalNotAllowedError
 from app.repositories.dto import PaginationParams, TeamFilters
 from app.repositories.team import CreateTeamData, TeamRepository, UpdateTeamData
 from app.schema.team import (
@@ -296,11 +297,12 @@ class TeamService:
             return ContestTeamResponse.from_contest_team(contest_team)
 
         if contest.team_approval_mode == TeamApprovalMode.INSTRUCTOR_REVIEW:
-            contest_team = await self.repository.update_team_approval_status(
+            updated_team = await self.repository.update_team_approval_status(
                 contest_team, TeamApprovalStatus.APPROVED
             )
+            return ContestTeamResponse.from_contest_team(updated_team)
 
-        return ContestTeamResponse.from_contest_team(contest_team)
+        raise ApprovalNotAllowedError(str(team_id), str(contest_id))
 
     @cache_get(
         key_builder=lambda self,

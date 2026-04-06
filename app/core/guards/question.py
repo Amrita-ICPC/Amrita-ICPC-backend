@@ -5,12 +5,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.permissions import is_admin
 from app.exceptions.question import QuestionPermissionError
 from app.models.question import Question
+from app.repositories.question import QuestionRepository
 
 
 class QuestionOperationGuard:
     """Guard for question operation permission validation."""
 
-    def __init__(self, db: AsyncSession, repository=None):
+    def __init__(self, db: AsyncSession, repository: QuestionRepository | None = None):
         self.db = db
         self.repository = repository
 

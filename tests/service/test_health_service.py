@@ -47,5 +47,5 @@ async def test_check_database_raises_database_unavailable_error(
     with pytest.raises(DatabaseUnavailableError) as exc:
         await health_service.check_database()
 
-    assert exc.value.detail == "connection lost"
+    assert exc.value.detail == "Database unavailable"
     mock_health_repository.ping.assert_awaited_once_with()

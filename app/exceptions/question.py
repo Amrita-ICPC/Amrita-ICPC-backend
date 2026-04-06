@@ -53,3 +53,13 @@ class CodeStorageError(AppBaseException):
             message=message,
             status_code=status.HTTP_502_BAD_GATEWAY,
         )
+
+
+class LanguageConflictError(AppBaseException):
+    """Exception raised when platform language conflicts on unique fields."""
+
+    def __init__(self, message: str):
+        super().__init__(
+            message=message,
+            status_code=status.HTTP_409_CONFLICT,
+        )

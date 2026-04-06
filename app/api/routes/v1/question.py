@@ -1,7 +1,7 @@
 from typing import Any, Dict
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import (
@@ -283,7 +283,6 @@ async def update_question(
     dependencies=[can_delete("questions")],
 )
 async def delete_question(
-    request: Request,
     question_id: UUID,
     current_user: Dict[str, Any] = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -299,7 +298,7 @@ async def delete_question(
         service: Injected QuestionService.
 
     Returns:
-        Success API response without payload.
+        Empty HTTP 204 response.
 
     Raises:
         QuestionNotFoundError: If question does not exist.
@@ -308,7 +307,4 @@ async def delete_question(
     user_id = (await UserService.get_user_by_keycloak_id(db, current_user["sub"])).id
     await service.delete_question(question_id, user_id)
     logger.info(f"Question deleted by user {user_id}: {question_id}")
-    return create_api_response(
-        request,
-        message="Question deleted successfully",
-    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

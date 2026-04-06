@@ -1,4 +1,4 @@
-from typing import cast
+import asyncio
 
 from minio import Minio
 from urllib3 import PoolManager
@@ -51,8 +51,16 @@ async def init_minio() -> None:
         )
 
         bucket_name = config.MINIO_BUCKET_NAME
-        if not cast(bool, minio_client.bucket_exists(bucket_name)):
-            minio_client.make_bucket(bucket_name)
+        assert minio_client is not None
+
+        def _ensure_bucket(client: Minio, name: str) -> bool:
+            if not client.bucket_exists(name):
+                client.make_bucket(name)
+                return True
+            return False
+
+        created = await asyncio.to_thread(_ensure_bucket, minio_client, bucket_name)
+        if created:
             logger.info(f"Created MinIO bucket: {bucket_name}")
 
         logger.info("MinIO connection established successfully.")
