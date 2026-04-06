@@ -8,9 +8,11 @@ from app.exceptions.bank import (
     BankQuestionAlreadyExistsError,
     BankQuestionNotFoundError,
 )
+from app.exceptions.bank_validation import BankValidationError
 from app.models.bank import Bank, BankQuestion
 from app.models.language import Language
-from app.models.question import Question, QuestionLanguage, TestCase
+from app.models.question import Question, QuestionLanguage
+from app.models.question import TestCase as QuestionTestCase
 from app.repositories.dto import PaginatedResult
 from app.utils.enums import QuestionDifficulty
 
@@ -96,7 +98,7 @@ def sample_question():
     language = Language(id=71, name="Python 3", slug="python")
     question.languages = [QuestionLanguage(language_id=71, language=language)]
     question.testcases = [
-        TestCase(
+        QuestionTestCase(
             input="1",
             output="1",
             is_hidden=False,
@@ -160,6 +162,30 @@ async def test_add_question_to_bank_already_exists(
         )
 
     mock_question_repo.validate_questions_exist.assert_awaited_once_with([question_id])
+
+
+@pytest.mark.asyncio
+async def test_add_questions_to_bank_rejects_duplicate_question_ids(
+    bank_question_service,
+    mock_repository,
+    mock_validator,
+    sample_bank,
+    mock_question_repo,
+):
+    user_id = sample_bank.created_by
+    question_id = uuid4()
+    duplicate_payload = [question_id, question_id]
+
+    mock_repository.get_bank_or_raise.return_value = sample_bank
+
+    with pytest.raises(BankValidationError):
+        await bank_question_service.add_questions_to_bank(
+            sample_bank.id, duplicate_payload, user_id
+        )
+
+    mock_question_repo.validate_questions_exist.assert_not_called()
+    mock_repository.get_questions_in_bank_by_ids.assert_not_called()
+    mock_repository.add_questions_to_bank.assert_not_called()
 
 
 @pytest.mark.asyncio

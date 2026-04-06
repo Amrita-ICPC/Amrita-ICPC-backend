@@ -1,10 +1,13 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.utils.enums import QuestionDifficulty
+
+if TYPE_CHECKING:
+    from app.models.question import Question
 
 
 class QuestionBase(BaseModel):
@@ -35,6 +38,9 @@ class QuestionCreate(QuestionBase):
     allowed_languages: List[int] = Field(
         ..., description="List of allowed platform language IDs"
     )
+    tag_ids: List[UUID] = Field(
+        default_factory=list, description="List of tag IDs associated with the question"
+    )
     testcases: List[QuestionTestCaseCreate] = Field(
         ..., description="List of testcases with input/output and visibility"
     )
@@ -48,6 +54,7 @@ class QuestionUpdate(BaseModel):
     question_text: Optional[str] = None
     difficulty: Optional[QuestionDifficulty] = None
     allowed_languages: Optional[List[int]] = None
+    tag_ids: Optional[List[UUID]] = None
     testcases: Optional[List[QuestionTestCaseCreate]] = None
     templates: Optional[List[QuestionTemplateCreate]] = None
     time_limit_ms: Optional[int] = Field(None, gt=0)
@@ -87,16 +94,67 @@ class QuestionResponse(QuestionBase):
     created_at: datetime
     updated_at: datetime
 
-    languages: List[QuestionLanguageMappingResponse] = Field(default_factory=list)
     testcases: List[QuestionTestCaseResponse] = Field(default_factory=list)
     templates: List[QuestionTemplateResponse] = Field(default_factory=list)
-    allowed_languages: List[int] = Field(default_factory=list)
+    allowed_languages: List[str] = Field(default_factory=list)
+    tag_ids: List[UUID] = Field(default_factory=list)
 
-    @model_validator(mode="after")
-    def populate_allowed_languages(self) -> "QuestionResponse":
-        if not self.allowed_languages and self.languages:
-            self.allowed_languages = [item.language_id for item in self.languages]
-        return self
+    @classmethod
+    def from_question(cls, question: "Question") -> "QuestionResponse":
+        language_names: list[str] = []
+        for mapping in getattr(question, "languages", []) or []:
+            language = getattr(mapping, "language", None)
+            name = getattr(language, "name", None)
+            if isinstance(name, str) and name:
+                language_names.append(name)
+
+        if not language_names:
+            for template in getattr(question, "templates", []) or []:
+                language = getattr(template, "language", None)
+                name = getattr(language, "name", None)
+                if isinstance(name, str) and name:
+                    language_names.append(name)
+
+        testcase_items = [
+            QuestionTestCaseResponse(
+                input=testcase.input,
+                output=testcase.output,
+                is_hidden=testcase.is_hidden,
+                weight=testcase.weight,
+                order=testcase.order,
+            )
+            for testcase in (getattr(question, "testcases", []) or [])
+        ]
+
+        template_items = [
+            QuestionTemplateResponse(
+                language_id=template.language_id,
+                starter_code=template.starter_code,
+                driver_code=template.driver_code,
+                solution_code=template.solution_code,
+            )
+            for template in (getattr(question, "templates", []) or [])
+        ]
+
+        tag_ids = [
+            question_tag.tag_id
+            for question_tag in (getattr(question, "tags", []) or [])
+        ]
+
+        return cls(
+            id=question.id,
+            question_text=question.question_text,
+            difficulty=question.difficulty,
+            time_limit_ms=question.time_limit_ms,
+            memory_limit_mb=question.memory_limit_mb,
+            created_by=question.created_by,
+            created_at=question.created_at,
+            updated_at=question.updated_at,
+            testcases=testcase_items,
+            templates=template_items,
+            allowed_languages=list(dict.fromkeys(language_names)),
+            tag_ids=tag_ids,
+        )
 
 
 class QuestionListSummaryResponse(BaseModel):
@@ -107,26 +165,62 @@ class QuestionListSummaryResponse(BaseModel):
     difficulty: QuestionDifficulty = Field(
         ..., description="Difficulty level of the question"
     )
-    allowed_languages: List[int] = Field(default_factory=list)
+    allowed_languages: List[str] = Field(default_factory=list)
     time_limit_ms: int = Field(..., gt=0, description="Time limit in milliseconds")
     memory_limit_mb: int = Field(..., gt=0, description="Memory limit in megabytes")
-    languages: List[QuestionLanguageMappingResponse] = Field(
-        default_factory=list, exclude=True
-    )
-    testcases: List[QuestionTestCaseResponse] = Field(
-        default_factory=list, exclude=True
-    )
+    testcases: List[QuestionTestCaseResponse] = Field(default_factory=list)
+    tag_ids: List[UUID] = Field(default_factory=list)
     testcase_count: int = Field(0, description="Number of testcases")
     created_by: UUID
     created_at: datetime
     updated_at: datetime
 
-    @model_validator(mode="after")
-    def compute_count(self) -> "QuestionListSummaryResponse":
-        if not self.allowed_languages and self.languages:
-            self.allowed_languages = [item.language_id for item in self.languages]
-        self.testcase_count = len(self.testcases) if self.testcases else 0
-        return self
+    @classmethod
+    def from_question(cls, question: "Question") -> "QuestionListSummaryResponse":
+        language_names: list[str] = []
+        for mapping in getattr(question, "languages", []) or []:
+            language = getattr(mapping, "language", None)
+            name = getattr(language, "name", None)
+            if isinstance(name, str) and name:
+                language_names.append(name)
+
+        if not language_names:
+            for template in getattr(question, "templates", []) or []:
+                language = getattr(template, "language", None)
+                name = getattr(language, "name", None)
+                if isinstance(name, str) and name:
+                    language_names.append(name)
+
+        testcase_items = [
+            QuestionTestCaseResponse(
+                input=testcase.input,
+                output=testcase.output,
+                is_hidden=testcase.is_hidden,
+                weight=testcase.weight,
+                order=testcase.order,
+            )
+            for testcase in (getattr(question, "testcases", []) or [])
+        ]
+
+        tag_ids = [
+            question_tag.tag_id
+            for question_tag in (getattr(question, "tags", []) or [])
+        ]
+
+        return cls(
+            id=question.id,
+            question_text=question.question_text,
+            difficulty=question.difficulty,
+            time_limit_ms=question.time_limit_ms,
+            memory_limit_mb=question.memory_limit_mb,
+            allowed_languages=list(dict.fromkeys(language_names)),
+            testcases=testcase_items,
+            tag_ids=tag_ids,
+            testcase_count=len(testcase_items),
+            created_by=question.created_by,
+            created_at=question.created_at,
+            updated_at=question.updated_at,
+        )
 
 
 class Judge0LanguageResponse(BaseModel):

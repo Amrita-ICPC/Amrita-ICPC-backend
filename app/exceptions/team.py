@@ -76,3 +76,16 @@ class InvalidLeaderAssignmentError(AppBaseException):
             status_code=400,
             detail="New leader cannot be one of the members being removed from the team.",
         )
+
+
+class ApprovalNotAllowedError(AppBaseException):
+    """Raised when a team approval operation is not allowed in current state."""
+
+    def __init__(self, team_id: str, contest_id: str):
+        super().__init__(
+            message=(
+                f"Team {team_id} cannot be approved in contest {contest_id} for the current approval mode/state"
+            ),
+            status_code=400,
+            detail="Approval is not allowed for this team in the current contest approval mode.",
+        )

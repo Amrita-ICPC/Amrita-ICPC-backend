@@ -143,6 +143,8 @@ class BankQuestionService:
         bank = await self.repository.get_bank_or_raise(bank_id, load_relations=True)
         self.validator.check_edit_bank(user_id=user_id, bank=bank)
 
+        BankQuestionValidator.validate_unique_question_ids(question_ids)
+
         await self.question_repo.validate_questions_exist(question_ids)
 
         existing = await self.repository.get_questions_in_bank_by_ids(
@@ -192,7 +194,7 @@ class BankQuestionService:
         bank_id,
         user_id,
         skip=0,
-        limit=100: f"banks:questions:{bank_id}:user:{user_id}:skip:{skip}:limit:{limit}",
+        limit=100: f"banks:questions:v2:{bank_id}:user:{user_id}:skip:{skip}:limit:{limit}",
         ttl=300,
     )
     async def get_bank_questions(
@@ -219,16 +221,14 @@ class BankQuestionService:
         pagination = PaginationParams(skip=skip, limit=limit)
         result = await self.repository.get_questions_in_bank(bank_id, pagination)
 
-        responses = [
-            QuestionListSummaryResponse.model_validate(q) for q in result.items
-        ]
+        responses = [QuestionListSummaryResponse.from_question(q) for q in result.items]
         return result.total, responses
 
     @cache_get(
         key_builder=lambda self,
         bank_id,
         question_id,
-        user_id: f"bank:question:{bank_id}:{question_id}:user:{user_id}",
+        user_id: f"bank:question:v2:{bank_id}:{question_id}:user:{user_id}",
         ttl=300,
     )
     async def get_bank_question(
@@ -261,5 +261,5 @@ class BankQuestionService:
             raise BankQuestionNotFoundError(str(bank_id), str(question_id))
 
         question = await self.question_repo.get_question_or_raise(question_id)
-        response = QuestionResponse.model_validate(question)
+        response = QuestionResponse.from_question(question)
         return await self._hydrate_question_template_codes(response)

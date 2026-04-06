@@ -8,7 +8,7 @@ from sqlalchemy.orm import joinedload, selectinload
 
 from app.exceptions.bank import BankNotFoundError
 from app.models.bank import Bank, BankQuestion, BankShare
-from app.models.question import Question
+from app.models.question import Question, QuestionLanguage, QuestionTemplate
 from app.repositories.dto import BankFilters, PaginatedResult, PaginationParams
 from app.schema.bank import BankCreate
 from app.utils.enums import BankPermission
@@ -374,9 +374,14 @@ class BankRepository:
             select(Question)
             .join(BankQuestion, BankQuestion.question_id == Question.id)
             .options(
-                selectinload(Question.languages),
+                selectinload(Question.languages).selectinload(
+                    QuestionLanguage.language
+                ),
+                selectinload(Question.tags),
                 selectinload(Question.testcases),
-                selectinload(Question.templates),
+                selectinload(Question.templates).selectinload(
+                    QuestionTemplate.language
+                ),
             )
             .filter(
                 BankQuestion.bank_id == bank_id,
@@ -398,9 +403,14 @@ class BankRepository:
             select(Question)
             .join(BankQuestion, BankQuestion.question_id == Question.id)
             .options(
-                selectinload(Question.languages),
+                selectinload(Question.languages).selectinload(
+                    QuestionLanguage.language
+                ),
+                selectinload(Question.tags),
                 selectinload(Question.testcases),
-                selectinload(Question.templates),
+                selectinload(Question.templates).selectinload(
+                    QuestionTemplate.language
+                ),
             )
             .filter(BankQuestion.bank_id == bank_id)
         )
@@ -457,9 +467,14 @@ class BankRepository:
             select(Question)
             .join(BankQuestion, BankQuestion.question_id == Question.id)
             .options(
-                selectinload(Question.languages),
+                selectinload(Question.languages).selectinload(
+                    QuestionLanguage.language
+                ),
+                selectinload(Question.tags),
                 selectinload(Question.testcases),
-                selectinload(Question.templates),
+                selectinload(Question.templates).selectinload(
+                    QuestionTemplate.language
+                ),
             )
             .filter(BankQuestion.bank_id == bank_id)
             .order_by(BankQuestion.created_at, Question.id)
