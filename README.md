@@ -85,3 +85,10 @@ uv run pytest
     -   `app/core/`: Configuration and core utilities.
     -   `app/models/`: SQLAlchemy database models.
     -   `app/api/`: API route handlers (to be implemented).
+
+## Code Storage
+
+Code-like payloads should be stored in MinIO via `CodeStorageService`.
+
+-   Usage guide: `docs/code-storage-service.md`
+-   Service implementation: `app/core/storage/code_storage.py`

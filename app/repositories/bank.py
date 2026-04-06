@@ -4,7 +4,7 @@ from uuid import UUID
 
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 
 from app.exceptions.bank import BankNotFoundError
 from app.models.bank import Bank, BankQuestion, BankShare
@@ -373,6 +373,11 @@ class BankRepository:
         result = await self.db.execute(
             select(Question)
             .join(BankQuestion, BankQuestion.question_id == Question.id)
+            .options(
+                selectinload(Question.languages),
+                selectinload(Question.testcases),
+                selectinload(Question.templates),
+            )
             .filter(
                 BankQuestion.bank_id == bank_id,
                 Question.id.in_(question_ids),
@@ -392,6 +397,11 @@ class BankRepository:
         result = await self.db.execute(
             select(Question)
             .join(BankQuestion, BankQuestion.question_id == Question.id)
+            .options(
+                selectinload(Question.languages),
+                selectinload(Question.testcases),
+                selectinload(Question.templates),
+            )
             .filter(BankQuestion.bank_id == bank_id)
         )
         return list(result.scalars().all())
@@ -446,6 +456,11 @@ class BankRepository:
         base_query = (
             select(Question)
             .join(BankQuestion, BankQuestion.question_id == Question.id)
+            .options(
+                selectinload(Question.languages),
+                selectinload(Question.testcases),
+                selectinload(Question.templates),
+            )
             .filter(BankQuestion.bank_id == bank_id)
             .order_by(BankQuestion.created_at, Question.id)
         )

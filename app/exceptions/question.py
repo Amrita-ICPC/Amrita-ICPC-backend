@@ -33,3 +33,23 @@ class QuestionPermissionError(AppBaseException):
             message=message,
             status_code=status.HTTP_403_FORBIDDEN,
         )
+
+
+class Judge0ServiceError(AppBaseException):
+    """Exception raised when Judge0 integration fails."""
+
+    def __init__(self, message: str = "Unable to fetch languages from Judge0"):
+        super().__init__(
+            message=message,
+            status_code=status.HTTP_502_BAD_GATEWAY,
+        )
+
+
+class CodeStorageError(AppBaseException):
+    """Exception raised when code payload storage operations fail."""
+
+    def __init__(self, message: str = "Unable to persist code payload"):
+        super().__init__(
+            message=message,
+            status_code=status.HTTP_502_BAD_GATEWAY,
+        )

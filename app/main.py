@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.errors import setup_exception_handlers
 from app.api.route import api_router
 from app.core.clients.database import init_db
+from app.core.clients.minio import close_minio, init_minio
 from app.core.clients.redis import close_redis, init_redis
 from app.core.config import config
 from app.core.logger import logger, setup_sqlalchemy_logging, setup_uvicorn_logging
@@ -27,7 +28,13 @@ async def lifespan(app: FastAPI):
     # Initialize Redis
     await init_redis()
 
+    # Initialize MinIO
+    await init_minio()
+
     yield
+
+    # Close MinIO
+    await close_minio()
 
     # Close Redis
     await close_redis()

@@ -1,14 +1,15 @@
+import asyncio
 from typing import List
 from uuid import UUID
 
 from app.core.cache.decorators import cache_delete, cache_get
+from app.core.storage import CodeStorageService
 from app.exceptions.bank import (
     BankQuestionNotFoundError,
 )
-from app.exceptions.question import QuestionNotFoundError
+from app.exceptions.question import CodeStorageError
 from app.repositories.bank import BankRepository
 from app.repositories.dto.pagination import PaginationParams
-from app.repositories.dto.question import clone_question_to_create_data
 from app.repositories.question import QuestionRepository
 from app.schema.question import QuestionListSummaryResponse, QuestionResponse
 from app.validators.bank import BankValidator
@@ -16,47 +17,128 @@ from app.validators.bank_question import BankQuestionValidator
 
 
 class BankQuestionService:
-    """Service layer coordinating bank-question operations through injected repositories and guards."""
+    """Service layer for bank-question linking and retrieval operations.
+
+    This service coordinates bank access checks, question linkage validation,
+    paginated retrieval, and template code hydration. It delegates persistence to
+    repositories and applies domain checks via validators.
+
+    Responsibilities:
+        - Link and unlink question associations for banks
+        - Validate bank read/edit permissions through BankValidator
+        - Return paginated question summaries for bank-scoped listings
+        - Resolve template code object keys from storage on detail reads
+        - Invalidate and populate cache entries for bank-question views
+    """
 
     def __init__(
         self,
         repository: BankRepository,
         question_repo: QuestionRepository,
         validator: BankValidator,
+        code_storage_service: CodeStorageService,
     ):
-        """Initialize the bank question service layer dependencies.
+        """Initialize bank-question service dependencies.
 
         Args:
-            repository (BankRepository): Data access gateway.
-            question_repo (QuestionRepository): Question isolation gateway.
-            validator (BankValidator): Schema and logic validation.
+            repository: Bank repository for association and bank access operations.
+            question_repo: Question repository for question entity retrieval.
+            validator: Bank validator for read/edit permission checks.
+            code_storage_service: Storage service used to fetch template code payloads.
         """
         self.repository = repository
         self.question_repo = question_repo
         self.validator = validator
+        self.code_storage_service = code_storage_service
 
-    @cache_delete(
-        key_builder=lambda self, bank_id, *args, **kwargs: [
+    def _get_bank_question_cache_keys(self, bank_id: UUID) -> list[str]:
+        """Build cache keys and patterns for bank-question invalidation.
+
+        Args:
+            bank_id: Target bank ID.
+
+        Returns:
+            List of key patterns affected by association mutations.
+        """
+        return [
             f"bank:{bank_id}",
             f"banks:questions:{bank_id}:*",
+            f"bank:question:{bank_id}:*",
         ]
+
+    @staticmethod
+    def _is_storage_object_key(value: str | None) -> bool:
+        """Check whether a value is a storage object key."""
+        return bool(value and value.startswith("code/"))
+
+    async def _resolve_code_field(self, value: str | None) -> str | None:
+        """Resolve storage object keys to plain code text.
+
+        Args:
+            value: Template code field value.
+
+        Returns:
+            Plain code text when value is a storage key, otherwise original value.
+
+        Raises:
+            CodeStorageError: If object retrieval fails.
+        """
+        if not self._is_storage_object_key(value):
+            return value
+        assert value is not None
+        try:
+            return await self.code_storage_service.get_code(value)
+        except Exception as error:
+            raise CodeStorageError(
+                f"Failed to fetch code payload from storage: {error}"
+            ) from error
+
+    async def _hydrate_question_template_codes(
+        self, question_response: QuestionResponse
+    ) -> QuestionResponse:
+        """Hydrate template fields in a response using object storage.
+
+        Args:
+            question_response: Bank-scoped question response.
+
+        Returns:
+            Hydrated response with plain code in template fields.
+
+        Raises:
+            CodeStorageError: If any object-key fetch fails.
+        """
+        for template in question_response.templates:
+            starter_code, driver_code, solution_code = await asyncio.gather(
+                self._resolve_code_field(template.starter_code),
+                self._resolve_code_field(template.driver_code),
+                self._resolve_code_field(template.solution_code),
+            )
+            template.starter_code = starter_code or ""
+            template.driver_code = driver_code
+            template.solution_code = solution_code
+        return question_response
+
+    @cache_delete(
+        key_builder=lambda self,
+        bank_id,
+        *args,
+        **kwargs: self._get_bank_question_cache_keys(bank_id)
     )
     async def add_questions_to_bank(
         self, bank_id: UUID, question_ids: List[UUID], user_id: UUID
     ) -> None:
-        """
-        Link multiple existing questions to a specific bank.
+        """Link existing questions to a bank.
 
         Args:
-            bank_id: UUID of the target bank.
-            question_ids: List of question UUIDs to securely link.
-            user_id: UUID of the editing user initiating the link.
+            bank_id: Target bank ID.
+            question_ids: Question IDs to associate with the bank.
+            user_id: Authenticated user performing the operation.
 
         Raises:
-            BankNotFoundError: If the bank does not exist.
-            BankAccessDeniedError: If the user lacks permission to edit the bank.
-            BankQuestionAlreadyExistsError: If any of the questions are already linked.
-            QuestionNotFoundError: If any provided question ID does not exist natively.
+            BankNotFoundError: If bank does not exist.
+            BankAccessDeniedError: If user cannot edit the bank.
+            QuestionNotFoundError: If any question is missing.
+            BankQuestionAlreadyExistsError: If link already exists.
         """
         bank = await self.repository.get_bank_or_raise(bank_id, load_relations=True)
         self.validator.check_edit_bank(user_id=user_id, bank=bank)
@@ -73,26 +155,25 @@ class BankQuestionService:
         await self.repository.add_questions_to_bank(bank_id, question_ids, user_id)
 
     @cache_delete(
-        key_builder=lambda self, bank_id, *args, **kwargs: [
-            f"bank:{bank_id}",
-            f"banks:questions:{bank_id}:*",
-        ]
+        key_builder=lambda self,
+        bank_id,
+        *args,
+        **kwargs: self._get_bank_question_cache_keys(bank_id)
     )
     async def remove_questions_from_bank(
         self, bank_id: UUID, question_ids: List[UUID], user_id: UUID
     ) -> None:
-        """
-        Remove multiple linked questions from a specific bank.
+        """Unlink existing questions from a bank.
 
         Args:
-            bank_id: UUID of the target bank.
-            question_ids: List of question UUIDs to disconnect from the bank.
-            user_id: UUID of the editing user initiating the removal.
+            bank_id: Target bank ID.
+            question_ids: Question IDs to remove from the bank.
+            user_id: Authenticated user performing the operation.
 
         Raises:
-            BankNotFoundError: If the bank does not exist.
-            BankAccessDeniedError: If the user lacks permission to edit the bank.
-            BankQuestionNotFoundError: If any provided question ID is not linked to the bank.
+            BankNotFoundError: If bank does not exist.
+            BankAccessDeniedError: If user cannot edit the bank.
+            BankQuestionNotFoundError: If link does not exist.
         """
         bank = await self.repository.get_bank_or_raise(bank_id, load_relations=True)
         self.validator.check_edit_bank(user_id=user_id, bank=bank)
@@ -117,21 +198,20 @@ class BankQuestionService:
     async def get_bank_questions(
         self, bank_id: UUID, user_id: UUID, skip: int = 0, limit: int = 100
     ) -> tuple[int, List[QuestionListSummaryResponse]]:
-        """
-        Retrieve a paginated summary list of questions associated with a bank.
+        """Return paginated question summaries for a bank.
 
         Args:
-            bank_id: UUID of the target bank.
-            user_id: UUID of the reading user initiating the fetch.
-            skip: Number of questions to skip for offset.
-            limit: Maximum subset of questions to return.
+            bank_id: Target bank ID.
+            user_id: Authenticated user requesting data.
+            skip: Pagination offset.
+            limit: Pagination page size.
 
         Returns:
-            A tuple containing the total count of questions linked and the subset list of QuestionListSummaryResponse objects.
+            Tuple of total count and question summary list.
 
         Raises:
-            BankNotFoundError: If the target bank does not exist.
-            BankAccessDeniedError: If the user lacks permission to read the bank configurations.
+            BankNotFoundError: If bank does not exist.
+            BankAccessDeniedError: If user cannot read the bank.
         """
         bank = await self.repository.get_bank_or_raise(bank_id, load_relations=True)
         self.validator.check_read_bank(user_id=user_id, bank=bank)
@@ -144,24 +224,32 @@ class BankQuestionService:
         ]
         return result.total, responses
 
+    @cache_get(
+        key_builder=lambda self,
+        bank_id,
+        question_id,
+        user_id: f"bank:question:{bank_id}:{question_id}:user:{user_id}",
+        ttl=300,
+    )
     async def get_bank_question(
         self, bank_id: UUID, question_id: UUID, user_id: UUID
     ) -> QuestionResponse:
-        """
-        Retrieve detailed information of a specific question inside a bank.
+        """Return hydrated question details inside a bank scope.
 
         Args:
-            bank_id: UUID of the target bank.
-            question_id: UUID of the target detailed question definition.
-            user_id: UUID of the reading user initiating the fetch.
+            bank_id: Target bank ID.
+            question_id: Target question ID.
+            user_id: Authenticated user requesting data.
 
         Returns:
-            QuestionResponse: The complete question definition containing test evaluations and limits.
+            Hydrated question response with template code resolved from storage.
 
         Raises:
-            BankNotFoundError: If the target bank does not exist natively.
-            BankAccessDeniedError: If the user lacks permission to read the bank dependencies.
-            BankQuestionNotFoundError: If the specific question isn't structurally linked to the bank context.
+            BankNotFoundError: If bank does not exist.
+            BankAccessDeniedError: If user cannot read the bank.
+            BankQuestionNotFoundError: If question is not linked to the bank.
+            QuestionNotFoundError: If question no longer exists.
+            CodeStorageError: If template code retrieval fails.
         """
         bank = await self.repository.get_bank_or_raise(bank_id, load_relations=True)
         self.validator.check_read_bank(user_id=user_id, bank=bank)
@@ -173,85 +261,5 @@ class BankQuestionService:
             raise BankQuestionNotFoundError(str(bank_id), str(question_id))
 
         question = await self.question_repo.get_question_or_raise(question_id)
-        return QuestionResponse.model_validate(question)
-
-    @cache_delete(
-        key_builder=lambda self, source_bank_id, target_bank_id, *args, **kwargs: [
-            f"bank:{source_bank_id}",
-            f"bank:{target_bank_id}",
-            f"banks:questions:{source_bank_id}:*",
-            f"banks:questions:{target_bank_id}:*",
-        ]
-    )
-    async def clone_questions_to_bank(
-        self,
-        source_bank_id: UUID,
-        target_bank_id: UUID,
-        user_id: UUID,
-        question_ids: List[UUID] | None = None,
-        copy_all: bool = False,
-    ) -> int:
-        """
-        Clone questions from one bank to another.
-
-        Args:
-            source_bank_id: UUID of the bank to clone questions from.
-            target_bank_id: UUID of the bank to clone questions to.
-            user_id: UUID of the editing user initiating the clone.
-            question_ids: Optional list of specific question UUIDs to copy.
-            copy_all: If True, all questions from the source bank are copied.
-
-        Returns:
-            int: Number of questions copied into the target bank.
-
-        Raises:
-            BankNotFoundError: If either the source or target bank does not exist.
-            BankAccessDeniedError: If the user lacks permission to edit either bank.
-            BankQuestionAlreadyExistsError: If any of the questions to be copied already exist in the target bank.
-            QuestionNotFoundError: If any provided question ID does not exist in the source bank.
-        """
-        source_bank = await self.repository.get_bank_or_raise(
-            source_bank_id, load_relations=True
-        )
-        target_bank = await self.repository.get_bank_or_raise(
-            target_bank_id, load_relations=True
-        )
-
-        self.validator.check_read_bank(user_id=user_id, bank=source_bank)
-        self.validator.check_edit_bank(user_id=user_id, bank=target_bank)
-
-        BankQuestionValidator.validate_clone_questions(
-            source_bank_id, target_bank_id, question_ids, copy_all
-        )
-
-        if copy_all:
-            questions = await self.repository.get_all_question_entities_in_bank(
-                source_bank_id
-            )
-        else:
-            questions = await self.repository.get_question_entities_in_bank_by_ids(
-                source_bank_id, question_ids or []
-            )
-            if question_ids is None:
-                questions = []
-            elif len(questions) != len(question_ids):
-                raise QuestionNotFoundError(
-                    "One or more questions to clone were not found in the source bank."
-                )
-
-        new_questions = [
-            clone_question_to_create_data(question_data, user_id)
-            for question_data in questions
-        ]
-
-        created_questions = await self.question_repo.bulk_create_questions(
-            new_questions
-        )
-        new_ids = [question.id for question in created_questions]
-        await self.repository.add_questions_to_bank(
-            target_bank_id,
-            new_ids,
-            user_id,
-        )
-
-        return len(created_questions)
+        response = QuestionResponse.model_validate(question)
+        return await self._hydrate_question_template_codes(response)

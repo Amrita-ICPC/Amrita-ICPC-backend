@@ -74,11 +74,23 @@
 - FastAPI for HTTP endpoints.
 - SQLAlchemy ORM for persistence.
 - Pydantic schemas in `app/schema` for request/response models.
+- MinIO for storing code payloads through `CodeStorageService`.
 
 ### Architectural patterns to follow or avoid
 - Keep API layer thin: routing, auth/dependency wiring, and request/response shaping.
 - Move business logic to services in `app/service`.
 - Avoid database access directly in routers beyond dependency wiring.
+- Store large code/text payloads in object storage and persist only object keys in DB.
+
+## CodeStorageService usage (required)
+
+- Use `app/core/storage/code_storage.py` (`CodeStorageService`) for code payload storage.
+- Do not store raw source code, template code, stdout/stderr blobs directly in DB text columns when key columns exist.
+- Build deterministic object keys with `CodeStorageService.build_code_object_key(...)` in service layer.
+- Upload with `CodeStorageService.upload_code(...)` before persisting key fields.
+- Retrieve with `CodeStorageService.get_code(...)`/`get_code_bytes(...)` only where necessary.
+- Delete with `CodeStorageService.delete_code(...)` when data is hard-deleted.
+- Never log code contents or secrets; logging object keys and IDs is allowed.
 
 ### Security requirements and error handling approaches
 - Enforce auth in routers using dependencies (e.g., `get_current_user`).

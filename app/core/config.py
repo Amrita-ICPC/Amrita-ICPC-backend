@@ -57,6 +57,17 @@ class Config(BaseSettings):
 
     CACHE_ENABLED: Optional[bool] = Field(default=True, description="Cache enabled")
 
+    # MinIO configuration
+    MINIO_HOST: str = Field(default="localhost", description="MinIO host")
+    MINIO_PORT: int = Field(default=9000, description="MinIO API port")
+    MINIO_CONSOLE_PORT: int = Field(default=9001, description="MinIO console port")
+    MINIO_ACCESS_KEY: str = Field(default="minioadmin", description="MinIO access key")
+    MINIO_SECRET_KEY: str = Field(default="minioadmin", description="MinIO secret key")
+    MINIO_BUCKET_NAME: str = Field(
+        default="amrita-icpc", description="Default MinIO bucket name"
+    )
+    MINIO_SECURE: bool = Field(default=False, description="Use HTTPS for MinIO")
+
     # Log Configuration
     LOG_LEVEL: str = Field(default="INFO", description="Log level")
     LOG_FORMAT: str = Field(
