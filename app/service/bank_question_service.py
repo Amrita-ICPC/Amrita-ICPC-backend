@@ -8,6 +8,10 @@ from app.exceptions.bank import (
     BankQuestionNotFoundError,
 )
 from app.exceptions.question import CodeStorageError
+from app.mappers.bank_question import (
+    to_bank_question_response,
+    to_bank_question_summary_responses,
+)
 from app.repositories.bank import BankRepository
 from app.repositories.dto.pagination import PaginationParams
 from app.repositories.question import QuestionRepository
@@ -221,7 +225,7 @@ class BankQuestionService:
         pagination = PaginationParams(skip=skip, limit=limit)
         result = await self.repository.get_questions_in_bank(bank_id, pagination)
 
-        responses = [QuestionListSummaryResponse.from_question(q) for q in result.items]
+        responses = to_bank_question_summary_responses(result.items)
         return result.total, responses
 
     @cache_get(
@@ -261,5 +265,5 @@ class BankQuestionService:
             raise BankQuestionNotFoundError(str(bank_id), str(question_id))
 
         question = await self.question_repo.get_question_or_raise(question_id)
-        response = QuestionResponse.from_question(question)
+        response = to_bank_question_response(question)
         return await self._hydrate_question_template_codes(response)

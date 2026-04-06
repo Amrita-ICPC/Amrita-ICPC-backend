@@ -5,12 +5,18 @@ from app.core.cache.decorators import cache_delete, cache_get, cache_set
 from app.core.guards.contest import ContestOperationGuard
 from app.core.logger import logger
 from app.exceptions.contest import ContestNotFoundError, InvalidContestError
+from app.mappers.contest import (
+    apply_contest_updates,
+    build_contest_entity,
+    build_create_contest_dto,
+    build_update_contest_dto,
+    to_contest_response,
+    to_contest_summary_response,
+)
 from app.repositories.contest import ContestRepository
 from app.repositories.dto import (
     ContestFilters,
-    CreateContestData,
     PaginationParams,
-    UpdateContestData,
 )
 from app.repositories.user import UserRepository
 from app.schema.contest import (
@@ -105,28 +111,12 @@ class ContestService:
             contest.min_team_size, contest.max_team_size
         )
 
-        # Create contest data DTO
-        contest_data = CreateContestData(
-            name=contest.name,
-            description=contest.description,
-            image=contest.image,
-            is_public=contest.is_public,
-            start_time=contest.start_time,
-            end_time=contest.end_time,
-            registration_start=contest.registration_start,
-            registration_end=contest.registration_end,
-            max_teams=contest.max_teams,
-            min_team_size=contest.min_team_size,
-            max_team_size=contest.max_team_size,
-            rules=contest.rules,
-            scoring_type=contest.scoring_type,
-            team_approval_mode=contest.team_approval_mode,
-            created_by=created_by,
-        )
+        contest_data = build_create_contest_dto(contest, created_by)
+        contest_entity = build_contest_entity(contest_data)
 
         # Create contest via repository
-        db_contest = await self.repository.create_contest(contest_data)
-        return ContestResponse.model_validate(db_contest)
+        db_contest = await self.repository.create_contest(contest_entity)
+        return to_contest_response(db_contest)
 
     @cache_get(
         key_builder=lambda self,
@@ -159,7 +149,7 @@ class ContestService:
         # Check permissions
         await self.guard.check_read_contest(user_id=user_id, contest=contest)
 
-        return ContestResponse.model_validate(contest)
+        return to_contest_response(contest)
 
     @cache_get(
         key_builder=lambda self,
@@ -209,7 +199,7 @@ class ContestService:
         )
 
         return result.total, [
-            ContestSummaryResponse.model_validate(contest) for contest in result.items
+            to_contest_summary_response(contest) for contest in result.items
         ]
 
     @cache_delete(
@@ -288,29 +278,12 @@ class ContestService:
         )
         self.validator.validate_team_size_constraints(new_min_size, new_max_size)
 
-        # Create update data DTO with manual field mapping
-        update_data = UpdateContestData(
-            name=contest_data.name,
-            description=contest_data.description,
-            image=contest_data.image,
-            is_public=contest_data.is_public,
-            start_time=contest_data.start_time,
-            end_time=contest_data.end_time,
-            registration_start=contest_data.registration_start,
-            registration_end=contest_data.registration_end,
-            max_teams=contest_data.max_teams,
-            min_team_size=contest_data.min_team_size,
-            max_team_size=contest_data.max_team_size,
-            rules=contest_data.rules,
-            scoring_type=contest_data.scoring_type,
-            team_approval_mode=contest_data.team_approval_mode,
-        )
+        update_data = build_update_contest_dto(contest_data)
+        apply_contest_updates(contest, update_data)
 
         # Update contest via repository
-        updated_contest = await self.repository.update_contest(
-            contest, update_data, user_id
-        )
-        return ContestResponse.model_validate(updated_contest)
+        updated_contest = await self.repository.update_contest(contest, user_id)
+        return to_contest_response(updated_contest)
 
     @cache_delete(
         key_builder=lambda self, contest_id, user_id: [
@@ -338,7 +311,7 @@ class ContestService:
         # Check permissions
         await self.guard.check_manage_contest(user_id=user_id, contest=contest)
 
-        response = ContestResponse.model_validate(contest)
+        response = to_contest_response(contest)
         await self.repository.delete_contest(contest)
 
         return response

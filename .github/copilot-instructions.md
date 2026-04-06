@@ -17,6 +17,17 @@
 - Raise domain-specific exceptions (e.g., `TeamNotFoundError`) instead of exposing raw database errors.
 - Ensure repository methods are type-safe and return domain objects or DTOs.
 - Avoid direct SQLAlchemy queries in services or routers.
+- Repositories must be persistence-only: no schema-to-ORM or DTO-to-ORM mapping logic in repository methods.
+
+## Mapper Layer
+- Centralize DTO/Schema/ORM mapping in `app/mappers` modules.
+- Services should call mapper functions to:
+    - build repository DTOs from request schemas,
+    - build ORM entities from DTOs,
+    - apply update DTO values onto ORM entities,
+    - map ORM entities to response schemas.
+- Keep mapper functions pure and deterministic (no DB access, no side effects).
+- Prefer one mapper module per domain (e.g., `app/mappers/question.py`, `app/mappers/team.py`).
 
 ## Guards
 - Implement guards to centralize permission checks for operations.

@@ -10,10 +10,8 @@ from app.models.contest import Contest, ContestInstructor
 from app.models.user import User
 from app.repositories.dto import (
     ContestFilters,
-    CreateContestData,
     PaginatedResult,
     PaginationParams,
-    UpdateContestData,
 )
 from app.utils.enums import ContestStatus
 
@@ -200,7 +198,7 @@ class ContestRepository:
 
         return PaginatedResult(total=total, items=contests)
 
-    async def create_contest(self, contest_data: CreateContestData) -> Contest:
+    async def create_contest(self, contest: Contest) -> Contest:
         """
         Create a new contest in the database.
 
@@ -210,31 +208,12 @@ class ContestRepository:
         Returns:
             The created Contest object with ID and timestamps populated
         """
-        db_contest = Contest(
-            name=contest_data.name,
-            description=contest_data.description,
-            image=contest_data.image,
-            is_public=contest_data.is_public,
-            start_time=contest_data.start_time,
-            end_time=contest_data.end_time,
-            registration_start=contest_data.registration_start,
-            registration_end=contest_data.registration_end,
-            max_teams=contest_data.max_teams,
-            min_team_size=contest_data.min_team_size,
-            max_team_size=contest_data.max_team_size,
-            rules=contest_data.rules,
-            scoring_type=contest_data.scoring_type,
-            team_approval_mode=contest_data.team_approval_mode,
-            created_by=contest_data.created_by,
-        )
-        self.db.add(db_contest)
+        self.db.add(contest)
         await self.db.flush()
-        await self.db.refresh(db_contest)
-        return db_contest
+        await self.db.refresh(contest)
+        return contest
 
-    async def update_contest(
-        self, contest: Contest, update_data: UpdateContestData, user_id: UUID
-    ) -> Contest:
+    async def update_contest(self, contest: Contest, user_id: UUID) -> Contest:
         """
         Update an existing contest in the database.
 
@@ -246,12 +225,6 @@ class ContestRepository:
         Returns:
             The updated Contest object
         """
-        # Apply updates for all non-None fields
-        update_dict = update_data.__dict__
-        for field, value in update_dict.items():
-            if value is not None:
-                setattr(contest, field, value)
-
         contest.updated_by = user_id
         await self.db.flush()
         await self.db.refresh(contest)

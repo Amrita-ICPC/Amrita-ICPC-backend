@@ -31,7 +31,6 @@ from app.exceptions.team import (
     TeamAlreadyExistsError,
 )
 from app.exceptions.user import UserNotFoundError
-from app.repositories.team import CreateTeamData
 from app.schema.team import ContestTeamResponse, TeamCreate
 from app.utils.enums import TeamStatus
 
@@ -454,7 +453,7 @@ class TestCreateTeamRepositoryContract:
         team_data,
         user_id,
     ):
-        """Test that repository receives correctly mapped CreateTeamData object.
+        """Test that repository receives correctly mapped ORM entities.
 
         This validates the service-repository contract and ensures that
         SQLAlchemy changes won't break the service layer interface.
@@ -465,18 +464,12 @@ class TestCreateTeamRepositoryContract:
         with patch.object(ContestTeamResponse, "from_contest_team"):
             await team_service.create_team(contest_id, team_data, user_id)
 
-        mock_repository.create_team.assert_called_once_with(
-            CreateTeamData(
-                contest_id=contest_id,
-                created_by=user_id,
-                name=team_data.name,
-                description=team_data.description,
-                logo=team_data.logo,
-                leader_id=team_data.leader_id,
-                member_ids=team_data.member_ids,
-                status=team_data.status,
-            )
-        )
+        mock_repository.create_team.assert_called_once()
+        call_kwargs = mock_repository.create_team.call_args.kwargs
+        assert call_kwargs["team"].name == team_data.name
+        assert call_kwargs["contest_team"].contest_id == contest_id
+        assert call_kwargs["contest_team"].team_status == team_data.status
+        assert len(call_kwargs["team_users"]) == len(team_data.member_ids)
 
     @pytest.mark.asyncio
     async def test_repository_never_called_when_validation_fails(

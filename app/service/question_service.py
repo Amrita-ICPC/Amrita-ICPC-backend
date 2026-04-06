@@ -13,11 +13,17 @@ from app.exceptions.question import (
     InvalidQuestionError,
     Judge0ServiceError,
 )
+from app.mappers.question import (
+    apply_question_updates,
+    build_create_question_dto,
+    build_create_testcase_dtos,
+    build_question_entity,
+    build_template_dto,
+    build_update_question_dto,
+    build_update_testcase_dtos,
+)
 from app.repositories.dto.question import (
-    CreateQuestionData,
     CreateQuestionTemplateData,
-    CreateQuestionTestCaseData,
-    UpdateQuestionData,
 )
 from app.repositories.language import LanguageRepository
 from app.repositories.question import QuestionRepository
@@ -305,17 +311,7 @@ class QuestionService:
                 template_language_ids=[t.language_id for t in question_data.templates],
             )
 
-            testcase_dtos: list[CreateQuestionTestCaseData] = []
-            for index, testcase in enumerate(question_data.testcases):
-                testcase_dtos.append(
-                    CreateQuestionTestCaseData(
-                        input=testcase.input,
-                        output=testcase.output,
-                        is_hidden=testcase.is_hidden,
-                        weight=testcase.weight,
-                        order=testcase.order if testcase.order is not None else index,
-                    )
-                )
+            testcase_dtos = build_create_testcase_dtos(question_data.testcases)
 
             template_dtos: list[CreateQuestionTemplateData] = []
             for template in question_data.templates:
@@ -341,30 +337,23 @@ class QuestionService:
                     uploaded_keys.append(solution_object_key)
                     solution_code_value = solution_object_key
 
-                template_dtos.append(
-                    CreateQuestionTemplateData(
-                        id=template_id,
-                        language_id=template.language_id,
-                        starter_code=template.starter_code,
-                        driver_code=template.driver_code,
-                        solution_code=solution_code_value,
-                    )
+                mapped_template_dto = build_template_dto(
+                    template_id=template_id,
+                    template=template,
+                    solution_code_value=solution_code_value,
                 )
+                template_dtos.append(mapped_template_dto)
 
-            create_dto = CreateQuestionData(
-                id=question_id,
-                question_text=question_data.question_text,
-                difficulty=question_data.difficulty,
-                allowed_language_ids=question_data.allowed_languages,
-                tag_ids=question_data.tag_ids,
-                testcases=testcase_dtos,
-                templates=template_dtos,
-                time_limit_ms=question_data.time_limit_ms,
-                memory_limit_mb=question_data.memory_limit_mb,
+            create_dto = build_create_question_dto(
+                question_data,
+                question_id=question_id,
                 created_by=user_id,
+                testcase_dtos=testcase_dtos,
+                template_dtos=template_dtos,
             )
+            question_entity = build_question_entity(create_dto)
 
-            question = await self.repository.create_question(create_dto)
+            question = await self.repository.create_question(question_entity)
             response = QuestionResponse.from_question(question)
             return await self._hydrate_question_template_codes(response)
         except Exception:
@@ -466,21 +455,7 @@ class QuestionService:
                 ],
             )
 
-            testcase_dtos: list[CreateQuestionTestCaseData] | None = None
-            if update_data.testcases is not None:
-                testcase_dtos = []
-                for index, testcase in enumerate(update_data.testcases):
-                    testcase_dtos.append(
-                        CreateQuestionTestCaseData(
-                            input=testcase.input,
-                            output=testcase.output,
-                            is_hidden=testcase.is_hidden,
-                            weight=testcase.weight,
-                            order=testcase.order
-                            if testcase.order is not None
-                            else index,
-                        )
-                    )
+            testcase_dtos = build_update_testcase_dtos(update_data.testcases)
 
             template_dtos: list[CreateQuestionTemplateData] | None = None
             if update_data.templates is not None:
@@ -513,30 +488,21 @@ class QuestionService:
                         uploaded_keys.append(solution_object_key)
                         solution_code_value = solution_object_key
 
-                    template_dtos.append(
-                        CreateQuestionTemplateData(
-                            id=template_id,
-                            language_id=template.language_id,
-                            starter_code=template.starter_code,
-                            driver_code=template.driver_code,
-                            solution_code=solution_code_value,
-                        )
+                    mapped_template_dto = build_template_dto(
+                        template_id=template_id,
+                        template=template,
+                        solution_code_value=solution_code_value,
                     )
+                    template_dtos.append(mapped_template_dto)
 
-            update_dto = UpdateQuestionData(
-                question_text=update_data.question_text,
-                difficulty=update_data.difficulty,
-                allowed_languages=update_data.allowed_languages,
-                tag_ids=update_data.tag_ids,
-                testcases=testcase_dtos,
-                templates=template_dtos,
-                time_limit_ms=update_data.time_limit_ms,
-                memory_limit_mb=update_data.memory_limit_mb,
+            update_dto = build_update_question_dto(
+                update_data,
+                testcase_dtos=testcase_dtos,
+                template_dtos=template_dtos,
             )
+            apply_question_updates(question, update_dto)
 
-            updated_question = await self.repository.update_question(
-                question, update_dto
-            )
+            updated_question = await self.repository.update_question(question)
 
             for key in old_template_keys_to_delete:
                 try:

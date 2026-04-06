@@ -11,13 +11,11 @@ from app.models.contest import Contest, ContestTeam, ContestTeamProgress
 from app.models.team import Team, TeamUser
 from app.models.user import User
 from app.repositories.dto import (
-    CreateTeamData,
     PaginatedResult,
     PaginationParams,
     TeamFilters,
-    UpdateTeamData,
 )
-from app.utils.enums import TeamApprovalMode, TeamApprovalStatus, UserRole
+from app.utils.enums import TeamApprovalStatus
 
 
 class TeamRepository:
@@ -442,7 +440,14 @@ class TeamRepository:
 
         return contest_team
 
-    async def create_team(self, team_data: CreateTeamData) -> ContestTeam:
+    async def create_team(
+        self,
+        *,
+        team: Team,
+        contest_team: ContestTeam,
+        progress: ContestTeamProgress,
+        team_users: list[TeamUser],
+    ) -> ContestTeam:
         """
         Create a new team in the database.
 
@@ -452,44 +457,10 @@ class TeamRepository:
         Returns:
             The created ContestTeam object with its associated Team data loaded
         """
-        team = Team(
-            name=team_data.name,
-            description=team_data.description,
-            logo=team_data.logo,
-            leader_id=team_data.leader_id,
-            created_by=team_data.created_by,
-        )
         self.db.add(team)
-        await self.db.flush()  # Flush to get the team ID
-
-        contest = await self.get_contest_or_raise(team_data.contest_id)
-        creator = await self.get_user_or_raise(team_data.created_by)
-
-        approval_status = TeamApprovalStatus.APPROVED
-        if (
-            contest.team_approval_mode == TeamApprovalMode.INSTRUCTOR_REVIEW
-            and creator.role != UserRole.instructor
-        ):
-            approval_status = TeamApprovalStatus.WAITING
-
-        contest_team = ContestTeam(
-            contest_id=team_data.contest_id,
-            team_id=team.id,
-            team_status=team_data.status,
-            approval_status=approval_status,
-        )
         self.db.add(contest_team)
-
-        progress = ContestTeamProgress(
-            contest_id=team_data.contest_id,
-            team_id=team.id,
-        )
-
         self.db.add(progress)
-        self.db.add_all(
-            TeamUser(team_id=team.id, user_id=member_id)
-            for member_id in team_data.member_ids
-        )
+        self.db.add_all(team_users)
 
         await self.db.flush()  # Flush to save all changes and get IDs
 
@@ -498,17 +469,15 @@ class TeamRepository:
             .options(joinedload(ContestTeam.team))
             .filter(
                 ContestTeam.team_id == team.id,
-                ContestTeam.contest_id == team_data.contest_id,
+                ContestTeam.contest_id == contest_team.contest_id,
             )
         )
         created_contest_team: ContestTeam | None = result.scalar_one_or_none()
         if not created_contest_team:
-            raise TeamNotFoundError(str(team.id), str(team_data.contest_id))
+            raise TeamNotFoundError(str(team.id), str(contest_team.contest_id))
         return created_contest_team
 
-    async def update_team(
-        self, team_data: UpdateTeamData, team: Team, contest_team: ContestTeam
-    ) -> ContestTeam:
+    async def update_team(self, team: Team, contest_team: ContestTeam) -> ContestTeam:
         """
         Update an existing team in the database.
 
@@ -518,23 +487,6 @@ class TeamRepository:
         Returns:
             The updated ContestTeam object with its associated Team data loaded
         """
-        if team_data.name is not None and team_data.name != team.name:
-            team.name = team_data.name
-        if (
-            team_data.description is not None
-            and team_data.description != team.description
-        ):
-            team.description = team_data.description
-        if team_data.logo is not None and team_data.logo != team.logo:
-            team.logo = team_data.logo
-        if (
-            team_data.status is not None
-            and team_data.status != contest_team.team_status
-        ):
-            contest_team.team_status = team_data.status
-        if team_data.leader_id is not None and team_data.leader_id != team.leader_id:
-            team.leader_id = team_data.leader_id
-
         await self.db.flush()  # Flush to save changes
 
         result = await self.db.execute(

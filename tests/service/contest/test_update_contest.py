@@ -291,8 +291,10 @@ class TestUpdateContestRepositoryContract:
         # Verify repository was called
         mock_contest_repository.update_contest.assert_called_once()
         call_args = mock_contest_repository.update_contest.call_args
-        update_data = call_args[0][1]  # Second argument is update_data
-        assert update_data.name == contest_update_data.name
+        contest_arg = call_args[0][0]
+        user_id_arg = call_args[0][1]
+        assert contest_arg.name == contest_update_data.name
+        assert user_id_arg == user_id
 
     @pytest.mark.asyncio
     async def test_repository_never_called_when_validation_fails(

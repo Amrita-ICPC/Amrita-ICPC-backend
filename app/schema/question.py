@@ -74,7 +74,7 @@ class QuestionTestCaseResponse(BaseModel):
     output: str
     is_hidden: bool
     weight: int
-    order: int
+    order: int | None
 
 
 class QuestionTemplateResponse(BaseModel):
@@ -168,7 +168,6 @@ class QuestionListSummaryResponse(BaseModel):
     allowed_languages: List[str] = Field(default_factory=list)
     time_limit_ms: int = Field(..., gt=0, description="Time limit in milliseconds")
     memory_limit_mb: int = Field(..., gt=0, description="Memory limit in megabytes")
-    testcases: List[QuestionTestCaseResponse] = Field(default_factory=list)
     tag_ids: List[UUID] = Field(default_factory=list)
     testcase_count: int = Field(0, description="Number of testcases")
     created_by: UUID
@@ -191,16 +190,9 @@ class QuestionListSummaryResponse(BaseModel):
                 if isinstance(name, str) and name:
                     language_names.append(name)
 
-        testcase_items = [
-            QuestionTestCaseResponse(
-                input=testcase.input,
-                output=testcase.output,
-                is_hidden=testcase.is_hidden,
-                weight=testcase.weight,
-                order=testcase.order,
-            )
-            for testcase in (getattr(question, "testcases", []) or [])
-        ]
+        testcase_count = getattr(question, "testcase_count", None)
+        if testcase_count is None:
+            testcase_count = len(getattr(question, "testcases", []) or [])
 
         tag_ids = [
             question_tag.tag_id
@@ -214,9 +206,8 @@ class QuestionListSummaryResponse(BaseModel):
             time_limit_ms=question.time_limit_ms,
             memory_limit_mb=question.memory_limit_mb,
             allowed_languages=list(dict.fromkeys(language_names)),
-            testcases=testcase_items,
             tag_ids=tag_ids,
-            testcase_count=len(testcase_items),
+            testcase_count=testcase_count,
             created_by=question.created_by,
             created_at=question.created_at,
             updated_at=question.updated_at,

@@ -4,8 +4,18 @@ from uuid import UUID
 from app.core.cache.decorators import cache_delete, cache_get, cache_set
 from app.core.guards.team import TeamOperationGuard
 from app.exceptions.team import ApprovalNotAllowedError
+from app.mappers.team import (
+    apply_team_updates,
+    build_create_team_dto,
+    build_leader_update_dto,
+    build_team_creation_entities,
+    build_update_team_dto,
+    to_contest_team_response,
+    to_contest_team_response_list,
+    to_team_member_responses,
+)
 from app.repositories.dto import PaginationParams, TeamFilters
-from app.repositories.team import CreateTeamData, TeamRepository, UpdateTeamData
+from app.repositories.team import TeamRepository
 from app.schema.team import (
     ContestTeamResponse,
     TeamCreate,
@@ -145,20 +155,21 @@ class TeamService:
             team_data.leader_id, team_data.member_ids, team_data.name
         )
 
-        # Convert DTO to repository data object
-        create_team_data = CreateTeamData(
-            contest_id=contest_id,
-            created_by=created_by,
-            name=team_data.name,
-            description=team_data.description,
-            logo=team_data.logo,
-            leader_id=team_data.leader_id,
-            member_ids=team_data.member_ids,
-            status=team_data.status,
+        create_team_data = build_create_team_dto(contest_id, team_data, created_by)
+        creator = await self.repository.get_user_or_raise(created_by)
+        team, contest_team, progress, team_users = build_team_creation_entities(
+            create_team_data,
+            contest=contest,
+            creator_role=creator.role,
         )
 
-        contest_team = await self.repository.create_team(create_team_data)
-        return ContestTeamResponse.from_contest_team(contest_team)
+        created_contest_team = await self.repository.create_team(
+            team=team,
+            contest_team=contest_team,
+            progress=progress,
+            team_users=team_users,
+        )
+        return to_contest_team_response(created_contest_team)
 
     @cache_set(
         key_builder=lambda result, **kwargs: get_team_key(result.id), from_result=True
@@ -248,18 +259,13 @@ class TeamService:
             self.validator.validate_team_size(
                 team_member_count, contest, team_data.status
             )
-        updated_contest_team = await self.repository.update_team(
-            UpdateTeamData(
-                team_id=team_id,
-                name=team_data.name,
-                description=team_data.description,
-                logo=team_data.logo,
-                status=team_data.status,
-            ),
-            team,
-            contest_team,
+        apply_team_updates(
+            team_data=build_update_team_dto(team_id, team_data),
+            team=team,
+            contest_team=contest_team,
         )
-        return ContestTeamResponse.from_contest_team(updated_contest_team)
+        updated_contest_team = await self.repository.update_team(team, contest_team)
+        return to_contest_team_response(updated_contest_team)
 
     @cache_delete(
         key_builder=lambda self, contest_id, team_id, *args, **kwargs: [
@@ -294,13 +300,13 @@ class TeamService:
         )
 
         if contest_team.approval_status == TeamApprovalStatus.APPROVED:
-            return ContestTeamResponse.from_contest_team(contest_team)
+            return to_contest_team_response(contest_team)
 
         if contest.team_approval_mode == TeamApprovalMode.INSTRUCTOR_REVIEW:
             updated_team = await self.repository.update_team_approval_status(
                 contest_team, TeamApprovalStatus.APPROVED
             )
-            return ContestTeamResponse.from_contest_team(updated_team)
+            return to_contest_team_response(updated_team)
 
         raise ApprovalNotAllowedError(str(team_id), str(contest_id))
 
@@ -365,9 +371,7 @@ class TeamService:
             contest_id, filters, pagination
         )
 
-        return result.total, [
-            ContestTeamResponse.from_contest_team(ct) for ct in result.items
-        ]
+        return result.total, to_contest_team_response_list(result.items)
 
     @cache_get(
         key_builder=lambda self,
@@ -411,7 +415,7 @@ class TeamService:
         # Delegate to repository
         contest_team = await self.repository.get_team_by_id(contest_id, team_id)
 
-        return ContestTeamResponse.from_contest_team(contest_team)
+        return to_contest_team_response(contest_team)
 
     @cache_delete(
         key_builder=lambda self, contest_id, team_id, *args, **kwargs: [
@@ -579,10 +583,9 @@ class TeamService:
         )
 
         # Update team leader (always call to handle leader changes)
-        update_data = UpdateTeamData(
-            team_id=team_id, leader_id=member_data.new_leader_id
-        )
-        await self.repository.update_team(update_data, team, contest_team)
+        update_data = build_leader_update_dto(team_id, member_data.new_leader_id)
+        apply_team_updates(team_data=update_data, team=team, contest_team=contest_team)
+        await self.repository.update_team(team, contest_team)
         return cast(
             tuple[int, list[TeamMemberResponse]],
             await self.get_team_members(contest_id, team_id, updated_by),
@@ -650,16 +653,7 @@ class TeamService:
         )
 
         # Transform to response objects
-        members: list[TeamMemberResponse] = []
-        for user, _ in results:
-            member = TeamMemberResponse(
-                id=user.id,
-                user_id=user.user_id,
-                name=user.name,
-                email=user.email,
-                role=user.role.value,
-                is_leader=(team.leader_id == user.id),
-            )
-            members.append(member)
+        users = [user for user, _ in results]
+        members = to_team_member_responses(users, team=team)
 
         return total, members
