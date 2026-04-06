@@ -5,6 +5,13 @@ from uuid import UUID
 from app.utils.enums import ContestStatus, TeamApprovalMode
 
 
+class _UnsetType:
+    """Sentinel type used to represent fields omitted from patch payloads."""
+
+
+UNSET = _UnsetType()
+
+
 @dataclass
 class ContestFilters:
     """Filters for querying contests."""
@@ -51,17 +58,17 @@ class UpdateContestData:
     separation of concerns. All fields are optional for partial updates.
     """
 
-    name: str | None = None
-    description: str | None = None
-    image: str | None = None
-    is_public: bool | None = None
-    start_time: datetime | None = None
-    end_time: datetime | None = None
-    registration_start: datetime | None = None
-    registration_end: datetime | None = None
-    max_teams: int | None = None
-    min_team_size: int | None = None
-    max_team_size: int | None = None
-    rules: str | None = None
-    scoring_type: str | None = None
-    team_approval_mode: TeamApprovalMode | None = None
+    name: str | None | _UnsetType = UNSET
+    description: str | None | _UnsetType = UNSET
+    image: str | None | _UnsetType = UNSET
+    is_public: bool | None | _UnsetType = UNSET
+    start_time: datetime | None | _UnsetType = UNSET
+    end_time: datetime | None | _UnsetType = UNSET
+    registration_start: datetime | None | _UnsetType = UNSET
+    registration_end: datetime | None | _UnsetType = UNSET
+    max_teams: int | None | _UnsetType = UNSET
+    min_team_size: int | None | _UnsetType = UNSET
+    max_team_size: int | None | _UnsetType = UNSET
+    rules: str | None | _UnsetType = UNSET
+    scoring_type: str | None | _UnsetType = UNSET
+    team_approval_mode: TeamApprovalMode | None | _UnsetType = UNSET

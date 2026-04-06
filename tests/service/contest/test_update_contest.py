@@ -96,6 +96,48 @@ class TestUpdateContestSuccess:
 
         mock_contest_repository.update_contest.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_explicit_null_description_clears_field(
+        self,
+        contest_service,
+        mock_contest_repository,
+        mock_contest,
+        setup_valid_contest,
+        user_id,
+    ):
+        """Test that explicitly passing description=None clears description."""
+        update_data = ContestUpdate(description=None)
+        updated_contest = MagicMock()
+        mock_contest_repository.update_contest.return_value = updated_contest
+
+        with patch.object(ContestResponse, "model_validate"):
+            await contest_service.update_contest(mock_contest.id, update_data, user_id)
+
+        mock_contest_repository.update_contest.assert_called_once()
+        contest_arg = mock_contest_repository.update_contest.call_args[0][0]
+        assert contest_arg.description is None
+
+    @pytest.mark.asyncio
+    async def test_explicit_null_registration_end_clears_field(
+        self,
+        contest_service,
+        mock_contest_repository,
+        mock_contest,
+        setup_valid_contest,
+        user_id,
+    ):
+        """Test that explicitly passing registration_end=None clears registration end."""
+        update_data = ContestUpdate(registration_end=None)
+        updated_contest = MagicMock()
+        mock_contest_repository.update_contest.return_value = updated_contest
+
+        with patch.object(ContestResponse, "model_validate"):
+            await contest_service.update_contest(mock_contest.id, update_data, user_id)
+
+        mock_contest_repository.update_contest.assert_called_once()
+        contest_arg = mock_contest_repository.update_contest.call_args[0][0]
+        assert contest_arg.registration_end is None
+
 
 class TestUpdateContestContestValidation:
     """Test contest existence validation."""

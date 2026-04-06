@@ -1,4 +1,5 @@
-from typing import List
+from datetime import datetime
+from typing import List, cast
 from uuid import UUID
 
 from app.core.cache.decorators import cache_delete, cache_get, cache_set
@@ -18,6 +19,7 @@ from app.repositories.dto import (
     ContestFilters,
     PaginationParams,
 )
+from app.repositories.dto.contest import UNSET
 from app.repositories.user import UserRepository
 from app.schema.contest import (
     ContestCreate,
@@ -234,51 +236,62 @@ class ContestService:
         # Check permissions
         await self.guard.check_manage_contest(user_id=user_id, contest=contest)
 
+        update_data = build_update_contest_dto(contest_data)
+
         # Validate dates if being updated
         new_start = (
-            contest_data.start_time
-            if contest_data.start_time is not None
+            update_data.start_time
+            if update_data.start_time is not UNSET
             else contest.start_time
         )
         new_end = (
-            contest_data.end_time
-            if contest_data.end_time is not None
+            update_data.end_time
+            if update_data.end_time is not UNSET
             else contest.end_time
         )
         new_reg_start = (
-            contest_data.registration_start
-            if contest_data.registration_start is not None
+            update_data.registration_start
+            if update_data.registration_start is not UNSET
             else contest.registration_start
         )
         new_reg_end = (
-            contest_data.registration_end
-            if contest_data.registration_end is not None
+            update_data.registration_end
+            if update_data.registration_end is not UNSET
             else contest.registration_end
         )
         new_min_size = (
-            contest_data.min_team_size
-            if contest_data.min_team_size is not None
+            update_data.min_team_size
+            if update_data.min_team_size is not UNSET
             else contest.min_team_size
         )
         new_max_size = (
-            contest_data.max_team_size
-            if contest_data.max_team_size is not None
+            update_data.max_team_size
+            if update_data.max_team_size is not UNSET
             else contest.max_team_size
         )
         if new_start is None:
             raise InvalidContestError("start_time cannot be None")
         if new_end is None:
             raise InvalidContestError("end_time cannot be None")
-        if new_reg_start is None or new_reg_end is None:
-            raise InvalidContestError("registration dates required")
+        if new_min_size is None:
+            raise InvalidContestError("min_team_size cannot be None")
+        if new_max_size is None:
+            raise InvalidContestError("max_team_size cannot be None")
 
-        self.validator.validate_contest_dates(new_start, new_end)
-        self.validator.validate_registration_dates(
-            new_reg_start, new_reg_end, new_start
+        validated_start = cast(datetime, new_start)
+        validated_end = cast(datetime, new_end)
+
+        self.validator.validate_contest_dates(validated_start, validated_end)
+        if new_reg_start is not None and new_reg_end is not None:
+            self.validator.validate_registration_dates(
+                cast(datetime, new_reg_start),
+                cast(datetime, new_reg_end),
+                validated_start,
+            )
+        self.validator.validate_team_size_constraints(
+            cast(int, new_min_size), cast(int, new_max_size)
         )
-        self.validator.validate_team_size_constraints(new_min_size, new_max_size)
 
-        update_data = build_update_contest_dto(contest_data)
         apply_contest_updates(contest, update_data)
 
         # Update contest via repository

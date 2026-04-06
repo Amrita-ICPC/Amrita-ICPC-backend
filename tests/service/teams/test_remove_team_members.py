@@ -201,9 +201,7 @@ class TestRemoveTeamMemberSuccess:
         team_id = uuid4()
         leader_id = uuid4()
         member_to_remove = uuid4()
-        member_data = TeamMemberRemove(
-            member_ids=[member_to_remove], new_leader_id=None
-        )
+        member_data = TeamMemberRemove(member_ids=[member_to_remove])
 
         mock_team.leader_id = leader_id
         mock_team.team_status = TeamStatus.DRAFT

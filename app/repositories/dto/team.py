@@ -4,6 +4,13 @@ from uuid import UUID
 from app.utils.enums import TeamStatus
 
 
+class _UnsetType:
+    """Sentinel type for omitted patch fields."""
+
+
+UNSET = _UnsetType()
+
+
 @dataclass
 class CreateTeamData:
     """
@@ -39,7 +46,7 @@ class UpdateTeamData:
     description: str | None = None
     logo: str | None = None
     status: TeamStatus | None = None
-    leader_id: UUID | None = None
+    leader_id: UUID | None | _UnsetType = UNSET
 
 
 @dataclass
