@@ -1,13 +1,14 @@
-from typing import Any
+from collections.abc import Mapping, Sequence
 
 from app.exceptions.question import InvalidQuestionError
+from app.repositories.language import LanguageRepository
 
 
 class QuestionValidator:
     """Validator for question business rules and constraints."""
 
     @staticmethod
-    def validate_testcases_format(testcases: list[dict[str, Any]]) -> None:
+    def validate_testcases_format(testcases: Sequence[object]) -> None:
         """
         Validates the format of testcases to ensure they contain required fields.
 
@@ -21,19 +22,23 @@ class QuestionValidator:
             raise InvalidQuestionError("At least one testcase is required")
 
         for i, tc in enumerate(testcases):
-            if not isinstance(tc, dict):
+            if isinstance(tc, Mapping):
+                testcase = tc
+            elif hasattr(tc, "model_dump"):
+                testcase = tc.model_dump()
+            else:
                 raise InvalidQuestionError(f"Testcase at index {i} must be an object")
-            if "input" not in tc:
+            if "input" not in testcase:
                 raise InvalidQuestionError(
                     f"Testcase at index {i} missing 'input' field"
                 )
             # We assume output can be optional or required depending on the judging logic,
             # but usually it's required for standard ICPC questions. We'll enforce it here.
-            if "output" not in tc:
+            if "output" not in testcase:
                 raise InvalidQuestionError(
                     f"Testcase at index {i} missing 'output' field"
                 )
-            if "is_hidden" not in tc:
+            if "is_hidden" not in testcase:
                 raise InvalidQuestionError(
                     f"Testcase at index {i} missing 'is_hidden' field"
                 )
@@ -56,7 +61,7 @@ class QuestionValidator:
             raise InvalidQuestionError("Memory limit must be greater than 0 MB")
 
     @staticmethod
-    def validate_allowed_languages(languages: list[str] | None) -> None:
+    def validate_allowed_languages(languages: list[int] | None) -> None:
         """
         Validates the allowed languages list.
 
@@ -69,4 +74,30 @@ class QuestionValidator:
         if languages is not None and not languages:
             raise InvalidQuestionError(
                 "At least one allowed language must be specified"
+            )
+
+    @staticmethod
+    async def validate_platform_languages_exist(
+        language_repository: LanguageRepository,
+        *,
+        allowed_language_ids: list[int],
+        template_language_ids: list[int],
+    ) -> None:
+        """Validate that all referenced language IDs exist in platform languages."""
+        all_requested_ids = set(allowed_language_ids) | set(template_language_ids)
+        existing_ids = await language_repository.get_existing_ids(all_requested_ids)
+        missing_allowed_ids = sorted(set(allowed_language_ids) - existing_ids)
+        if missing_allowed_ids:
+            missing = ", ".join(str(language_id) for language_id in missing_allowed_ids)
+            raise InvalidQuestionError(
+                f"Allowed language IDs are not configured in platform languages: {missing}"
+            )
+
+        missing_template_ids = sorted(set(template_language_ids) - existing_ids)
+        if missing_template_ids:
+            missing = ", ".join(
+                str(language_id) for language_id in missing_template_ids
+            )
+            raise InvalidQuestionError(
+                f"Template language IDs are not configured in platform languages: {missing}"
             )

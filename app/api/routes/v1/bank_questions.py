@@ -7,9 +7,10 @@ from app.auth.dependencies import can_read, can_update, get_current_user_id
 from app.core.clients.database import get_db
 from app.core.logger import logger
 from app.core.response import create_api_response
+from app.core.storage import CodeStorageService
 from app.repositories.bank import BankRepository
 from app.repositories.question import QuestionRepository
-from app.schema.bank import BankQuestionBulk, BankQuestionCopyRequest
+from app.schema.bank import BankQuestionBulk
 from app.schema.base import PaginationResponse
 from app.service.bank_question_service import BankQuestionService
 from app.validators.bank import BankValidator
@@ -20,11 +21,22 @@ router = APIRouter()
 def get_bank_question_service(
     db: AsyncSession = Depends(get_db),
 ) -> BankQuestionService:
+    """Build BankQuestionService with request-scoped dependencies.
+
+    Args:
+        db: Async database session injected by FastAPI.
+
+    Returns:
+        Configured BankQuestionService instance.
+    """
     repository = BankRepository(db)
     question_repo = QuestionRepository(db)
     validator = BankValidator()
     return BankQuestionService(
-        repository=repository, question_repo=question_repo, validator=validator
+        repository=repository,
+        question_repo=question_repo,
+        validator=validator,
+        code_storage_service=CodeStorageService(),
     )
 
 
@@ -40,24 +52,23 @@ async def add_questions_to_bank(
     user_id: UUID = Depends(get_current_user_id),
     service: BankQuestionService = Depends(get_bank_question_service),
 ):
-    """Link multiple existing questions to a bank.
-
-    Validates ownership or edit permissions before dynamically mapping a batch
-    of distinct questions natively into the target bank's domain.
+    """Link existing questions to a bank.
 
     Args:
-        request: The FastAPI execution request context.
-        bank_id: Primary UUID targeting the active Bank.
-        payload: The JSON representation containing target associative array values.
-        user_id: Unpacked authenticated UUID from authorization token.
-        service: Injected core BankQuestionService layer handling validations.
+        request: FastAPI request object.
+        bank_id: Target bank ID.
+        payload: Bulk question ID payload.
+        user_id: Authenticated user ID.
+        service: Injected BankQuestionService.
 
     Returns:
-        Standard structured APIResponse marking operations successfully complete natively.
+        Success API response.
 
     Raises:
-        BankAccessDeniedError: User fails permission constraint testing natively.
-        BankQuestionAlreadyExistsError: Overlapping target arrays encountered.
+        BankNotFoundError: If bank does not exist.
+        BankAccessDeniedError: If user lacks edit permission.
+        QuestionNotFoundError: If any question does not exist.
+        BankQuestionAlreadyExistsError: If any association already exists.
     """
     await service.add_questions_to_bank(bank_id, payload.question_ids, user_id)
     logger.info(f"Questions added to bank {bank_id} by user {user_id}")
@@ -80,91 +91,27 @@ async def remove_questions_from_bank(
     user_id: UUID = Depends(get_current_user_id),
     service: BankQuestionService = Depends(get_bank_question_service),
 ):
-    """Remove multiple linked questions from a bank.
-
-    Validates edit permissions before natively severing the structural associative relationship
-    between the provided array endpoints cleanly from the database layer.
+    """Unlink questions from a bank.
 
     Args:
-        request: The FastAPI execution request context.
-        bank_id: Primary UUID targeting the active Bank.
-        payload: The JSON representation containing targets mapped to unlink.
-        user_id: Unpacked authenticated UUID from authorization token.
-        service: Injected core BankQuestionService layer handling checks.
+        request: FastAPI request object.
+        bank_id: Target bank ID.
+        payload: Bulk question ID payload.
+        user_id: Authenticated user ID.
+        service: Injected BankQuestionService.
 
     Returns:
-        Standard structured APIResponse confirming removal statuses accurately.
+        Success API response.
 
     Raises:
-        BankAccessDeniedError: User fails requisite explicit permission bounds checking natively.
-        BankQuestionNotFoundError: Encountering subsets of question definitions unmapped locally.
+        BankNotFoundError: If bank does not exist.
+        BankAccessDeniedError: If user lacks edit permission.
+        BankQuestionNotFoundError: If any association does not exist.
     """
     await service.remove_questions_from_bank(bank_id, payload.question_ids, user_id)
     logger.info(f"Questions removed from bank {bank_id} by user {user_id}")
     return create_api_response(
         request, message="Questions removed from bank successfully"
-    )
-
-
-@router.post(
-    "/{source_bank_id}/questions/copy",
-    status_code=status.HTTP_201_CREATED,
-    dependencies=[can_update("banks"), can_read("banks")],
-)
-async def copy_questions_to_bank(
-    request: Request,
-    source_bank_id: UUID,
-    payload: BankQuestionCopyRequest,
-    user_id: UUID = Depends(get_current_user_id),
-    service: BankQuestionService = Depends(get_bank_question_service),
-):
-    """Copy questions from one bank to another.
-
-    Validates edit permissions before cloning the selected or complete source bank
-    question set into the target bank.
-
-    Args:
-        request: The FastAPI execution request context.
-        source_bank_id: Primary UUID targeting the source Bank.
-        payload: Request body containing the target bank and copy options.
-        user_id: Unpacked authenticated UUID from authorization token.
-        service: Injected BankQuestionService handling cloning behavior.
-
-    Returns:
-        Standard structured APIResponse confirming the copy operation with counts and
-        source/target context.
-
-    Raises:
-        BankNotFoundError: If the source or target bank does not exist.
-        BankAccessDeniedError: If the user cannot read the source or edit the target bank.
-        BankQuestionAlreadyExistsError: If questions already exist in the target bank.
-        QuestionNotFoundError: If selected questions are missing from the source bank.
-    """
-    copied_count = await service.clone_questions_to_bank(
-        source_bank_id=source_bank_id,
-        target_bank_id=payload.target_bank_id,
-        user_id=user_id,
-        question_ids=payload.question_ids,
-        copy_all=payload.copy_all,
-    )
-    copied_ids = payload.question_ids if payload.question_ids is not None else []
-    logger.info(
-        f"{copied_count} questions copied from bank {source_bank_id} to bank {payload.target_bank_id} by user {user_id}"
-    )
-    return create_api_response(
-        request,
-        data={
-            "source_bank_id": source_bank_id,
-            "target_bank_id": payload.target_bank_id,
-            "copied_count": copied_count,
-            "copy_all": payload.copy_all,
-            "question_ids": copied_ids,
-        },
-        message=(
-            f"Copied {copied_count} question(s) from bank {source_bank_id} "
-            f"to bank {payload.target_bank_id}"
-        ),
-        status_code=status.HTTP_201_CREATED,
     )
 
 
@@ -181,24 +128,22 @@ async def get_bank_questions(
     user_id: UUID = Depends(get_current_user_id),
     service: BankQuestionService = Depends(get_bank_question_service),
 ):
-    """Retrieve a summary list of questions associated with a bank.
-
-    Validates read capabilities before streaming paginated results explicitly mapping
-    into native JSON arrays across target bank sets.
+    """List paginated question summaries linked to a bank.
 
     Args:
-        request: The FastAPI execution context.
-        bank_id: Primary UUID targeting the active Bank.
-        skip: Standard numerical subset offset slice.
-        limit: Max depth returned native rows.
-        user_id: Intercepted authorization token mapping mapping.
-        service: BankQuestionService orchestrating standard reads.
+        request: FastAPI request object.
+        bank_id: Target bank ID.
+        skip: Pagination offset.
+        limit: Pagination page size.
+        user_id: Authenticated user ID.
+        service: Injected BankQuestionService.
 
     Returns:
-        Standard structured APIResponse injecting nested list item payload models internally.
+        API response with items and pagination metadata.
 
     Raises:
-        BankNotFoundError: If target entity ID lacks tracking representations natively.
+        BankNotFoundError: If bank does not exist.
+        BankAccessDeniedError: If user lacks read permission.
     """
     total, questions = await service.get_bank_questions(bank_id, user_id, skip, limit)
 
@@ -234,24 +179,24 @@ async def get_bank_question(
     user_id: UUID = Depends(get_current_user_id),
     service: BankQuestionService = Depends(get_bank_question_service),
 ):
-    """Retrieve detailed information of a specific question inside a bank.
-
-    Verifies associative relationship targets confirming read-access constraints before
-    supplying deep structural test evaluations and context logic configurations cleanly.
+    """Get a hydrated question detail response within a bank scope.
 
     Args:
-        request: FastAPI routing metadata tracker natively mapping explicit values.
-        bank_id: Top-level constraint filter binding definitions properly.
-        question_id: Lower-level constraint targeted lookup exactly matching relations.
-        user_id: Validated owner or permission read constraint targets.
-        service: Injected backend Service resolving data models.
+        request: FastAPI request object.
+        bank_id: Target bank ID.
+        question_id: Target question ID.
+        user_id: Authenticated user ID.
+        service: Injected BankQuestionService.
 
     Returns:
-        Standard structural APIResponse nesting completely populated subset representations explicitly.
+        API response containing hydrated question details.
 
     Raises:
-        QuestionNotFoundError: Underlying question ID natively untracked globally.
-        BankQuestionNotFoundError: Associative linking targets evaluating false explicitly.
+        BankNotFoundError: If bank does not exist.
+        BankAccessDeniedError: If user lacks read permission.
+        BankQuestionNotFoundError: If question is not linked to the bank.
+        QuestionNotFoundError: If question does not exist.
+        CodeStorageError: If template code hydration fails.
     """
     question = await service.get_bank_question(bank_id, question_id, user_id)
     return create_api_response(

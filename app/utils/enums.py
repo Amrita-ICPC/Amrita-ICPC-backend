@@ -170,3 +170,29 @@ class ViolationSeverity(str, enum.Enum):
     MEDIUM = "medium"
     HIGH = "high"
     CRITICAL = "critical"
+
+
+class SubmissionStatus(str, enum.Enum):
+    """
+    Enumeration of submission evaluation statuses.
+
+    Represents the lifecycle and final verdict of a code submission
+    during online judging.
+
+    Attributes:
+        QUEUED: Submission is accepted by the system and waiting to be judged.
+        RUNNING: Submission is currently being compiled or executed.
+        AC: Accepted; all test cases passed.
+        WA: Wrong Answer; one or more test cases failed.
+        TLE: Time Limit Exceeded during execution.
+        RE: Runtime Error occurred while running the submission.
+        CE: Compilation Error prevented execution.
+    """
+
+    QUEUED = "QUEUED"
+    RUNNING = "RUNNING"
+    AC = "AC"
+    WA = "WA"
+    TLE = "TLE"
+    RE = "RE"
+    CE = "CE"

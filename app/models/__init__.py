@@ -7,6 +7,7 @@ from app.models.contest import (
     ContestTeamProgress,
     ContestTeamViolation,
 )
+from app.models.language import Language
 from app.models.question import Question
 from app.models.tag import QuestionTag, Tag
 from app.models.team import Team, TeamUser
@@ -21,6 +22,7 @@ __all__ = [
     "ContestTeam",
     "ContestTeamProgress",
     "ContestTeamViolation",
+    "Language",
     "Question",
     "QuestionTag",
     "Tag",
