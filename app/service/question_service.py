@@ -50,7 +50,7 @@ class QuestionService:
         - Create/update/delete question aggregates
         - Validate limits, testcase structure, and language mappings
         - Enforce read/manage permissions through guard checks
-        - Store and retrieve template code payloads from object storage
+        - Persist template solution code in DB and resolve legacy storage keys
         - Manage read-through and write-through cache behavior
         - Integrate with Judge0 language catalog and platform language mappings
 
@@ -280,7 +280,7 @@ class QuestionService:
     async def create_question(
         self, question_data: QuestionCreate, user_id: UUID
     ) -> QuestionResponse:
-        """Create a question aggregate and store template solution payloads.
+        """Create a question aggregate and persist template solution payloads.
 
         Args:
             question_data: Request payload with question fields, testcases, and templates.
@@ -291,13 +291,8 @@ class QuestionService:
 
         Raises:
             InvalidQuestionError: If validation fails.
-            CodeStorageError: If template solution upload fails.
             Exception: Re-raises underlying persistence/storage errors after rollback.
         """
-        # TODO(transaction-consistency): Decide final approach for side effects.
-        # Option A: defer MinIO uploads and cache updates until after DB commit.
-        # Option B: adopt an outbox pattern for reliable async side-effect processing.
-        uploaded_keys: list[str] = []
         try:
             self.validator.validate_testcases_format(question_data.testcases)
             self.validator.validate_limits(
@@ -318,31 +313,10 @@ class QuestionService:
             template_dtos: list[CreateQuestionTemplateData] = []
             for template in question_data.templates:
                 template_id = uuid.uuid4()
-                solution_code_value = template.solution_code
-                if solution_code_value:
-                    solution_object_key = (
-                        self.code_storage_service.build_code_object_key(
-                            resource_type="questions",
-                            resource_id=question_id,
-                            filename=f"templates/{template_id}/solution.txt",
-                        )
-                    )
-                    try:
-                        await self.code_storage_service.upload_code(
-                            solution_object_key,
-                            solution_code_value,
-                        )
-                    except Exception as error:
-                        raise CodeStorageError(
-                            f"Failed to upload template solution for language {template.language_id}: {error}"
-                        ) from error
-                    uploaded_keys.append(solution_object_key)
-                    solution_code_value = solution_object_key
-
                 mapped_template_dto = build_template_dto(
                     template_id=template_id,
                     template=template,
-                    solution_code_value=solution_code_value,
+                    solution_code_value=template.solution_code,
                 )
                 template_dtos.append(mapped_template_dto)
 
@@ -360,13 +334,6 @@ class QuestionService:
             return await self._hydrate_question_template_codes(response)
         except Exception:
             await self.repository.rollback()
-
-            for key in uploaded_keys:
-                try:
-                    await self.code_storage_service.delete_code(key)
-                except Exception:
-                    pass
-
             raise
 
     @cache_get(
@@ -415,7 +382,7 @@ class QuestionService:
     async def update_question(
         self, question_id: UUID, update_data: QuestionUpdate, user_id: UUID
     ) -> QuestionResponse:
-        """Update an existing question and reconcile template storage payloads.
+        """Update an existing question and reconcile legacy template storage payloads.
 
         Args:
             question_id: Target question ID.
@@ -429,13 +396,8 @@ class QuestionService:
             QuestionNotFoundError: If the question does not exist.
             QuestionPermissionError: If user cannot manage the question.
             InvalidQuestionError: If validation fails.
-            CodeStorageError: If updated template solution upload fails.
             Exception: Re-raises underlying errors after rollback/cleanup.
         """
-        # TODO(transaction-consistency): Decide final approach for side effects.
-        # Option A: defer MinIO uploads/deletes and cache updates until commit succeeds.
-        # Option B: enqueue side effects via outbox for post-commit execution.
-        uploaded_keys: list[str] = []
         old_template_keys_to_delete: list[str] = []
         try:
             question = await self.repository.get_question_or_raise(question_id)
@@ -469,31 +431,10 @@ class QuestionService:
                 template_dtos = []
                 for template in update_data.templates:
                     template_id = uuid.uuid4()
-                    solution_code_value = template.solution_code
-                    if solution_code_value:
-                        solution_object_key = (
-                            self.code_storage_service.build_code_object_key(
-                                resource_type="questions",
-                                resource_id=question.id,
-                                filename=f"templates/{template_id}/solution.txt",
-                            )
-                        )
-                        try:
-                            await self.code_storage_service.upload_code(
-                                solution_object_key,
-                                solution_code_value,
-                            )
-                        except Exception as error:
-                            raise CodeStorageError(
-                                f"Failed to upload updated template solution for language {template.language_id}: {error}"
-                            ) from error
-                        uploaded_keys.append(solution_object_key)
-                        solution_code_value = solution_object_key
-
                     mapped_template_dto = build_template_dto(
                         template_id=template_id,
                         template=template,
-                        solution_code_value=solution_code_value,
+                        solution_code_value=template.solution_code,
                     )
                     template_dtos.append(mapped_template_dto)
 
@@ -516,13 +457,6 @@ class QuestionService:
             return await self._hydrate_question_template_codes(response)
         except Exception:
             await self.repository.rollback()
-
-            for key in uploaded_keys:
-                try:
-                    await self.code_storage_service.delete_code(key)
-                except Exception:
-                    pass
-
             raise
 
     @cache_delete(
