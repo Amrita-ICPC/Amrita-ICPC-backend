@@ -126,3 +126,23 @@ class BankQuestionBulk(BaseModel):
         ...,
         description="List of target question IDs to assign or strip array",
     )
+
+
+class BankQuestionCloneRequest(BaseModel):
+    """Schema for cloning questions from one bank to another.
+
+    Attributes:
+        target_bank_id: Destination bank where cloned questions will be created.
+        copy_all: When true, clones all questions from the source bank.
+        question_ids: Optional subset from source bank when copy_all is false.
+    """
+
+    target_bank_id: UUID = Field(..., description="Destination bank ID")
+    copy_all: bool = Field(
+        default=False,
+        description="Clone all source-bank questions when true",
+    )
+    question_ids: Optional[List[UUID]] = Field(
+        default=None,
+        description="Optional source question IDs to clone when copy_all is false",
+    )

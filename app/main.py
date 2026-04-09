@@ -56,7 +56,7 @@ setup_security(fastapi_app)
 # Allowing all origins for development
 fastapi_app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000", "http://10.10.10.23:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

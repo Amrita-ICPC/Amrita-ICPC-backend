@@ -10,7 +10,7 @@ from app.core.response import create_api_response
 from app.core.storage import CodeStorageService
 from app.repositories.bank import BankRepository
 from app.repositories.question import QuestionRepository
-from app.schema.bank import BankQuestionBulk
+from app.schema.bank import BankQuestionBulk, BankQuestionCloneRequest
 from app.schema.base import PaginationResponse
 from app.service.bank_question_service import BankQuestionService
 from app.validators.bank import BankValidator
@@ -112,6 +112,54 @@ async def remove_questions_from_bank(
     logger.info(f"Questions removed from bank {bank_id} by user {user_id}")
     return create_api_response(
         request, message="Questions removed from bank successfully"
+    )
+
+
+@router.post(
+    "/{source_bank_id}/questions/clone",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[can_update("banks")],
+)
+async def clone_questions_between_banks(
+    request: Request,
+    source_bank_id: UUID,
+    payload: BankQuestionCloneRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    service: BankQuestionService = Depends(get_bank_question_service),
+):
+    """Clone questions from one bank to another bank.
+
+    Args:
+        request: FastAPI request object.
+        source_bank_id: Source bank ID.
+        payload: Clone configuration (target bank, copy_all, optional question_ids).
+        user_id: Authenticated user ID.
+        service: Injected BankQuestionService.
+
+    Returns:
+        Success API response with count of cloned questions.
+
+    Raises:
+        BankNotFoundError: If source or target bank does not exist.
+        BankAccessDeniedError: If user lacks source read or target edit permission.
+        BankValidationError: If request payload is invalid.
+        BankQuestionNotFoundError: If selected questions are not in source bank.
+    """
+    cloned_count = await service.clone_questions_between_banks(
+        source_bank_id,
+        payload.target_bank_id,
+        user_id,
+        copy_all=payload.copy_all,
+        question_ids=payload.question_ids,
+    )
+    logger.info(
+        f"Cloned {cloned_count} questions from bank {source_bank_id} to {payload.target_bank_id} by user {user_id}"
+    )
+    return create_api_response(
+        request,
+        data={"cloned_count": cloned_count},
+        message="Questions cloned between banks successfully",
+        status_code=status.HTTP_201_CREATED,
     )
 
 
