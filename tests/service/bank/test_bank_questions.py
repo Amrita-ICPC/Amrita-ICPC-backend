@@ -237,3 +237,122 @@ async def test_get_bank_questions_success(
     assert len(questions) == 1
     assert questions[0].id == sample_question.id
     assert questions[0].testcase_count == 1
+
+
+@pytest.mark.asyncio
+async def test_clone_selected_questions_between_banks_success(
+    bank_question_service,
+    mock_repository,
+    sample_bank,
+    sample_question,
+):
+    user_id = sample_bank.created_by
+    source_bank_id = sample_bank.id
+    target_bank_id = uuid4()
+
+    target_bank = Bank(
+        id=target_bank_id,
+        name="Target Bank",
+        created_by=user_id,
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+        is_deleted=False,
+    )
+
+    mock_repository.get_bank_or_raise.side_effect = [sample_bank, target_bank]
+    mock_repository.get_questions_in_bank_by_ids.return_value = [
+        BankQuestion(bank_id=source_bank_id, question_id=sample_question.id)
+    ]
+    mock_repository.get_question_entities_in_bank_by_ids.return_value = [
+        sample_question
+    ]
+    bank_question_service.question_repo.bulk_create_questions = AsyncMock(
+        side_effect=lambda questions: questions
+    )
+
+    cloned_count = await bank_question_service.clone_questions_between_banks(
+        source_bank_id,
+        target_bank_id,
+        user_id,
+        copy_all=False,
+        question_ids=[sample_question.id],
+    )
+
+    assert cloned_count == 1
+    bank_question_service.question_repo.bulk_create_questions.assert_awaited_once()
+    add_call = mock_repository.add_questions_to_bank.call_args
+    assert add_call.args[0] == target_bank_id
+    assert len(add_call.args[1]) == 1
+    assert add_call.args[1][0] != sample_question.id
+    assert add_call.args[2] == user_id
+
+
+@pytest.mark.asyncio
+async def test_clone_all_questions_between_banks_success(
+    bank_question_service,
+    mock_repository,
+    sample_bank,
+    sample_question,
+):
+    user_id = sample_bank.created_by
+    source_bank_id = sample_bank.id
+    target_bank_id = uuid4()
+
+    target_bank = Bank(
+        id=target_bank_id,
+        name="Target Bank",
+        created_by=user_id,
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+        is_deleted=False,
+    )
+
+    mock_repository.get_bank_or_raise.side_effect = [sample_bank, target_bank]
+    mock_repository.get_all_question_entities_in_bank.return_value = [sample_question]
+    bank_question_service.question_repo.bulk_create_questions = AsyncMock(
+        side_effect=lambda questions: questions
+    )
+
+    cloned_count = await bank_question_service.clone_questions_between_banks(
+        source_bank_id,
+        target_bank_id,
+        user_id,
+        copy_all=True,
+        question_ids=None,
+    )
+
+    assert cloned_count == 1
+    mock_repository.get_questions_in_bank_by_ids.assert_not_called()
+    bank_question_service.question_repo.bulk_create_questions.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_clone_selected_questions_raises_when_not_in_source_bank(
+    bank_question_service,
+    mock_repository,
+    sample_bank,
+):
+    user_id = sample_bank.created_by
+    source_bank_id = sample_bank.id
+    target_bank_id = uuid4()
+    target_bank = Bank(
+        id=target_bank_id,
+        name="Target Bank",
+        created_by=user_id,
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+        is_deleted=False,
+    )
+    selected_question_id = uuid4()
+
+    mock_repository.get_bank_or_raise.side_effect = [sample_bank, target_bank]
+    mock_repository.get_questions_in_bank_by_ids.return_value = []
+
+    with pytest.raises(BankQuestionNotFoundError):
+        await bank_question_service.clone_questions_between_banks(
+            source_bank_id,
+            target_bank_id,
+            user_id,
+            copy_all=False,
+            question_ids=[selected_question_id],
+        )

@@ -12,10 +12,12 @@ from app.mappers.bank_question import (
     to_bank_question_response,
     to_bank_question_summary_responses,
 )
+from app.models.question import Question
 from app.repositories.bank import BankRepository
 from app.repositories.dto.pagination import PaginationParams
 from app.repositories.question import QuestionRepository
 from app.schema.question import QuestionListSummaryResponse, QuestionResponse
+from app.utils.question_clone import deep_copy_question_for_clone
 from app.validators.bank import BankValidator
 from app.validators.bank_question import BankQuestionValidator
 
@@ -66,6 +68,8 @@ class BankQuestionService:
         """
         return [
             f"bank:{bank_id}",
+            f"banks:questions:v2:{bank_id}:*",
+            f"bank:question:v2:{bank_id}:*",
             f"banks:questions:{bank_id}:*",
             f"bank:question:{bank_id}:*",
         ]
@@ -159,6 +163,85 @@ class BankQuestionService:
         )
 
         await self.repository.add_questions_to_bank(bank_id, question_ids, user_id)
+
+    @cache_delete(
+        key_builder=lambda self,
+        source_bank_id,
+        target_bank_id,
+        *args,
+        **kwargs: self._get_bank_question_cache_keys(source_bank_id)
+        + self._get_bank_question_cache_keys(target_bank_id)
+    )
+    async def clone_questions_between_banks(
+        self,
+        source_bank_id: UUID,
+        target_bank_id: UUID,
+        user_id: UUID,
+        *,
+        copy_all: bool,
+        question_ids: List[UUID] | None,
+    ) -> int:
+        """Clone questions from a source bank into a target bank.
+
+        Performs permission checks, source membership validation, deep-copy creation,
+        and bulk persistence/linking.
+        """
+        BankQuestionValidator.validate_clone_questions(
+            source_bank_id,
+            target_bank_id,
+            question_ids,
+            copy_all,
+        )
+
+        source_bank = await self.repository.get_bank_or_raise(
+            source_bank_id, load_relations=True
+        )
+        self.validator.check_read_bank(user_id=user_id, bank=source_bank)
+
+        target_bank = await self.repository.get_bank_or_raise(
+            target_bank_id, load_relations=True
+        )
+        self.validator.check_edit_bank(user_id=user_id, bank=target_bank)
+
+        source_questions: List[Question]
+        if copy_all:
+            source_questions = await self.repository.get_all_question_entities_in_bank(
+                source_bank_id
+            )
+        else:
+            selected_question_ids = list(question_ids or [])
+            BankQuestionValidator.validate_unique_question_ids(selected_question_ids)
+            existing_links = await self.repository.get_questions_in_bank_by_ids(
+                source_bank_id, selected_question_ids
+            )
+            BankQuestionValidator.validate_questions_linked_to_bank(
+                existing_links,
+                source_bank_id,
+                selected_question_ids,
+            )
+            source_questions = (
+                await self.repository.get_question_entities_in_bank_by_ids(
+                    source_bank_id,
+                    selected_question_ids,
+                )
+            )
+
+        if not source_questions:
+            return 0
+
+        cloned_questions = [
+            deep_copy_question_for_clone(question, user_id)
+            for question in source_questions
+        ]
+        created_questions = await self.question_repo.bulk_create_questions(
+            cloned_questions
+        )
+        await self.repository.add_questions_to_bank(
+            target_bank_id,
+            [question.id for question in created_questions],
+            user_id,
+        )
+        return len(created_questions)
 
     @cache_delete(
         key_builder=lambda self,

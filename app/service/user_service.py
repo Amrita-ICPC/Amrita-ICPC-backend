@@ -91,6 +91,17 @@ class UserService:
         """
         try:
             # Initialize Keycloak admin client
+            logger.info("KEYCLOAK REALM: %s", config.KEYCLOAK_REALM)
+            logger.info("KEYCLOAK SERVER URL: %s", config.KEYCLOAK_SERVER_URL)
+            logger.info(
+                "KEYCLOAK USERS SYNC CLIENT ID: %s",
+                config.KEYCLOAK_USERS_SYNC_CLIENT_ID,
+            )
+            logger.info(
+                "KEYCLOAK USERS SYNC CLIENT SECRET: %s",
+                config.KEYCLOAK_USERS_SYNC_CLIENT_SECRET,
+            )
+
             keycloak_admin = KeycloakAdmin(
                 server_url=config.KEYCLOAK_SERVER_URL,
                 realm_name=config.KEYCLOAK_REALM,
@@ -99,7 +110,11 @@ class UserService:
                 client_secret_key=config.KEYCLOAK_USERS_SYNC_CLIENT_SECRET,
                 verify=True,
             )
-
+            logger.info("Starting Keycloak user synchronization")
+            token = keycloak_admin.connection.token
+            logger.info(
+                "Successfully authenticated with Keycloak for user sync: %s", token
+            )
             # Fetch all users from Keycloak
             keycloak_users = keycloak_admin.get_users()
             users_synced = 0

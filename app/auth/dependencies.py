@@ -35,9 +35,16 @@ def get_current_user(request: Request) -> Dict[str, Any]:
 
 
 def get_user_roles(user: Dict[str, Any]) -> List[str]:
-    """Extract roles from user object."""
-    # Roles are directly mapped
-    return cast(List[str], user.get("roles", []))
+    """Extract roles from user object and normalized groups."""
+    token_roles = cast(List[str], user.get("roles", []))
+    token_groups = cast(List[str], user.get("groups", []))
+
+    # Keycloak commonly provides business roles via groups like /admin.
+    normalized_groups = [group.lstrip("/") for group in token_groups if group]
+
+    # Keep insertion order while de-duplicating.
+    merged_roles = list(dict.fromkeys([*token_roles, *normalized_groups]))
+    return merged_roles
 
 
 def get_user_groups(user: Dict[str, Any]) -> List[str]:
