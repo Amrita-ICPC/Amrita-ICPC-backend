@@ -1,7 +1,15 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, Text
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -60,6 +68,13 @@ class Question(Base):
 
 class QuestionTemplate(Base):
     __tablename__ = "question_template"
+    __table_args__ = (
+        UniqueConstraint(
+            "question_id",
+            "language_id",
+            name="uq_question_template_per_question",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
@@ -124,6 +139,13 @@ class TestCase(Base):
 
 class QuestionLanguage(Base):
     __tablename__ = "question_language"
+    __table_args__ = (
+        UniqueConstraint(
+            "question_id",
+            "language_id",
+            name="uq_question_language_per_question",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4

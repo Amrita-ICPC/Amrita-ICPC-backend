@@ -24,8 +24,18 @@ class QuestionValidator:
         for i, tc in enumerate(testcases):
             if isinstance(tc, Mapping):
                 testcase = tc
-            elif hasattr(tc, "model_dump"):
-                testcase = tc.model_dump()
+            elif callable(getattr(tc, "model_dump", None)):
+                try:
+                    dumped = tc.model_dump()  # type: ignore[attr-defined]
+                    if not isinstance(dumped, Mapping):
+                        raise InvalidQuestionError(
+                            f"Testcase at index {i} must be an object"
+                        )
+                    testcase = dumped
+                except (TypeError, Exception) as e:
+                    raise InvalidQuestionError(
+                        f"Testcase at index {i} must be an object: {str(e)}"
+                    )
             else:
                 raise InvalidQuestionError(f"Testcase at index {i} must be an object")
             if "input" not in testcase:

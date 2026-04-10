@@ -42,8 +42,8 @@ def build_update_team_dto(team_id: UUID, team_data: TeamUpdate) -> UpdateTeamDat
     return UpdateTeamData(
         team_id=team_id,
         name=team_data.name,
-        description=team_data.description,
-        logo=team_data.logo,
+        description=team_data.description if "description" in fields_set else UNSET,
+        logo=team_data.logo if "logo" in fields_set else UNSET,
         status=team_data.status,
         leader_id=team_data.leader_id if "leader_id" in fields_set else UNSET,
     )
@@ -137,10 +137,10 @@ def apply_team_updates(
     """Apply team update DTO values onto team and contest-team ORM entities."""
     if team_data.name is not None and team_data.name != team.name:
         team.name = team_data.name
-    if team_data.description is not None and team_data.description != team.description:
-        team.description = team_data.description
-    if team_data.logo is not None and team_data.logo != team.logo:
-        team.logo = team_data.logo
+    if team_data.description is not UNSET and team_data.description != team.description:
+        team.description = cast(str | None, team_data.description)
+    if team_data.logo is not UNSET and team_data.logo != team.logo:
+        team.logo = cast(str | None, team_data.logo)
     if team_data.status is not None and team_data.status != contest_team.team_status:
         contest_team.team_status = team_data.status
     if team_data.leader_id is not UNSET and team_data.leader_id != team.leader_id:

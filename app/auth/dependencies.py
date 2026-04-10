@@ -36,8 +36,19 @@ def get_current_user(request: Request) -> Dict[str, Any]:
 
 def get_user_roles(user: Dict[str, Any]) -> List[str]:
     """Extract roles from user object and normalized groups."""
-    token_roles = cast(List[str], user.get("roles", []))
-    token_groups = cast(List[str], user.get("groups", []))
+    raw_roles = user.get("roles")
+    raw_groups = user.get("groups")
+
+    token_roles: List[str] = (
+        [r for r in raw_roles if isinstance(r, str)]
+        if isinstance(raw_roles, list)
+        else []
+    )
+    token_groups: List[str] = (
+        [g for g in raw_groups if isinstance(g, str)]
+        if isinstance(raw_groups, list)
+        else []
+    )
 
     # Keycloak commonly provides business roles via groups like /admin.
     normalized_groups = [group.lstrip("/") for group in token_groups if group]
