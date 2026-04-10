@@ -43,8 +43,8 @@ class UpdateTeamData:
 
     team_id: UUID
     name: str | None = None
-    description: str | None = None
-    logo: str | None = None
+    description: str | None | _UnsetType = UNSET
+    logo: str | None | _UnsetType = UNSET
     status: TeamStatus | None = None
     leader_id: UUID | None | _UnsetType = UNSET
 

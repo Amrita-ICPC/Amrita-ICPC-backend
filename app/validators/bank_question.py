@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from app.exceptions.bank import (
     BankQuestionAlreadyExistsError,
     BankQuestionNotFoundError,
@@ -19,7 +21,7 @@ class BankQuestionValidator:
     """
 
     @staticmethod
-    def validate_unique_question_ids(question_ids):
+    def validate_unique_question_ids(question_ids: list[UUID] | None) -> None:
         """Validate that question_ids payload has no duplicate UUIDs.
 
         Args:
@@ -28,6 +30,9 @@ class BankQuestionValidator:
         Raises:
             BankValidationError: If duplicate UUIDs are present.
         """
+        if question_ids is None:
+            return
+
         unique_ids = set(question_ids)
         if len(unique_ids) != len(question_ids):
             raise BankValidationError("Duplicate question_ids are not allowed")

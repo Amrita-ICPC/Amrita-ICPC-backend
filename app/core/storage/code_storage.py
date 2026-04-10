@@ -6,6 +6,7 @@ from minio import Minio
 
 from app.core.clients.minio import get_minio_client
 from app.core.config import config
+from app.exceptions.question import CodeStorageError
 
 
 class CodeStorageService:
@@ -46,13 +47,18 @@ class CodeStorageService:
         stream = io.BytesIO(payload)
 
         def _upload(minio_client: Minio) -> None:
-            minio_client.put_object(
-                bucket_name=config.MINIO_BUCKET_NAME,
-                object_name=object_key,
-                data=stream,
-                length=len(payload),
-                content_type=content_type,
-            )
+            try:
+                minio_client.put_object(
+                    bucket_name=config.MINIO_BUCKET_NAME,
+                    object_name=object_key,
+                    data=stream,
+                    length=len(payload),
+                    content_type=content_type,
+                )
+            except Exception as e:
+                raise CodeStorageError(
+                    f"Failed to upload code to MinIO: {str(e)}"
+                ) from e
 
         await asyncio.to_thread(_upload, client)
         return object_key
@@ -69,15 +75,22 @@ class CodeStorageService:
         client = get_minio_client()
 
         def _download(minio_client: Minio) -> bytes:
-            response = minio_client.get_object(
-                bucket_name=config.MINIO_BUCKET_NAME,
-                object_name=object_key,
-            )
             try:
-                return response.read()
-            finally:
-                response.close()
-                response.release_conn()
+                response = minio_client.get_object(
+                    bucket_name=config.MINIO_BUCKET_NAME,
+                    object_name=object_key,
+                )
+                try:
+                    return response.read()
+                finally:
+                    response.close()
+                    response.release_conn()
+            except CodeStorageError:
+                raise
+            except Exception as e:
+                raise CodeStorageError(
+                    f"Failed to download code from MinIO: {str(e)}"
+                ) from e
 
         return await asyncio.to_thread(_download, client)
 
@@ -87,10 +100,15 @@ class CodeStorageService:
         client = get_minio_client()
 
         def _delete(minio_client: Minio) -> None:
-            minio_client.remove_object(
-                bucket_name=config.MINIO_BUCKET_NAME,
-                object_name=object_key,
-            )
+            try:
+                minio_client.remove_object(
+                    bucket_name=config.MINIO_BUCKET_NAME,
+                    object_name=object_key,
+                )
+            except Exception as e:
+                raise CodeStorageError(
+                    f"Failed to delete code from MinIO: {str(e)}"
+                ) from e
 
         await asyncio.to_thread(_delete, client)
 

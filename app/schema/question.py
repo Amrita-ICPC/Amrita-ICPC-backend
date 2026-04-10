@@ -108,13 +108,6 @@ class QuestionResponse(QuestionBase):
             if isinstance(name, str) and name:
                 language_names.append(name)
 
-        if not language_names:
-            for template in getattr(question, "templates", []) or []:
-                language = getattr(template, "language", None)
-                name = getattr(language, "name", None)
-                if isinstance(name, str) and name:
-                    language_names.append(name)
-
         testcase_items = [
             QuestionTestCaseResponse(
                 input=testcase.input,
@@ -182,13 +175,6 @@ class QuestionListSummaryResponse(BaseModel):
             name = getattr(language, "name", None)
             if isinstance(name, str) and name:
                 language_names.append(name)
-
-        if not language_names:
-            for template in getattr(question, "templates", []) or []:
-                language = getattr(template, "language", None)
-                name = getattr(language, "name", None)
-                if isinstance(name, str) and name:
-                    language_names.append(name)
 
         testcase_count = getattr(question, "testcase_count", None)
         if testcase_count is None:
