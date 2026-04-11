@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.errors import setup_exception_handlers
 from app.api.route import api_router
 from app.core.clients.database import init_db
+from app.core.clients.judge0 import close_judge0, init_judge0
 from app.core.clients.minio import close_minio, init_minio
 from app.core.clients.redis import close_redis, init_redis
 from app.core.config import config
@@ -31,7 +32,13 @@ async def lifespan(app: FastAPI):
     # Initialize MinIO
     await init_minio()
 
+    # Initialize Judge0
+    await init_judge0()
+
     yield
+
+    # Close Judge0
+    await close_judge0()
 
     # Close MinIO
     await close_minio()
