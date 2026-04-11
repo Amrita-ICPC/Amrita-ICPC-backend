@@ -8,6 +8,8 @@ from app.repositories.dto.pagination import PaginatedResult, PaginationParams
 from app.repositories.dto.student import (
     StudentAvailableContestData,
     StudentAvailableTeamData,
+    StudentCodeRunRequestDTO,
+    StudentCodeRunResponseDTO,
     StudentContestDetailData,
     StudentContestFilters,
     StudentContestProblemData,
@@ -18,6 +20,7 @@ from app.repositories.dto.student import (
     StudentTeamJoinData,
     StudentTeamMemberData,
     StudentTeamRegistrationData,
+    StudentTestCaseRunResultDTO,
 )
 from app.repositories.dto.team import CreateTeamData, TeamFilters, UpdateTeamData
 
@@ -37,6 +40,9 @@ __all__ = [
     "StudentRegisteredContestData",
     "StudentContestDetailData",
     "StudentContestProblemData",
+    "StudentCodeRunRequestDTO",
+    "StudentCodeRunResponseDTO",
+    "StudentTestCaseRunResultDTO",
     "StudentTeamFilters",
     "StudentTeamMemberData",
     "StudentTeamData",
