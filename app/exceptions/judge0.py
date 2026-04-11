@@ -2,11 +2,16 @@
 
 from typing import Optional
 
+from app.exceptions.base import AppBaseException
 
-class Judge0ClientError(Exception):
+
+class Judge0ClientError(AppBaseException):
     """Base exception for Judge0 client errors."""
 
-    pass
+    def __init__(
+        self, message: str, status_code: int = 502, detail: Optional[str] = None
+    ):
+        super().__init__(message=message, status_code=status_code, detail=detail)
 
 
 class Judge0APIError(Judge0ClientError):
@@ -15,27 +20,29 @@ class Judge0APIError(Judge0ClientError):
     def __init__(
         self, status_code: int, detail: str, request_id: Optional[str] = None
     ):
-        self.status_code = status_code
-        self.detail = detail
         self.request_id = request_id
-        super().__init__(
-            f"Judge0 API Error ({status_code}): {detail} [request_id={request_id}]"
-        )
+        message = f"Judge0 API Error ({status_code}): {detail}"
+        if request_id:
+            message += f" [request_id={request_id}]"
+        super().__init__(message=message, status_code=status_code, detail=detail)
 
 
 class Judge0TimeoutError(Judge0ClientError):
     """Judge0 request timed out."""
 
-    pass
+    def __init__(self, message: str = "Judge0 request timed out"):
+        super().__init__(message=message, status_code=502)
 
 
 class Judge0ConnectionError(Judge0ClientError):
     """Failed to connect to Judge0."""
 
-    pass
+    def __init__(self, message: str = "Failed to connect to Judge0"):
+        super().__init__(message=message, status_code=502)
 
 
 class Judge0ServiceUnavailableError(Judge0ClientError):
     """Judge0 service is temporarily unavailable."""
 
-    pass
+    def __init__(self, message: str = "Judge0 service is temporarily unavailable"):
+        super().__init__(message=message, status_code=502)

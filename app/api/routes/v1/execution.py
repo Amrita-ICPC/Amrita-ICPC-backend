@@ -4,6 +4,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 
 from app.core.logger import logger
+from app.exceptions.execution import (
+    InvalidCodeError,
+    InvalidLanguageError,
+    InvalidSubmissionTokenError,
+)
 from app.exceptions.judge0 import Judge0ClientError
 from app.schema.execution import (
     CodeRunAsyncRequest,
@@ -107,19 +112,19 @@ async def run_code_async(
 
         return token_response
 
-    except ValueError as exc:
+    except (InvalidCodeError, InvalidLanguageError) as exc:
         logger.warning(f"Invalid submission request: {exc}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
-        )
+        ) from exc
 
     except Judge0ClientError as exc:
         logger.error(f"Judge0 submission failed: {exc}")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Failed to submit code to Judge0. Service may be temporarily unavailable.",
-        )
+        ) from exc
 
 
 @router.get(
@@ -171,19 +176,19 @@ async def get_execution_result(
 
         return result
 
-    except ValueError as exc:
-        logger.warning(f"Invalid status request: {exc}")
+    except InvalidSubmissionTokenError as exc:
+        logger.warning(f"Invalid token: {exc}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
-        )
+        ) from exc
 
     except Judge0ClientError as exc:
         logger.error(f"Judge0 status check failed: {exc}")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Failed to retrieve execution result from Judge0.",
-        )
+        ) from exc
 
 
 @router.get(
@@ -229,16 +234,16 @@ async def batch_get_results(
 
         return results
 
-    except ValueError as exc:
-        logger.warning(f"Invalid batch request: {exc}")
+    except InvalidSubmissionTokenError as exc:
+        logger.warning(f"Invalid token in batch: {exc}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
-        )
+        ) from exc
 
     except Judge0ClientError as exc:
         logger.error(f"Batch check failed: {exc}")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Failed to retrieve batch results from Judge0.",
-        )
+        ) from exc
