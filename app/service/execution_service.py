@@ -18,6 +18,11 @@ import httpx
 
 from app.core.clients.judge0 import get_judge0_client
 from app.core.logger import logger
+from app.exceptions.execution import (
+    InvalidCodeError,
+    InvalidLanguageError,
+    InvalidSubmissionTokenError,
+)
 from app.exceptions.judge0 import Judge0APIError, Judge0ClientError
 from app.schema.execution import (
     ExecutionResultResponse,
@@ -70,8 +75,20 @@ class ExecutionService:
             logger.info(f"Successfully fetched {len(languages)} languages")
             return languages
 
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code
+            response_text = exc.response.text
+            request_id = exc.response.headers.get("x-request-id")
+            logger.error(
+                f"Judge0 HTTP error ({status_code}) fetching languages: {response_text}",
+                extra={"status_code": status_code, "request_id": request_id},
+            )
+            detail = response_text or f"HTTP {status_code}"
+            raise Judge0APIError(
+                status_code=status_code, detail=detail, request_id=request_id
+            )
         except httpx.HTTPError as exc:
-            logger.error(f"Failed to fetch languages: {exc}")
+            logger.error(f"Judge0 connection error fetching languages: {exc}")
             raise Judge0ClientError(f"Failed to fetch languages: {str(exc)}")
 
     async def submit_code_async(
@@ -100,22 +117,23 @@ class ExecutionService:
             TokenResponse with submission token for polling
 
         Raises:
-            ValueError: If input validation fails
+            InvalidCodeError: If source code validation fails
+            InvalidLanguageError: If language_id validation fails
             Judge0ClientError: If submission to Judge0 fails
         """
         # Input validation
         if len(source_code) > 50000:
-            raise ValueError("Source code exceeds 50KB maximum size limit")
+            raise InvalidCodeError("Source code exceeds 50KB maximum size limit")
 
         if not source_code.strip():
-            raise ValueError("Source code cannot be empty")
+            raise InvalidCodeError("Source code cannot be empty")
 
         if language_id <= 0:
-            raise ValueError("Invalid language_id: must be positive integer")
+            raise InvalidLanguageError("Invalid language_id: must be positive integer")
 
         try:
             logger.info(
-                f"Validating submission request",
+                "Validating submission request",
                 extra={"language_id": language_id, "code_length": len(source_code)},
             )
 
@@ -127,7 +145,7 @@ class ExecutionService:
             )
 
             logger.info(
-                f"Submitting code for execution",
+                "Submitting code for execution",
                 extra={"language_id": language_id, "code_length": len(source_code)},
             )
 
@@ -152,12 +170,34 @@ class ExecutionService:
             result_data = response.json()
             token = result_data.get("token")
             
+            # Guard against missing or invalid token from Judge0
+            if not token or not str(token).strip():
+                logger.error(
+                    "Judge0 submission succeeded but returned invalid token",
+                    extra={"token": token, "response": result_data},
+                )
+                raise Judge0ClientError(
+                    "Judge0 returned invalid submission token; cannot track execution"
+                )
+            
             logger.info(f"Code submitted successfully; token={token}")
 
             return TokenResponse(token=token)
 
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code
+            response_text = exc.response.text
+            request_id = exc.response.headers.get("x-request-id")
+            logger.error(
+                f"Judge0 HTTP error ({status_code}) during submission: {response_text}",
+                extra={"status_code": status_code, "request_id": request_id},
+            )
+            detail = response_text or f"HTTP {status_code}"
+            raise Judge0APIError(
+                status_code=status_code, detail=detail, request_id=request_id
+            )
         except httpx.HTTPError as exc:
-            logger.error(f"Judge0 HTTP error during submission: {exc}")
+            logger.error(f"Judge0 connection error during submission: {exc}")
             raise Judge0ClientError(f"Failed to submit code: {str(exc)}")
 
     async def check_submission_status(self, token: str) -> ExecutionResultResponse:
@@ -171,12 +211,12 @@ class ExecutionService:
             ExecutionResultResponse with execution status and output
 
         Raises:
-            ValueError: If token is invalid
+            InvalidSubmissionTokenError: If token is invalid
             Judge0ClientError: If status check fails
         """
         # Validate token before status check
         if not token or not token.strip():
-            raise ValueError("Submission token cannot be empty")
+            raise InvalidSubmissionTokenError("Submission token cannot be empty")
 
         try:
             logger.debug(f"Validating and checking submission status; token={token}")
@@ -194,10 +234,15 @@ class ExecutionService:
 
             result_data: dict[str, Any] = response.json()
 
+            # Extract status from nested Judge0 response structure
+            status_obj = result_data.get("status", {})
+            status_id = status_obj.get("id")
+            status_description = status_obj.get("description", "Unknown")
+
             # Map to response schema
             result = ExecutionResultResponse(
-                status_id=result_data.get("status_id"),
-                status_description=_get_status_description(result_data.get("status_id")),
+                status_id=status_id,
+                status_description=status_description,
                 stdout=result_data.get("stdout"),
                 stderr=result_data.get("stderr"),
                 compile_output=result_data.get("compile_output"),
@@ -209,9 +254,23 @@ class ExecutionService:
 
             return result
 
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code
+            response_text = exc.response.text
+            request_id = exc.response.headers.get("x-request-id")
+            logger.error(
+                f"Judge0 HTTP error ({status_code}) checking submission status: {response_text}",
+                extra={"status_code": status_code, "request_id": request_id},
+            )
+            detail = response_text or f"HTTP {status_code}"
+            raise Judge0APIError(
+                status_code=status_code, detail=detail, request_id=request_id
+            )
         except httpx.HTTPError as exc:
-            logger.error(f"Failed to check submission status: {exc}")
-            raise Judge0ClientError(f"Failed to check submission status: {str(exc)}")
+            logger.error(f"Judge0 connection error checking submission status: {exc}")
+            raise Judge0ClientError(
+                f"Failed to check submission status: {str(exc)}"
+            )
 
     async def check_batch_submissions(
         self, tokens: list[str]
@@ -226,7 +285,7 @@ class ExecutionService:
             Dictionary mapping token -> ExecutionResultResponse
 
         Raises:
-            ValueError: If tokens are invalid
+            InvalidSubmissionTokenError: If tokens are invalid
             Judge0ClientError: If batch check fails
         """
         if not tokens:
@@ -239,7 +298,7 @@ class ExecutionService:
             for token in tokens:
                 ExecutionValidator.validate_token(token)
 
-            logger.info(f"Tokens validated; fetching batch results")
+            logger.info("Tokens validated; fetching batch results")
 
             # Fetch all submissions concurrently
             async def fetch_single(token: str) -> tuple[str, ExecutionResultResponse]:
@@ -262,28 +321,20 @@ class ExecutionService:
 
 
 # ============================================================================
-# HELPER FUNCTIONS
+# STATUS MAPPING NOTE
 # ============================================================================
-
-def _get_status_description(status_id: Optional[int]) -> str:
-    """
-    Convert Judge0 status ID to human-readable description.
-
-    Args:
-        status_id: Judge0 status ID
-
-    Returns:
-        Human-readable status description
-    """
-    status_map = {
-        1: "In Queue",
-        2: "Processing",
-        3: "Accepted (AC)",
-        4: "Wrong Answer (WA)",
-        5: "Time Limit Exceeded (TLE)",
-        6: "Compilation Error (CE)",
-        7: "Runtime Error (RE)",
-        8: "System Error",
-        None: "Unknown",
-    }
-    return status_map.get(status_id, f"Unknown Status ({status_id})")
+#
+# Judge0 CE API response includes a nested "status" object with both "id" and
+# "description" fields. We extract these directly from the response instead of
+# maintaining a local status map for consistency with Judge0's API contract.
+#
+# Example response structure:
+# {
+#   "status": {
+#     "id": 3,
+#     "description": "Accepted"
+#   },
+#   "stdout": "Hello, World!",
+#   "stderr": null,
+#   ...
+# }
