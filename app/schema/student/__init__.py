@@ -11,6 +11,11 @@ from app.schema.student.contests import (
     StudentRegisteredContestListResponse,
     StudentRegisteredContestResponse,
 )
+from app.schema.student.run import (
+    StudentCodeRunRequest,
+    StudentCodeRunResponse,
+    StudentTestCaseRunResultResponse,
+)
 from app.schema.student.teams import (
     StudentLeaveTeamResponse,
     StudentTeamAddMemberRequest,
@@ -41,6 +46,10 @@ __all__ = [
     # Contest schemas - Registration
     "StudentContestRegistrationRequest",
     "StudentContestRegistrationResponse",
+    # Run schemas - Code execution
+    "StudentCodeRunRequest",
+    "StudentCodeRunResponse",
+    "StudentTestCaseRunResultResponse",
     # Team schemas
     "StudentTeamResponse",
     "StudentTeamMemberResponse",
