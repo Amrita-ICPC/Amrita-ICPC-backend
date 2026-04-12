@@ -42,11 +42,11 @@ class Judge0Repository:
     """
 
     # Constants for polling behavior
-    POLL_INTERVAL_MS = 500  # Wait 500ms between polls
-    MAX_POLL_ATTEMPTS = 120  # Max 60 seconds (120 * 500ms)
-    BATCH_POLL_SIZE = 20  # Poll up to 20 submissions in one batch request
+    POLL_INTERVAL_MS: int = 500
+    MAX_POLL_ATTEMPTS: int = 120
+    BATCH_POLL_SIZE: int = 20
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize Judge0 repository."""
         pass
 
@@ -175,6 +175,8 @@ class Judge0Repository:
             status_id = data.get("status_id")
             if status_id is None and "status" in data:
                 status_id = data["status"].get("id")
+
+            logger.info(f"DEBUG_GET_RESULT: token={token}, raw_data={data}, extracted_status_id={status_id}")
 
             return Judge0SubmissionDTO(
                 token=token,
