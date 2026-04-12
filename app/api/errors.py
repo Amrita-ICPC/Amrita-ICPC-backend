@@ -29,6 +29,7 @@ from app.exceptions.execution import (
     NoTestCasesError,
     CompilationError,
 )
+from app.exceptions.judge0 import Judge0NotInitializedError
 from app.schema.base import APIErrorResponse, ErrorDetails, MetaResponse
 from app.schema.execution import CompilationErrorResponse
 
@@ -298,6 +299,17 @@ def setup_exception_handlers(app: FastAPI) -> None:
             status_code=exc.status_code,
             message=exc.message,
             error_code="CODE_EXECUTION_ERROR",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(Judge0NotInitializedError)
+    async def judge0_not_initialized_handler(request: Request, exc: Judge0NotInitializedError):
+        logger.error(f"Judge0 not initialized: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="JUDGE0_NOT_INITIALIZED",
             details=[exc.detail] if exc.detail else None,
         )
 

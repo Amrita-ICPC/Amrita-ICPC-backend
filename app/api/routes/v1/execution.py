@@ -86,7 +86,7 @@ async def run_code(
 
         # Execute code against non-hidden test cases
         result = await service.run_code(
-            question_id=UUID(request.question_id),
+            question_id=request.question_id,
             source_code=request.source_code,
             language_id=request.language_id,
         )

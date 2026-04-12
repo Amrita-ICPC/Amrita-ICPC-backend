@@ -292,6 +292,7 @@ class Judge0Repository:
             Dictionary mapping token -> Judge0SubmissionDTO
 
         Raises:
+            ExceptionGroup: If ANY token retrieval fails (partial failures reported)
             Judge0ClientError: If batch retrieval fails
         """
         if not tokens:
@@ -314,10 +315,22 @@ class Judge0Repository:
                 else:
                     results[token] = result
 
+        # Surface any errors - don't silently omit failed tokens
         if errors:
-            logger.warning(
-                f"Batch result retrieval had {len(errors)} errors out of {len(tokens)} tokens"
+            error_messages = [
+                f"Token {token}: {str(exc)}" 
+                for token, exc in errors.items()
+            ]
+            logger.error(
+                f"Batch result retrieval had {len(errors)} errors out of {len(tokens)} tokens: "
+                f"{'; '.join(error_messages)}"
             )
+            
+            # Raise ExceptionGroup to report all failed tokens
+            raise ExceptionGroup(
+                f"Judge0 batch result retrieval failed for {len(errors)} token(s)",
+                list(errors.values()),
+            ) from None
 
         return results
 

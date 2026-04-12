@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.clients.judge0 import Judge0StatusCode
 from app.core.logger import logger
-from app.exceptions.execution import CompilationError, NoTestCasesError
+from app.exceptions.execution import CodeExecutionError, CompilationError, NoTestCasesError
 from app.repositories.dto.judge0 import Judge0ExecutionRequestDTO, Judge0ExecutionResultDTO
 from app.repositories.judge0 import Judge0Repository
 from app.repositories.question import QuestionRepository
@@ -126,18 +126,34 @@ class CodeExecutionService:
         logger.debug("Checking compilation on first test case")
         first_result = await self.judge0_repo.wait_for_completion(first_token)
 
-        # Early exit if compilation error or internal error
-        if first_result.status in (Judge0StatusCode.COMPILATION_ERROR, Judge0StatusCode.INTERNAL_ERROR):
+        # Early exit if compilation error (user code issue → HTTP 400)
+        if first_result.status == Judge0StatusCode.COMPILATION_ERROR:
             compile_error = (
                 first_result.compile_output
                 or first_result.message
-                or f"Compilation/Internal error (Status: {first_result.status.name})"
+                or "Compilation error"
             )
             logger.warning(
-                f"Compilation/Internal error for question {question_id}: {compile_error}"
+                f"Compilation error for question {question_id}: {compile_error}"
             )
             # Raise so route handler can return CompilationErrorResponse
             raise CompilationError(compile_error)
+
+        # Early exit if infrastructure/service error (Judge0 issue → HTTP 502)
+        if first_result.status in (
+            Judge0StatusCode.SYSTEM_ERROR,
+            Judge0StatusCode.INTERNAL_ERROR,
+        ):
+            error_msg = (
+                first_result.message
+                or f"Judge0 infrastructure error (Status: {first_result.status.name})"
+            )
+            logger.error(
+                f"Judge0 service error for question {question_id}: {error_msg}"
+            )
+            raise CodeExecutionError(
+                f"Judge0 failed to execute the submission: {error_msg}"
+            )
 
         # Step 6: Map first result to ExecutionResultDTO
         first_testcase = token_to_testcase[first_token]
@@ -156,11 +172,42 @@ class CodeExecutionService:
         )
         all_execution_results = [first_execution]
 
-        # Step 7: Batch poll REMAINING test cases (if any)
+        # Step 7: Batch poll REMAINING test cases until completion (if any)
         remaining_tokens = all_tokens[1:]
         if remaining_tokens:
-            logger.debug(f"Batch polling {len(remaining_tokens)} remaining submissions")
-            batch_results = await self.judge0_repo.batch_get_results(remaining_tokens)
+            logger.debug(f"Batch polling {len(remaining_tokens)} remaining submissions until completion")
+            try:
+                # Poll remaining tokens until ALL reach terminal state (not IN_QUEUE or PROCESSING)
+                batch_results = {}
+                pending_tokens = set(remaining_tokens)
+                
+                while pending_tokens:
+                    # Fetch current status of all pending tokens
+                    current_batch = await self.judge0_repo.batch_get_results(list(pending_tokens))
+                    batch_results.update(current_batch)
+                    
+                    # Check which tokens are still pending (not in terminal state)
+                    remaining_pending = []
+                    for token in pending_tokens:
+                        result = batch_results.get(token)
+                        if result and not result.is_completed:
+                            remaining_pending.append(token)
+                    
+                    # If all tokens are complete, we're done
+                    if not remaining_pending:
+                        break
+                    
+                    # Wait 500ms before next batch poll (same as wait_for_completion polling interval)
+                    pending_tokens = set(remaining_pending)
+                    if pending_tokens:
+                        await asyncio.sleep(0.5)
+                        logger.debug(f"Still waiting for {len(pending_tokens)} submissions to complete")
+            except ExceptionGroup as eg:
+                logger.error(f"Batch retrieval failures: {eg}")
+                from app.exceptions.judge0 import Judge0ClientError
+                raise Judge0ClientError(
+                    f"Failed to retrieve results for {len(eg.exceptions)} submission(s) from Judge0"
+                )
 
             for token in remaining_tokens:
                 submission_result = batch_results.get(token)

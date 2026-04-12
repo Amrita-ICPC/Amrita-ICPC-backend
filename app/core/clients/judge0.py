@@ -14,6 +14,7 @@ from app.exceptions.judge0 import (
     Judge0ConnectionError,
     Judge0ServiceUnavailableError,
     Judge0TimeoutError,
+    Judge0NotInitializedError,
 )
 
 
@@ -59,10 +60,12 @@ async def init_judge0() -> None:
             return
 
         if not config.JUDGE0_API_URL:
-            logger.warning(
-                "JUDGE0_API_URL not set. Judge0 client will not be initialized."
+            logger.error(
+                "JUDGE0_API_URL not configured. Judge0 code execution service is unavailable."
             )
-            return
+            raise Judge0NotInitializedError(
+                "Judge0 API URL is not configured. Code execution service is disabled."
+            )
 
         try:
             # Build headers with optional API key
@@ -124,10 +127,10 @@ def get_judge0_client() -> httpx.AsyncClient:
         Initialized httpx.AsyncClient
 
     Raises:
-        RuntimeError: If client not initialized
+        Judge0NotInitializedError: If Judge0 is not configured or initialized
     """
     if judge0_client is None:
-        raise RuntimeError(
-            "Judge0 client not initialized. Call init_judge0() in app startup."
+        raise Judge0NotInitializedError(
+            "Judge0 client not initialized. Judge0 API URL may not be configured."
         )
     return judge0_client

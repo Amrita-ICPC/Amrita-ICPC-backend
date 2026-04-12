@@ -84,8 +84,8 @@ class Judge0SubmissionDTO:
     token: str
     """Judge0 submission token (unique ID)."""
 
-    status_id: int
-    """Status code ID from Judge0."""
+    status_id: Optional[int] = None
+    """Status code ID from Judge0 (nullable - may be None if Judge0 omits it)."""
 
     stdout: Optional[str] = None
     """Standard output."""
