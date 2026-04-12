@@ -18,7 +18,10 @@ from app.exceptions.judge0 import (
 
 
 class Judge0StatusCode(int, Enum):
-    """Judge0 submission status IDs."""
+    """Judge0 submission status IDs.
+    
+    Reference: https://judge0.com/docs/status-codes
+    """
 
     IN_QUEUE = 1
     PROCESSING = 2
@@ -28,6 +31,9 @@ class Judge0StatusCode(int, Enum):
     COMPILATION_ERROR = 6
     RUNTIME_ERROR = 7
     SYSTEM_ERROR = 8
+    MEMORY_LIMIT_EXCEEDED = 9
+    CPU_TIME_LIMIT_EXCEEDED = 10
+    INTERNAL_ERROR = 11
 
 
 # Global async client instance
