@@ -532,3 +532,219 @@ class TeamRepository:
                 str(contest_team.team_id), str(contest_team.contest_id)
             )
         return updated_contest_team
+
+    # ============ STUDENT-SPECIFIC METHODS ============
+
+    async def get_user_teams(
+        self,
+        user_id: UUID,
+        pagination: PaginationParams,
+    ) -> PaginatedResult:
+        """
+        Retrieve all teams where a student is a member.
+
+        Args:
+            user_id: Student's user ID
+            pagination: PaginationParams for skip/limit
+
+        Returns:
+            PaginatedResult with teams user is member of
+        """
+        base_query = (
+            select(Team)
+            .join(TeamUser, TeamUser.team_id == Team.id)
+            .filter(TeamUser.user_id == user_id)
+        )
+
+        # Get total count
+        count_query = select(func.count()).select_from(
+            base_query.with_only_columns(Team.id).subquery()
+        )
+        total = (await self.db.execute(count_query)).scalar() or 0
+
+        # Get paginated results
+        result = await self.db.execute(
+            base_query.offset(pagination.skip).limit(pagination.limit)
+        )
+        teams = list(result.unique().scalars().all())
+
+        return PaginatedResult(total=total, items=teams)
+
+    async def get_available_teams_in_contest(
+        self,
+        contest_id: UUID,
+        max_team_size: int,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> list[Team]:
+        """
+        Retrieve teams in a contest that have available slots for joining.
+
+        Args:
+            contest_id: Contest ID
+            max_team_size: Maximum team size for the contest
+            skip: Pagination offset
+            limit: Pagination limit
+
+        Returns:
+            List of Team objects with available slots
+        """
+        result = await self.db.execute(
+            select(Team)
+            .join(ContestTeam, ContestTeam.team_id == Team.id)
+            .filter(ContestTeam.contest_id == contest_id)
+            .offset(skip)
+            .limit(limit)
+        )
+        teams: list[Team] = list(result.scalars().all())
+
+        # Filter teams with available slots in memory
+        available_teams = []
+        for team in teams:
+            member_count = len(team.members)
+            if member_count < max_team_size:
+                available_teams.append(team)
+
+        return available_teams
+
+    async def add_student_to_team(
+        self,
+        team_id: UUID,
+        user_id: UUID,
+    ) -> TeamUser:
+        """
+        Add a student to an existing team.
+
+        Args:
+            team_id: Team ID
+            user_id: Student user ID to add
+
+        Returns:
+            Created TeamUser object
+        """
+        team_user = TeamUser(team_id=team_id, user_id=user_id)
+        self.db.add(team_user)
+        await self.db.flush()
+        return team_user
+
+    async def remove_student_from_team(
+        self,
+        team_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        """
+        Remove a student from a team.
+
+        Args:
+            team_id: Team ID
+            user_id: Student user ID to remove
+
+        Returns:
+            None
+        """
+        await self.db.execute(
+            delete(TeamUser).filter(
+                TeamUser.team_id == team_id,
+                TeamUser.user_id == user_id,
+            )
+        )
+        await self.db.flush()
+
+    async def is_student_in_team(
+        self,
+        team_id: UUID,
+        user_id: UUID,
+    ) -> bool:
+        """
+        Check if a student is a member of a team.
+
+        Args:
+            team_id: Team ID
+            user_id: Student user ID
+
+        Returns:
+            True if student is in team, False otherwise
+        """
+        result = await self.db.execute(
+            select(TeamUser).filter(
+                TeamUser.team_id == team_id,
+                TeamUser.user_id == user_id,
+            )
+        )
+        return result.scalar_one_or_none() is not None
+
+    async def get_team_members_detailed(
+        self,
+        team_id: UUID,
+    ) -> list[User]:
+        """
+        Retrieve all members of a team with full user details.
+
+        Args:
+            team_id: Team ID
+
+        Returns:
+            List of User objects representing team members
+        """
+        result = await self.db.execute(
+            select(User)
+            .join(TeamUser, TeamUser.user_id == User.id)
+            .filter(TeamUser.team_id == team_id)
+        )
+        return list(result.scalars().all())
+
+    async def create_student_team_for_contest(
+        self,
+        contest_id: UUID,
+        team_name: str,
+        team_description: str | None,
+        created_by: UUID,
+    ) -> tuple[Team, ContestTeam, ContestTeamProgress, TeamUser]:
+        """
+        Create a new team for student in a contest.
+
+        Creates team, registers in contest, adds creator as member and leader,
+        and initializes progress tracking.
+
+        Args:
+            contest_id: Contest ID
+            team_name: Name for new team
+            team_description: Optional team description
+            created_by: Student user ID creating the team
+
+        Returns:
+            Tuple of (Team, ContestTeam, ContestTeamProgress, TeamUser)
+        """
+        # Create team
+        team = Team(
+            name=team_name,
+            description=team_description,
+            created_by=created_by,
+            leader_id=created_by,
+        )
+        self.db.add(team)
+        await self.db.flush()
+
+        # Add creator as team member
+        team_user = TeamUser(team_id=team.id, user_id=created_by)
+        self.db.add(team_user)
+
+        # Register team in contest
+        contest_team = ContestTeam(
+            contest_id=contest_id,
+            team_id=team.id,
+            team_status="CONFIRMED",
+            approval_status=TeamApprovalStatus.APPROVED,
+        )
+        self.db.add(contest_team)
+
+        # Create progress tracking
+        progress = ContestTeamProgress(
+            contest_id=contest_id,
+            team_id=team.id,
+            score=0,
+        )
+        self.db.add(progress)
+
+        await self.db.flush()
+        return team, contest_team, progress, team_user
