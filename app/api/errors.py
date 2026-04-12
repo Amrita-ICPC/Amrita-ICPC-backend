@@ -20,7 +20,17 @@ from app.exceptions.contest import (
 from app.exceptions.team import (
     TeamNotFoundError,
 )
+from app.exceptions.question import QuestionNotFoundError
+from app.exceptions.execution import (
+    InvalidCodeError,
+    InvalidLanguageError,
+    InvalidSubmissionTokenError,
+    CodeExecutionError,
+    NoTestCasesError,
+    CompilationError,
+)
 from app.schema.base import APIErrorResponse, ErrorDetails, MetaResponse
+from app.schema.execution import CompilationErrorResponse
 
 
 def _create_error_response(
@@ -234,6 +244,85 @@ def setup_exception_handlers(app: FastAPI) -> None:
             message=exc.message,
             error_code="TEAM_NOT_FOUND",
             details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(QuestionNotFoundError)
+    async def question_not_found_handler(request: Request, exc: QuestionNotFoundError):
+        logger.warning(f"Question not found: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="QUESTION_NOT_FOUND",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(InvalidCodeError)
+    async def invalid_code_error_handler(request: Request, exc: InvalidCodeError):
+        logger.warning(f"Invalid code error: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="INVALID_CODE",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(InvalidLanguageError)
+    async def invalid_language_error_handler(request: Request, exc: InvalidLanguageError):
+        logger.warning(f"Invalid language error: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="INVALID_LANGUAGE",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(InvalidSubmissionTokenError)
+    async def invalid_submission_token_handler(request: Request, exc: InvalidSubmissionTokenError):
+        logger.warning(f"Invalid submission token: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="INVALID_SUBMISSION_TOKEN",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(CodeExecutionError)
+    async def code_execution_error_handler(request: Request, exc: CodeExecutionError):
+        logger.error(f"Code execution error: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="CODE_EXECUTION_ERROR",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(NoTestCasesError)
+    async def no_test_cases_error_handler(request: Request, exc: NoTestCasesError):
+        logger.warning(f"No test cases error: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="NO_TEST_CASES",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(CompilationError)
+    async def compilation_error_handler(request: Request, exc: CompilationError):
+        logger.warning(f"Compilation error: {exc.message}")
+        # Return CompilationErrorResponse with HTTP 400
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content=CompilationErrorResponse(
+                error_code="COMPILATION_ERROR",
+                compile_output=exc.compile_output,
+                message=exc.message,
+            ).model_dump(),
         )
 
     @app.exception_handler(Exception)

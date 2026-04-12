@@ -73,3 +73,41 @@ class CodeExecutionError(AppBaseException):
             message=message,
             status_code=status.HTTP_502_BAD_GATEWAY,
         )
+
+
+class NoTestCasesError(AppBaseException):
+    """Exception raised when a question has no non-hidden test cases.
+    
+    Raised when attempting to run code against a question that has no
+    visible test cases for students to practice against.
+    """
+
+    def __init__(self, message: str):
+        super().__init__(
+            message=message,
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+
+class CompilationError(AppBaseException):
+    """Exception raised when code fails to compile.
+    
+    Raised when:
+    - Code has syntax errors
+    - Code has import errors
+    - Code fails to parse by the compiler
+    
+    This is used in practice runs to signal early exit without running test cases.
+    """
+
+    def __init__(self, compile_output: str):
+        """Initialize with compilation error output.
+
+        Args:
+            compile_output: Error details from Judge0 compiler
+        """
+        self.compile_output = compile_output
+        super().__init__(
+            message=f"Code has compilation errors: {compile_output}",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
