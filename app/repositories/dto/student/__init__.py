@@ -1,42 +1,30 @@
-from app.repositories.dto.bank import BankFilters
-from app.repositories.dto.contest import (
-    ContestFilters,
-    CreateContestData,
-    UpdateContestData,
-)
-from app.repositories.dto.pagination import PaginatedResult, PaginationParams
-from app.repositories.dto.student import (
+"""Student-facing DTOs for contests and teams."""
+
+from app.repositories.dto.student.contests import (
     StudentAvailableContestData,
-    StudentAvailableTeamData,
     StudentContestDetailData,
     StudentContestFilters,
     StudentContestProblemData,
-    StudentCreateTeamData,
     StudentRegisteredContestData,
+)
+from app.repositories.dto.student.teams import (
+    StudentAvailableTeamData,
+    StudentCreateTeamData,
     StudentTeamData,
     StudentTeamFilters,
     StudentTeamJoinData,
     StudentTeamMemberData,
     StudentTeamRegistrationData,
 )
-from app.repositories.dto.team import CreateTeamData, TeamFilters, UpdateTeamData
 
 __all__ = [
-    "PaginationParams",
-    "PaginatedResult",
-    "CreateTeamData",
-    "UpdateTeamData",
-    "TeamFilters",
-    "ContestFilters",
-    "CreateContestData",
-    "UpdateContestData",
-    "BankFilters",
-    # Student DTOs
+    # Contest DTOs
     "StudentContestFilters",
     "StudentAvailableContestData",
     "StudentRegisteredContestData",
     "StudentContestDetailData",
     "StudentContestProblemData",
+    # Team DTOs
     "StudentTeamFilters",
     "StudentTeamMemberData",
     "StudentTeamData",
