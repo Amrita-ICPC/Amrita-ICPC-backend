@@ -1,16 +1,11 @@
 """API routes for code execution via Judge0."""
 
-from typing import Any, Dict
-from uuid import UUID
-
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import can_read
 from app.core.clients.database import get_db
 from app.core.logger import logger
-from app.exceptions.execution import CompilationError, NoTestCasesError
-from app.exceptions.judge0 import Judge0ClientError
 from app.schema.execution import (
     CodeRunRequest,
     CodeRunResponse,
@@ -74,46 +69,35 @@ async def run_code(
         HTTPException: 422 if request validation fails
         HTTPException: 502 if Judge0 service fails
     """
-    try:
-        logger.info(
-            f"Code run initiated",
-            extra={
-                "question_id": request.question_id,
-                "language_id": request.language_id,
-                "code_size": len(request.source_code),
-            },
-        )
+    logger.info(
+        f"Code run initiated",
+        extra={
+            "question_id": request.question_id,
+            "language_id": request.language_id,
+            "code_size": len(request.source_code),
+        },
+    )
 
-        # Execute code against non-hidden test cases
-        result = await service.run_code(
-            question_id=request.question_id,
-            source_code=request.source_code,
-            language_id=request.language_id,
-        )
+    # Execute code against non-hidden test cases
+    # Exceptions are handled by centralized exception handlers in app/api/errors.py:
+    # - NoTestCasesError → HTTP 400
+    # - CompilationError → HTTP 400 with CompilationErrorResponse
+    # - CodeExecutionError → HTTP 502
+    # - Judge0ClientError → HTTP 502
+    result = await service.run_code(
+        question_id=request.question_id,
+        source_code=request.source_code,
+        language_id=request.language_id,
+    )
 
-        logger.info(
-            f"Code run completed successfully",
-            extra={
-                "question_id": request.question_id,
-                "total": result.total,
-                "passed": result.passed,
-            },
-        )
+    logger.info(
+        f"Code run completed successfully",
+        extra={
+            "question_id": request.question_id,
+            "total": result.total,
+            "passed": result.passed,
+        },
+    )
 
-        return result
-
-    except NoTestCasesError as exc:
-        logger.warning(f"No test cases available: {exc}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
-        ) from exc
-    # CompilationError will be handled by exception_handler in errors.py
-
-    except Judge0ClientError as exc:
-        logger.error(f"Judge0 service error: {exc}")
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Failed to execute code on Judge0. Service may be temporarily unavailable.",
-        ) from exc
+    return result
 
