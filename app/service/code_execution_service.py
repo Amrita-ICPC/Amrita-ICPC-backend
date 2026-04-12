@@ -9,6 +9,7 @@ Handles the complete flow:
 5. Map to response schema
 """
 
+import asyncio
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +22,7 @@ from app.repositories.judge0 import Judge0Repository
 from app.repositories.question import QuestionRepository
 from app.repositories.testcase import TestCaseRepository
 from app.schema.execution import CodeRunResponse, TestCaseRunResult
+from app.utils.enums import ExecutionStatus
 
 
 class CodeExecutionService:
@@ -110,7 +112,6 @@ class CodeExecutionService:
         submit_tasks = [
             self.judge0_repo.submit_code(request, tc.input) for tc in testcases
         ]
-        import asyncio
         submissions = await asyncio.gather(*submit_tasks)
 
         # Create token -> testcase mapping
@@ -178,10 +179,14 @@ class CodeExecutionService:
             logger.debug(f"Batch polling {len(remaining_tokens)} remaining submissions until completion")
             try:
                 # Poll remaining tokens until ALL reach terminal state (not IN_QUEUE or PROCESSING)
+                # Use same timeout logic as wait_for_completion() to prevent infinite hangs
                 batch_results = {}
                 pending_tokens = set(remaining_tokens)
+                poll_interval = self.judge0_repo.POLL_INTERVAL_MS / 1000  # Convert to seconds
+                attempts = 0
+                max_attempts = self.judge0_repo.MAX_POLL_ATTEMPTS
                 
-                while pending_tokens:
+                while attempts < max_attempts and pending_tokens:
                     # Fetch current status of all pending tokens
                     current_batch = await self.judge0_repo.batch_get_results(list(pending_tokens))
                     batch_results.update(current_batch)
@@ -195,13 +200,23 @@ class CodeExecutionService:
                     
                     # If all tokens are complete, we're done
                     if not remaining_pending:
+                        logger.info(f"All {len(remaining_tokens)} remaining submissions completed")
                         break
                     
-                    # Wait 500ms before next batch poll (same as wait_for_completion polling interval)
+                    # Wait before next batch poll
                     pending_tokens = set(remaining_pending)
-                    if pending_tokens:
-                        await asyncio.sleep(0.5)
-                        logger.debug(f"Still waiting for {len(pending_tokens)} submissions to complete")
+                    attempts += 1
+                    if pending_tokens and attempts < max_attempts:
+                        await asyncio.sleep(poll_interval)
+                        logger.debug(f"Still waiting for {len(pending_tokens)} submissions to complete (attempt {attempts}/{max_attempts})")
+                
+                # Check if polling timed out
+                if pending_tokens and attempts >= max_attempts:
+                    elapsed_ms = attempts * self.judge0_repo.POLL_INTERVAL_MS
+                    error_msg = f"Batch polling timeout after {elapsed_ms}ms with {len(pending_tokens)} submissions still pending"
+                    logger.error(error_msg)
+                    from app.exceptions.judge0 import Judge0TimeoutError
+                    raise Judge0TimeoutError(error_msg)
             except ExceptionGroup as eg:
                 logger.error(f"Batch retrieval failures: {eg}")
                 from app.exceptions.judge0 import Judge0ClientError
@@ -214,6 +229,23 @@ class CodeExecutionService:
                 if not submission_result:
                     logger.warning(f"No result for token {token}, skipping")
                     continue
+
+                # Guard: Check for Judge0 infrastructure errors on remaining submissions
+                # Same pattern as first_result check - fail fast on non-user errors (HTTP 502)
+                if submission_result.status in (
+                    Judge0StatusCode.SYSTEM_ERROR,
+                    Judge0StatusCode.INTERNAL_ERROR,
+                ):
+                    error_msg = (
+                        submission_result.message
+                        or f"Judge0 infrastructure error (Status: {submission_result.status.name})"
+                    )
+                    logger.error(
+                        f"Judge0 service error on remaining submission {token}: {error_msg}"
+                    )
+                    raise CodeExecutionError(
+                        f"Judge0 failed to execute submission {token}: {error_msg}"
+                    )
 
                 testcase = token_to_testcase[token]
                 testcase_stdout = (submission_result.stdout or "").strip()
@@ -235,9 +267,11 @@ class CodeExecutionService:
         logger.debug(f"Mapping {len(all_execution_results)} results to response schema")
         testcase_results = []
         for execution_result in all_execution_results:
+            # Convert Judge0StatusCode to ExecutionStatus enum by name
+            execution_status = ExecutionStatus[execution_result.status.name]
             result = TestCaseRunResult(
                 testcase_id=execution_result.testcase_id,
-                status=execution_result.status.name,  # e.g., "ACCEPTED"
+                status=execution_status,
                 passed=execution_result.passed,
                 stdout=execution_result.stdout,
                 stderr=execution_result.stderr,
@@ -266,4 +300,3 @@ class CodeExecutionService:
         return response
 
 
-# Import after class definition to avoid circular imports (already imported at top now)
