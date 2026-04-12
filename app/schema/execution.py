@@ -1,6 +1,7 @@
 """Schemas for code execution via Judge0."""
 
 from typing import Optional
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -22,7 +23,7 @@ class CodeRunRequest(BaseModel):
     User only provides code and language.
     """
 
-    question_id: str = Field(..., description="Question UUID to run code against")
+    question_id: UUID = Field(..., description="Question UUID to run code against")
     source_code: str = Field(
         ...,
         min_length=1,
