@@ -5,6 +5,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from app.utils.enums import ExecutionStatus
+
 
 # LANGUAGES
 class Language(BaseModel):
@@ -41,9 +43,9 @@ class TestCaseRunResult(BaseModel):
     """
 
     testcase_id: str = Field(..., description="Test case UUID")
-    status: str = Field(
+    status: ExecutionStatus = Field(
         ...,
-        description="Execution status (ACCEPTED, WRONG_ANSWER, RUNTIME_ERROR, TIME_LIMIT_EXCEEDED, SYSTEM_ERROR)",
+        description="Execution status from Judge0 (ACCEPTED, WRONG_ANSWER, RUNTIME_ERROR, TIME_LIMIT_EXCEEDED, SYSTEM_ERROR, etc.)",
     )
     passed: bool = Field(
         ..., description="Whether this test case passed (output matches expected)"
@@ -80,7 +82,7 @@ class CodeRunResponse(BaseModel):
                 "testcases": [
                     {
                         "testcase_id": "tc_1",
-                        "status": "PASSED",
+                        "status": "ACCEPTED",
                         "stdout": "120",
                         "expected_output": "120",
                         "passed": True,
@@ -89,7 +91,7 @@ class CodeRunResponse(BaseModel):
                     },
                     {
                         "testcase_id": "tc_2",
-                        "status": "FAILED",
+                        "status": "WRONG_ANSWER",
                         "stdout": "240",
                         "expected_output": "120",
                         "stderr": None,

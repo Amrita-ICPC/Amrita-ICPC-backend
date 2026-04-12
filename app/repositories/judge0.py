@@ -117,7 +117,8 @@ class Judge0Repository:
                 message=data.get("message"),
             )
 
-        except (Judge0ClientError, Judge0ConnectionError, Judge0TimeoutError):
+        except (Judge0APIError, Judge0ServiceUnavailableError, Judge0ConnectionError, Judge0TimeoutError):
+            # Preserve domain exceptions (status/detail from Judge0)
             raise
         except httpx.TimeoutException as e:
             logger.error(f"Judge0 submission timeout: {str(e)}")
@@ -186,7 +187,8 @@ class Judge0Repository:
                 message=data.get("message"),
             )
 
-        except (Judge0ClientError, Judge0APIError) as e:
+        except (Judge0APIError, Judge0ServiceUnavailableError, Judge0ConnectionError, Judge0TimeoutError) as e:
+            # Preserve domain exceptions (status/detail from Judge0)
             logger.warning(f"Judge0 result retrieval error for token {token}: {str(e)}")
             raise
         except httpx.TimeoutException as e:

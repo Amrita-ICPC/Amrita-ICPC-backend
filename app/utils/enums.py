@@ -99,6 +99,34 @@ class ScoringType(str, enum.Enum):
     HYBRID = "HYBRID"
 
 
+class ExecutionStatus(str, enum.Enum):
+    """
+    Enumeration of code execution status outcomes from Judge0.
+
+    Represents the final state of code execution against a test case,
+    indicating whether execution succeeded and how output compared to expected.
+
+    Attributes:
+        ACCEPTED: Code executed successfully and output matches expected (test passed).
+        WRONG_ANSWER: Code executed successfully but output does not match expected.
+        TIME_LIMIT_EXCEEDED: Code did not complete within the time limit.
+        RUNTIME_ERROR: Code crashed or raised an exception during execution.
+        MEMORY_LIMIT_EXCEEDED: Code exceeded the memory usage limit.
+        CPU_TIME_LIMIT_EXCEEDED: Code exceeded CPU time limit.
+        SYSTEM_ERROR: Judge0 system encountered an error during execution.
+        INTERNAL_ERROR: Judge0 encountered an internal error during execution.
+    """
+
+    ACCEPTED = "ACCEPTED"
+    WRONG_ANSWER = "WRONG_ANSWER"
+    TIME_LIMIT_EXCEEDED = "TIME_LIMIT_EXCEEDED"
+    RUNTIME_ERROR = "RUNTIME_ERROR"
+    MEMORY_LIMIT_EXCEEDED = "MEMORY_LIMIT_EXCEEDED"
+    CPU_TIME_LIMIT_EXCEEDED = "CPU_TIME_LIMIT_EXCEEDED"
+    SYSTEM_ERROR = "SYSTEM_ERROR"
+    INTERNAL_ERROR = "INTERNAL_ERROR"
+
+
 class TeamApprovalMode(str, enum.Enum):
     """
     Enumeration of contest-level team approval modes.
