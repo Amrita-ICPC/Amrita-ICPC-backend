@@ -1,13 +1,4 @@
-"""Service layer for code execution (practice "Run" operation).
-
-Orchestrates repositories to run user code against non-hidden test cases.
-Handles the complete flow:
-1. Fetch question and test cases
-2. Submit code for execution
-3. Check compilation error
-4. Poll results efficiently
-5. Map to response schema
-"""
+"""Service layer for code execution (practice "Run" operation)."""
 
 import asyncio
 from uuid import UUID
@@ -16,7 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.clients.judge0 import Judge0StatusCode
 from app.core.logger import logger
-from app.exceptions.execution import CodeExecutionError, CompilationError, NoTestCasesError
+from app.exceptions.execution import (
+    CodeExecutionError,
+    CompilationError,
+    NoTestCasesError,
+)
+from app.exceptions.judge0 import Judge0ClientError, Judge0TimeoutError
 from app.repositories.dto.judge0 import Judge0ExecutionRequestDTO, Judge0ExecutionResultDTO
 from app.repositories.judge0 import Judge0Repository
 from app.repositories.question import QuestionRepository
@@ -25,17 +21,20 @@ from app.schema.execution import CodeRunResponse, TestCaseRunResult
 from app.utils.enums import ExecutionStatus
 
 
+JUDGE0_TO_EXECUTION_STATUS: dict[Judge0StatusCode, ExecutionStatus] = {
+    Judge0StatusCode.ACCEPTED: ExecutionStatus.ACCEPTED,
+    Judge0StatusCode.WRONG_ANSWER: ExecutionStatus.WRONG_ANSWER,
+    Judge0StatusCode.TIME_LIMIT_EXCEEDED: ExecutionStatus.TIME_LIMIT_EXCEEDED,
+    Judge0StatusCode.RUNTIME_ERROR: ExecutionStatus.RUNTIME_ERROR,
+    Judge0StatusCode.MEMORY_LIMIT_EXCEEDED: ExecutionStatus.MEMORY_LIMIT_EXCEEDED,
+    Judge0StatusCode.CPU_TIME_LIMIT_EXCEEDED: ExecutionStatus.CPU_TIME_LIMIT_EXCEEDED,
+    Judge0StatusCode.SYSTEM_ERROR: ExecutionStatus.SYSTEM_ERROR,
+    Judge0StatusCode.INTERNAL_ERROR: ExecutionStatus.INTERNAL_ERROR,
+}
+
+
 class CodeExecutionService:
-    """Service for executing user code against test cases in practice mode.
-    
-    Handles the orchestration of:
-    - Fetching question and test cases from database
-    - Submitting code to Judge0 for execution
-    - Efficiently polling for results (batch + parallel)
-    - Mapping results to API response schema
-    
-    Only executes against NON-HIDDEN test cases (practice mode).
-    """
+    """Service for executing user code against test cases in practice mode."""
 
     def __init__(self, db: AsyncSession):
         """Initialize service with async database session.
@@ -56,39 +55,26 @@ class CodeExecutionService:
     ) -> CodeRunResponse:
         """Execute user code against all non-hidden test cases.
 
-        Main orchestration method that:
-        1. Validates question exists
-        2. Fetches non-hidden test cases
-        3. Submits code to Judge0 for each test case
-        4. Checks compilation error (early exit if found)
-        5. Batch polls all remaining results efficiently
-        6. Maps ExecutionResultDTOs to TestCaseRunResult schema
-        7. Returns aggregated CodeRunResponse
-
         Args:
             question_id: UUID of question to run code against
             source_code: User-submitted source code (1-50KB)
             language_id: Judge0 language ID (e.g., 71 for Python)
 
         Returns:
-            CodeRunResponse with:
-            - testcases: list of TestCaseRunResult (one per test case)
-            - total: number of test cases executed
-            - passed: number of test cases that passed
+            CodeRunResponse with testcases, total count, and passed count
 
         Raises:
             QuestionNotFoundError: If question_id doesn't exist
             NoTestCasesError: If question has no non-hidden test cases
-            Judge0ClientError: If Judge0 API call fails
-            Judge0TimeoutError: If execution polling times out
+            CompilationError: If code fails to compile (HTTP 400)
+            CodeExecutionError: If Judge0 service fails (HTTP 502)
+            Judge0TimeoutError: If polling times out
         """
         logger.info(f"Starting code execution for question {question_id}")
 
-        # Step 1: Validate question exists
         question = await self.question_repo.get_question_or_raise(question_id)
         logger.debug(f"Question found: {question.question_text[:50]}... (id={question.id})")
 
-        # Step 2: Fetch NON-HIDDEN test cases only (practice mode)
         testcases = await self.testcase_repo.get_non_hidden_by_question(question_id)
         if not testcases:
             logger.warning(f"No non-hidden test cases for question {question_id}")
@@ -100,21 +86,18 @@ class CodeExecutionService:
             f"Found {len(testcases)} non-hidden test cases for question {question_id}"
         )
 
-        # Step 3: Create execution request DTO
         request = Judge0ExecutionRequestDTO(
             question_id=str(question_id),
             source_code=source_code,
             language_id=language_id,
         )
 
-        # Step 4: Submit code for each test case (parallel)
         logger.debug(f"Submitting code to Judge0 for {len(testcases)} test cases")
         submit_tasks = [
             self.judge0_repo.submit_code(request, tc.input) for tc in testcases
         ]
         submissions = await asyncio.gather(*submit_tasks)
 
-        # Create token -> testcase mapping
         token_to_testcase = {
             sub.token: tc for sub, tc in zip(submissions, testcases)
         }
@@ -122,12 +105,12 @@ class CodeExecutionService:
 
         logger.debug(f"Submitted {len(all_tokens)} submissions to Judge0")
 
-        # Step 5: Check compilation on FIRST test case
         first_token = all_tokens[0]
         logger.debug("Checking compilation on first test case")
         first_result = await self.judge0_repo.wait_for_completion(first_token)
 
-        # Early exit if compilation error (user code issue → HTTP 400)
+        logger.info(f"DEBUG_FIRST_RESULT: status_id={first_result.status_id}, status={first_result.status.name}, stdout={first_result.stdout}, compile_output={first_result.compile_output}, message={first_result.message}")
+
         if first_result.status == Judge0StatusCode.COMPILATION_ERROR:
             compile_error = (
                 first_result.compile_output
@@ -137,10 +120,27 @@ class CodeExecutionService:
             logger.warning(
                 f"Compilation error for question {question_id}: {compile_error}"
             )
-            # Raise so route handler can return CompilationErrorResponse
             raise CompilationError(compile_error)
 
-        # Early exit if infrastructure/service error (Judge0 issue → HTTP 502)
+        # Check stderr for compilation errors (Python, Ruby, etc. report SyntaxError during execution)
+        if first_result.status == Judge0StatusCode.INTERNAL_ERROR and first_result.stderr:
+            stderr_lower = first_result.stderr.lower()
+            compilation_error_indicators = [
+                "syntaxerror",
+                "indentationerror",
+                "taberror",
+                "importerror",
+                "modulenotfounderror",
+                "nameerror: name",  # Common in Python tests
+                "typeerror",
+                "attributeerror",
+            ]
+            if any(indicator in stderr_lower for indicator in compilation_error_indicators):
+                logger.warning(
+                    f"Detected compilation-like error in stderr for question {question_id}: {first_result.stderr[:200]}"
+                )
+                raise CompilationError(first_result.stderr or "Code execution failed")
+
         if first_result.status in (
             Judge0StatusCode.SYSTEM_ERROR,
             Judge0StatusCode.INTERNAL_ERROR,
@@ -156,7 +156,6 @@ class CodeExecutionService:
                 f"Judge0 failed to execute the submission: {error_msg}"
             )
 
-        # Step 6: Map first result to ExecutionResultDTO
         first_testcase = token_to_testcase[first_token]
         first_stdout = (first_result.stdout or "").strip()
         first_expected = (first_testcase.output or "").strip()
@@ -173,53 +172,43 @@ class CodeExecutionService:
         )
         all_execution_results = [first_execution]
 
-        # Step 7: Batch poll REMAINING test cases until completion (if any)
         remaining_tokens = all_tokens[1:]
         if remaining_tokens:
             logger.debug(f"Batch polling {len(remaining_tokens)} remaining submissions until completion")
             try:
-                # Poll remaining tokens until ALL reach terminal state (not IN_QUEUE or PROCESSING)
-                # Use same timeout logic as wait_for_completion() to prevent infinite hangs
                 batch_results = {}
                 pending_tokens = set(remaining_tokens)
-                poll_interval = self.judge0_repo.POLL_INTERVAL_MS / 1000  # Convert to seconds
+                poll_interval = self.judge0_repo.POLL_INTERVAL_MS / 1000
                 attempts = 0
                 max_attempts = self.judge0_repo.MAX_POLL_ATTEMPTS
                 
                 while attempts < max_attempts and pending_tokens:
-                    # Fetch current status of all pending tokens
                     current_batch = await self.judge0_repo.batch_get_results(list(pending_tokens))
                     batch_results.update(current_batch)
                     
-                    # Check which tokens are still pending (not in terminal state)
                     remaining_pending = []
                     for token in pending_tokens:
                         result = batch_results.get(token)
                         if result and not result.is_completed:
                             remaining_pending.append(token)
                     
-                    # If all tokens are complete, we're done
                     if not remaining_pending:
                         logger.info(f"All {len(remaining_tokens)} remaining submissions completed")
                         break
                     
-                    # Wait before next batch poll
                     pending_tokens = set(remaining_pending)
                     attempts += 1
                     if pending_tokens and attempts < max_attempts:
                         await asyncio.sleep(poll_interval)
                         logger.debug(f"Still waiting for {len(pending_tokens)} submissions to complete (attempt {attempts}/{max_attempts})")
                 
-                # Check if polling timed out
                 if pending_tokens and attempts >= max_attempts:
                     elapsed_ms = attempts * self.judge0_repo.POLL_INTERVAL_MS
                     error_msg = f"Batch polling timeout after {elapsed_ms}ms with {len(pending_tokens)} submissions still pending"
                     logger.error(error_msg)
-                    from app.exceptions.judge0 import Judge0TimeoutError
                     raise Judge0TimeoutError(error_msg)
             except ExceptionGroup as eg:
                 logger.error(f"Batch retrieval failures: {eg}")
-                from app.exceptions.judge0 import Judge0ClientError
                 raise Judge0ClientError(
                     f"Failed to retrieve results for {len(eg.exceptions)} submission(s) from Judge0"
                 )
@@ -230,8 +219,6 @@ class CodeExecutionService:
                     logger.warning(f"No result for token {token}, skipping")
                     continue
 
-                # Guard: Check for Judge0 infrastructure errors on remaining submissions
-                # Same pattern as first_result check - fail fast on non-user errors (HTTP 502)
                 if submission_result.status in (
                     Judge0StatusCode.SYSTEM_ERROR,
                     Judge0StatusCode.INTERNAL_ERROR,
@@ -263,12 +250,18 @@ class CodeExecutionService:
                 )
                 all_execution_results.append(execution_result)
 
-        # Step 8: Map ExecutionResultDTOs to TestCaseRunResult schema
         logger.debug(f"Mapping {len(all_execution_results)} results to response schema")
         testcase_results = []
         for execution_result in all_execution_results:
-            # Convert Judge0StatusCode to ExecutionStatus enum by name
-            execution_status = ExecutionStatus[execution_result.status.name]
+            execution_status = JUDGE0_TO_EXECUTION_STATUS.get(
+                execution_result.status,
+                ExecutionStatus.RUNTIME_ERROR,
+            )
+            if execution_result.status not in JUDGE0_TO_EXECUTION_STATUS:
+                logger.warning(
+                    f"Unmapped Judge0 status {execution_result.status.name}, "
+                    f"defaulting to RUNTIME_ERROR"
+                )
             result = TestCaseRunResult(
                 testcase_id=execution_result.testcase_id,
                 status=execution_status,
@@ -281,7 +274,6 @@ class CodeExecutionService:
             )
             testcase_results.append(result)
 
-        # Step 9: Calculate summary statistics
         total_tests = len(testcase_results)
         passed_tests = sum(1 for result in testcase_results if result.passed)
 
@@ -290,13 +282,10 @@ class CodeExecutionService:
             f"{passed_tests}/{total_tests} tests passed"
         )
 
-        # Step 10: Return CodeRunResponse
-        response = CodeRunResponse(
+        return CodeRunResponse(
             testcases=testcase_results,
             total=total_tests,
             passed=passed_tests,
         )
-
-        return response
 
 
