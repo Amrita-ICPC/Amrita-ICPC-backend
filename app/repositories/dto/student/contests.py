@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
-from app.utils.enums import ContestStatus
+from app.utils.enums import ContestStatus, QuestionDifficulty
 
 
 @dataclass
@@ -22,6 +22,7 @@ class StudentContestFilters:
     is_public: bool | None = None
     only_registered: bool = False  # If True, only show contests student is registered in
     only_available: bool = False   # If True, only show contests available for registration
+    difficulty_level: str | None = None  # Filter by problem difficulty: EASY, MEDIUM, HARD
 
 
 @dataclass
