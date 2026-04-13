@@ -13,7 +13,9 @@ Key Responsibilities:
     - Query available contests
     - Query registered contests
     - Get contest details with problem lists
-    - Register students for contests
+    - Filter contests by difficulty
+    - Get past contests student participated in
+    - Register students for contests with teams
     - Transform repository data to API response schemas
     - Coordinate cache invalidation for contest-related data
 """
@@ -34,6 +36,7 @@ from app.mappers.student.contest_mappers import (
     to_student_registered_contest_response,
     to_student_registered_contests_list_response,
 )
+from app.utils.enums import ContestStatus, QuestionDifficulty
 from app.repositories.dto import PaginationParams, StudentContestFilters
 from app.repositories.team import TeamRepository
 from app.schema.student.contests import (
@@ -69,12 +72,16 @@ class StudentContestService:
         - get_registered_contests: Query contests student is enrolled in
         - get_contest_details: Get full contest details with problem list
         - get_contest_problems: Get problem list for a contest
-        - register_for_contest: Register student individually for contest
+        - get_contests_by_difficulty: Filter contests by problem difficulty (EASY, MEDIUM, HARD)
+        - get_past_contests: Get finished contests student participated in
+        - register_for_contest: Register student's team for a contest
 
     Cache Strategy:
         - Available contests cached per user (includes filters)
         - Registered contests cached per user
         - Contest details cached per user per contest
+        - Difficulty-filtered contests cached per difficulty
+        - Past contests cached per user
         - Cache invalidated on registration operations
     """
 
@@ -372,3 +379,136 @@ class StudentContestService:
             contest_id=contest_id,
             status="success",
         )
+
+    @cache_get(
+        key_builder=lambda self, user_id, difficulty, skip=0, limit=10: f"student:contests:difficulty:{difficulty}:user:{user_id}:skip:{skip}:limit:{limit}",
+        ttl=300,
+    )
+    async def get_contests_by_difficulty(
+        self,
+        user_id: UUID,
+        difficulty: str,
+        skip: int = 0,
+        limit: int = 10,
+    ) -> StudentContestListResponse:
+        """
+        Get contests filtered by problem difficulty level.
+
+        Retrieves all contests that contain problems of a specific difficulty level.
+        Helps students find contests matching their skill level.
+
+        Difficulty Levels:
+        - EASY: Beginner-friendly contests
+        - MEDIUM: Intermediate challenges
+        - HARD: Advanced problems
+
+        Query Process:
+        1. Validate difficulty is valid enum value
+        2. Find contests with problems of given difficulty
+        3. Filter for public contests or those student is registered in
+        4. Apply pagination
+        5. Return filtered list
+
+        Implementation:
+        - Delegates to repository get_contests_by_difficulty
+        - Auto-filters for public or registered contests
+        - Respects pagination parameters
+        - Caches results per user and difficulty
+
+        Args:
+            user_id: UUID of the student filtering contests
+            difficulty: Difficulty level (EASY, MEDIUM, HARD)
+            skip: Number of records to skip for pagination
+            limit: Maximum number of records to return
+
+        Returns:
+            StudentContestListResponse with contests matching difficulty
+
+        Raises:
+            InvalidDifficultyError: If difficulty value is invalid
+
+        Cache Behavior:
+            - Cached per user per difficulty level
+            - TTL: 300 seconds
+            - Cache key includes difficulty and pagination params
+        """
+        # Validate difficulty is valid enum value
+        try:
+            difficulty_enum = QuestionDifficulty(difficulty)
+        except ValueError:
+            raise ValueError(
+                f"Invalid difficulty: {difficulty}. Must be one of {[d.value for d in QuestionDifficulty]}"
+            )
+
+        # Create filter for difficulty-based query
+        filters = StudentContestFilters(difficulty_level=difficulty)
+        pagination = PaginationParams(skip=skip, limit=limit)
+
+        # Get contests by difficulty
+        result = await self.repository.get_contests_by_difficulty(
+            user_id=user_id, filters=filters, pagination=pagination
+        )
+
+        logger.info(
+            f"Student {user_id} viewed contests by difficulty: {difficulty} (found {result.total})"
+        )
+
+        return to_student_available_contests_list_response(result, skip, limit)
+
+    @cache_get(
+        key_builder=lambda self, user_id, skip=0, limit=10: f"student:contests:past:user:{user_id}:skip:{skip}:limit:{limit}",
+        ttl=300,
+    )
+    async def get_past_contests(
+        self,
+        user_id: UUID,
+        skip: int = 0,
+        limit: int = 10,
+    ) -> StudentContestListResponse:
+        """
+        Get past contests (finished) that student participated in.
+
+        Retrieves all contests with FINISHED status that the student was
+        registered for. Allows students to review past competitions, see results,
+        and learn from previous contests.
+
+        Query Process:
+        1. Get contests with status = FINISHED
+        2. Filter for contests student was registered in
+        3. Sort by end time (most recent first)
+        4. Apply pagination
+        5. Return paginated list
+
+        Implementation:
+        - Queries ContestStatus.FINISHED contests only
+        - Checks student registration via ContestTeam relationship
+        - Orders by contest.end_time descending
+        - Includes problem counts and team info
+
+        Args:
+            user_id: UUID of the student requesting past contests
+            skip: Number of records to skip for pagination
+            limit: Maximum number of records to return
+
+        Returns:
+            StudentContestListResponse with finished contests student participated in
+
+        Cache Behavior:
+            - Cached per user
+            - TTL: 300 seconds
+            - Cache key includes pagination params
+        """
+        # Create filter for finished contests only
+        filters = StudentContestFilters(status=ContestStatus.FINISHED)
+        pagination = PaginationParams(skip=skip, limit=limit)
+
+        # Get past contests student participated in
+        result = await self.repository.get_past_contests_for_student(
+            user_id=user_id, filters=filters, pagination=pagination
+        )
+
+        logger.info(
+            f"Student {user_id} viewed past contests (found {result.total})"
+        )
+
+        return to_student_available_contests_list_response(result, skip, limit)
