@@ -13,6 +13,8 @@ from app.schema.student.contests import (
 )
 from app.schema.student.teams import (
     StudentLeaveTeamResponse,
+    StudentTeamAddMemberRequest,
+    StudentTeamAddMemberResponse,
     StudentTeamAvailableResponse,
     StudentTeamCreateAndJoinResponse,
     StudentTeamCreateRequest,
@@ -20,6 +22,8 @@ from app.schema.student.teams import (
     StudentTeamJoinResponse,
     StudentTeamListResponse,
     StudentTeamMemberResponse,
+    StudentTeamRemoveMemberRequest,
+    StudentTeamRemoveMemberResponse,
     StudentTeamResponse,
 )
 
@@ -45,6 +49,11 @@ __all__ = [
     "StudentTeamJoinResponse",
     "StudentTeamCreateRequest",
     "StudentTeamCreateAndJoinResponse",
+    # Team schemas - Member management
+    "StudentTeamAddMemberRequest",
+    "StudentTeamAddMemberResponse",
+    "StudentTeamRemoveMemberRequest",
+    "StudentTeamRemoveMemberResponse",
     "StudentLeaveTeamResponse",
     "StudentTeamListResponse",
 ]

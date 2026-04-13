@@ -23,7 +23,9 @@ from uuid import UUID
 
 from app.core.cache.decorators import cache_delete, cache_get, cache_set
 from app.core.logger import logger
+from app.exceptions.auth import PermissionDeniedError
 from app.exceptions.contest import ContestNotFoundError
+from app.exceptions.team import TeamNotFoundError
 from app.mappers.student.contest_mappers import (
     to_student_available_contest_response,
     to_student_available_contests_list_response,
@@ -289,37 +291,47 @@ class StudentContestService:
         ]
     )
     async def register_for_contest(
-        self, contest_id: UUID, user_id: UUID
+        self, contest_id: UUID, team_id: UUID, user_id: UUID
     ) -> StudentContestRegistrationResponse:
         """
-        Register a student individually for a contest.
+        Register a student's team for a contest.
 
-        Creates a single-person team for the student and registers the team
-        in the contest. Sets initial approval status based on contest settings:
+        Registers an existing team (that student is a member of) for a contest.
+        Sets initial approval status based on contest settings:
         - AUTO_APPROVE: Approved immediately
         - INSTRUCTOR_REVIEW: Waiting for approval
 
+        Business Rules:
+        1. User MUST be a member of the team (cannot register other teams)
+        2. Contest MUST exist and not be soft-deleted
+        3. Team MUST exist and not be soft-deleted
+        4. User can only register with a team (not individually)
+
         Registration Process:
         1. Validate contest exists and is not soft-deleted
-        2. Validate registration window (if set)
-        3. Create single-member team in database
+        2. Validate team exists and is not soft-deleted
+        3. Verify user is a member of the team
         4. Create ContestTeam record with appropriate approval status
         5. Invalidate student's contest list caches
 
         Implementation:
-        - Delegates to repository for team creation
+        - Verifies user is team member before allowing registration
+        - Delegates to repository for contest_team creation
         - Sets team as CONFIRMED immediately
         - Returns registration response with status
 
         Args:
             contest_id: UUID of the contest to register for
-            user_id: UUID of the student registering
+            team_id: UUID of the team to register with
+            user_id: UUID of the student registering (must be team member)
 
         Returns:
             StudentContestRegistrationResponse with registration status
 
         Raises:
             ContestNotFoundError: If contest not found or soft-deleted
+            TeamNotFoundError: If team not found or soft-deleted
+            PermissionDeniedError: If user is not a member of the team
             RegistrationWindowClosedError: If registration period has closed
             ContestAlreadyStartedError: If contest is already running/finished
             StudentAlreadyRegisteredError: If student already registered
@@ -334,12 +346,26 @@ class StudentContestService:
         if contest.is_deleted:
             raise ContestNotFoundError(str(contest_id))
 
-        # Register student (creates team and contest_team)
-        contest_team = await self.repository.register_student_to_contest(
-            contest_id=contest_id, user_id=user_id
+        # Verify team exists
+        team = await self.repository.get_team_or_raise(team_id)
+        if team.is_deleted:
+            raise TeamNotFoundError(str(team_id), str(contest_id))
+
+        # CRITICAL: Verify user is a member of the team (cannot register other's teams)
+        is_team_member = await self.repository.is_user_in_team(team_id, user_id)
+        if not is_team_member:
+            raise PermissionDeniedError(
+                "You can only register for contests with teams you are a member of"
+            )
+
+        # Register team for contest
+        contest_team = await self.repository.register_team_to_contest(
+            contest_id=contest_id, team_id=team_id
         )
 
-        logger.info(f"Student {user_id} registered for contest {contest_id}")
+        logger.info(
+            f"User {user_id} registered team {team_id} for contest {contest_id}"
+        )
 
         return StudentContestRegistrationResponse(
             message="Successfully registered for contest",

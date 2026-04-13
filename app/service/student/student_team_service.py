@@ -16,6 +16,8 @@ Key Responsibilities:
     - Get team details with members
     - Create new teams for contests
     - Join existing teams
+    - Add members to team (leader only)
+    - Remove members from team (leader only)
     - Leave teams
     - Transform repository data to API response schemas
     - Coordinate cache invalidation for team-related data
@@ -26,6 +28,7 @@ from uuid import UUID
 
 from app.core.cache.decorators import cache_delete, cache_get, cache_set
 from app.core.logger import logger
+from app.exceptions.auth import PermissionDeniedError
 from app.exceptions.team import TeamNotFoundError
 from app.mappers.student.team_mappers import (
     to_student_available_teams_list_response,
@@ -37,10 +40,13 @@ from app.mappers.student.team_mappers import (
 from app.repositories.dto import PaginationParams
 from app.schema.student.teams import (
     StudentLeaveTeamResponse,
+    StudentTeamAddMemberRequest,
+    StudentTeamAddMemberResponse,
     StudentTeamCreateAndJoinResponse,
     StudentTeamCreateRequest,
     StudentTeamJoinResponse,
     StudentTeamListResponse,
+    StudentTeamRemoveMemberResponse,
     StudentTeamResponse,
 )
 
@@ -247,18 +253,25 @@ class StudentTeamService:
         then registers the team in the specified contest. The team is
         immediately set to CONFIRMED status.
 
+        Business Rules:
+        1. Contest MUST be PUBLIC (students cannot create teams for private contests)
+        2. Contest MUST exist and not be soft-deleted
+        3. Student becomes team creator and leader
+
         Approval Status:
         - AUTO_APPROVE: Team approved automatically
         - INSTRUCTOR_REVIEW: Team waiting for instructor approval
 
         Process:
-        1. Validate contest exists and not soft-deleted
-        2. Create team with student as creator and leader
-        3. Create ContestTeam record with contest
-        4. Create ContestTeamProgress for tracking
-        5. Return response with team and approval status
+        1. Validate contest exists and is not soft-deleted
+        2. Verify contest is PUBLIC (critical business rule)
+        3. Create team with student as creator and leader
+        4. Create ContestTeam record with contest
+        5. Create ContestTeamProgress for tracking
+        6. Return response with team and approval status
 
         Implementation:
+        - Checks contest.is_public before allowing team creation
         - Uses repository create_student_team_for_contest method
         - Automatically adds creator as member and leader
         - Sets initial approval status based on contest settings
@@ -274,8 +287,8 @@ class StudentTeamService:
 
         Raises:
             ContestNotFoundError: If contest not found or soft-deleted
+            PermissionDeniedError: If contest is not public
             TeamAlreadyExistsError: If team name conflicts in contest
-            PermissionDeniedError: If user not eligible to create teams
 
         Cache Behavior:
             - Invalidates student's teams list
@@ -285,6 +298,12 @@ class StudentTeamService:
 
         if contest.is_deleted:
             raise TeamNotFoundError(str(contest_id), str(contest_id))
+
+        # CRITICAL BUSINESS RULE: Students can only create teams for PUBLIC contests
+        if not contest.is_public:
+            raise PermissionDeniedError(
+                f"Cannot create teams for private contests. Contest '{contest.name}' is not public."
+            )
 
         # Create team and register in contest
         team, contest_team, progress = await self.repository.create_student_team_for_contest(
@@ -440,5 +459,191 @@ class StudentTeamService:
         return StudentLeaveTeamResponse(
             message="Successfully left team",
             team_id=team_id,
+            status="success",
+        )
+
+    async def add_member_to_team(
+        self,
+        team_id: UUID,
+        leader_user_id: UUID,
+        member_email: str,
+    ) -> StudentTeamAddMemberResponse:
+        """
+        Add a member to a team (leader only).
+
+        Adds a new student to an existing team. Only team leaders can add members.
+        Validates team size constraints and membership eligibility.
+
+        Business Rules:
+        1. Only team leader can add members
+        2. Team must not be at max capacity
+        3. User to add must exist
+        4. User must not already be team member
+        5. User must not be in multiple teams in same contest
+
+        Add Process:
+        1. Verify requester is team leader
+        2. Validate team size limit
+        3. Find user by email
+        4. Verify user is not already in team
+        5. Add user to team
+        6. Invalidate team caches
+
+        Implementation:
+        - Checks team.leader_id == user_id for authorization
+        - Enforces max_team_size from contest settings
+        - Finds user by email via repository
+        - Adds TeamUser relationship
+
+        Args:
+            team_id: UUID of team to add member to
+            leader_user_id: UUID of user making request (must be leader)
+            member_email: Email of user to add to team
+
+        Returns:
+            StudentTeamAddMemberResponse with add status
+
+        Raises:
+            TeamNotFoundError: If team not found
+            PermissionDeniedError: If requester is not team leader
+            UserNotFoundError: If user with email not found
+            MemberAlreadyInTeamError: If user already in team
+            TeamFullError: If team at capacity
+
+        Cache Behavior:
+            - Invalidates team details cache
+            - Invalidates available teams list
+        """
+        team = await self.repository.get_team_or_raise(team_id)
+
+        # CRITICAL: Only team leader can add members
+        if team.leader_id != leader_user_id:
+            raise PermissionDeniedError(
+                "Only team leader can add members"
+            )
+
+        # Get team members and contest to check capacity
+        team_users = await self.repository.get_team_users(team_id)
+        current_count = len(team_users)
+
+        # Get contest to check max_team_size
+        contest = await self.repository.get_contest_for_team(team_id)
+        if current_count >= contest.max_team_size:
+            return StudentTeamAddMemberResponse(
+                message=f"Team is full (max {contest.max_team_size} members)",
+                team_id=team_id,
+                added_user_email=member_email,
+                new_member_count=current_count,
+                status="team_full",
+            )
+
+        # Check if user already exists in team
+        existing_members = {tu.user.email for tu in team_users}
+        if member_email in existing_members:
+            return StudentTeamAddMemberResponse(
+                message="User already in team",
+                team_id=team_id,
+                added_user_email=member_email,
+                new_member_count=current_count,
+                status="already_member",
+            )
+
+        # Find user by email
+        user = await self.repository.get_user_by_email_or_raise(member_email)
+
+        # Add user to team
+        await self.repository.add_student_to_team(team_id, user.id, is_leader=False)
+
+        logger.info(f"User {leader_user_id} added {member_email} to team {team_id}")
+
+        return StudentTeamAddMemberResponse(
+            message=f"Successfully added {member_email} to team",
+            team_id=team_id,
+            added_user_email=member_email,
+            new_member_count=current_count + 1,
+            status="success",
+        )
+
+    async def remove_member_from_team(
+        self,
+        team_id: UUID,
+        leader_user_id: UUID,
+        member_user_id: UUID,
+    ) -> StudentTeamRemoveMemberResponse:
+        """
+        Remove a member from a team (leader only).
+
+        Removes a student from a team. Only team leaders can remove members.
+        Prevents removal of the team leader (leader must resign first).
+
+        Business Rules:
+        1. Only team leader can remove members
+        2. Cannot remove the team leader
+        3. Member must exist in team
+        4. Cannot leave team empty
+
+        Remove Process:
+        1. Verify requester is team leader
+        2. Check member is not team leader
+        3. Verify member is in team
+        4. Remove member from team
+        5. Invalidate team caches
+
+        Implementation:
+        - Checks team.leader_id == requester
+        - Prevents leader removal
+        - Uses repository remove_student_from_team
+
+        Args:
+            team_id: UUID of team to remove member from
+            leader_user_id: UUID of user making request (must be leader)
+            member_user_id: UUID of user to remove from team
+
+        Returns:
+            StudentTeamRemoveMemberResponse with remove status
+
+        Raises:
+            TeamNotFoundError: If team not found
+            PermissionDeniedError: If requester is not team leader OR trying to remove leader
+            MemberNotInTeamError: If user not in team
+
+        Cache Behavior:
+            - Invalidates team details cache
+            - Invalidates team member list
+        """
+        team = await self.repository.get_team_or_raise(team_id)
+
+        # CRITICAL: Only team leader can remove members
+        if team.leader_id != leader_user_id:
+            raise PermissionDeniedError(
+                "Only team leader can remove members"
+            )
+
+        # Get member to remove
+        team_user = await self.repository.get_team_user_or_raise(team_id, member_user_id)
+
+        # Cannot remove team leader
+        if team.leader_id == member_user_id:
+            return StudentTeamRemoveMemberResponse(
+                message="Cannot remove team leader. Reassign leadership first.",
+                team_id=team_id,
+                removed_user_email=team_user.user.email,
+                new_member_count=0,  # Placeholder
+                status="cannot_remove_leader",
+            )
+
+        # Remove member from team
+        await self.repository.remove_student_from_team(team_id, member_user_id)
+
+        # Get updated member count
+        remaining_users = await self.repository.get_team_users(team_id)
+
+        logger.info(f"User {leader_user_id} removed {member_user_id} from team {team_id}")
+
+        return StudentTeamRemoveMemberResponse(
+            message=f"Successfully removed {team_user.user.email} from team",
+            team_id=team_id,
+            removed_user_email=team_user.user.email,
+            new_member_count=len(remaining_users),
             status="success",
         )

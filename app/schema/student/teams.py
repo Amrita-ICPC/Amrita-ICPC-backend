@@ -122,6 +122,51 @@ class StudentLeaveTeamResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class StudentTeamAddMemberRequest(BaseModel):
+    """Schema for adding a member to team (POST /students/teams/{id}/members/add)."""
+
+    user_email: str = Field(
+        ..., 
+        description="Email of the user to add to team"
+    )
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class StudentTeamAddMemberResponse(BaseModel):
+    """Schema for add member response (POST /students/teams/{id}/members/add)."""
+
+    message: str = Field(..., description="Operation status message")
+    team_id: UUID = Field(..., description="Team ID")
+    added_user_email: str = Field(..., description="Email of added user")
+    new_member_count: int = Field(..., description="New total member count")
+    status: str = Field(
+        ..., description="Add status (success, already_member, team_full, user_not_found)"
+    )
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class StudentTeamRemoveMemberRequest(BaseModel):
+    """Schema for removing a member from team (DELETE /students/teams/{id}/members/{user_id})."""
+
+    pass  # user_id comes from URL path
+
+
+class StudentTeamRemoveMemberResponse(BaseModel):
+    """Schema for remove member response (DELETE /students/teams/{id}/members/{user_id})."""
+
+    message: str = Field(..., description="Operation status message")
+    team_id: UUID = Field(..., description="Team ID")
+    removed_user_email: str = Field(..., description="Email of removed user")
+    new_member_count: int = Field(..., description="New total member count")
+    status: str = Field(
+        ..., description="Remove status (success, not_member, cannot_remove_leader)"
+    )
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class StudentTeamListResponse(BaseModel):
     """Schema for list of student's teams (GET /students/teams/my-teams)."""
 
