@@ -15,6 +15,7 @@ from app.auth.dependencies import can_read, get_current_user_id
 from app.core.clients.database import get_db
 from app.core.logger import logger
 from app.repositories.contest import ContestRepository
+from app.repositories.team import TeamRepository
 from app.schema.student.contests import (
     StudentContestDetailsResponse,
     StudentContestRegistrationRequest,
@@ -31,7 +32,8 @@ router = APIRouter(prefix="/students/contests", tags=["Student - Contests"])
 def get_student_contest_service(db: AsyncSession = Depends(get_db)) -> StudentContestService:
     """Provide StudentContestService instance."""
     contest_repo = ContestRepository(db)
-    return StudentContestService(contest_repo)
+    team_repo = TeamRepository(db)
+    return StudentContestService(contest_repo, team_repo)
 
 
 @router.get(
