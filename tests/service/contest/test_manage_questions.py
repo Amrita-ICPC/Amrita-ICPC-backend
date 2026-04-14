@@ -1,0 +1,291 @@
+"""Unit tests for contest question management in ContestService."""
+
+from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
+
+import pytest
+
+from app.exceptions.question import InvalidQuestionError, TemplateAlreadyExistsError
+from app.models.question import Question
+from app.repositories.dto import PaginatedResult
+from app.repositories.question import QuestionRepository
+from app.schema.question import (
+    QuestionListSummaryResponse,
+    QuestionResponse,
+    UpdateQuestionTemplateRequest,
+    UpdateQuestionTestCaseRequest,
+)
+from app.service.contest_service import ContestService
+from app.utils.enums import QuestionDifficulty
+
+
+@pytest.fixture
+def mock_question_repository() -> AsyncMock:
+    """Mock question repository for contest-question service methods."""
+    return AsyncMock(spec=QuestionRepository)
+
+
+@pytest.fixture
+def contest_service_with_questions(
+    mock_contest_repository: AsyncMock,
+    mock_user_repository: AsyncMock,
+    mock_guard: AsyncMock,
+    mock_validator: AsyncMock,
+    mock_question_repository: AsyncMock,
+) -> ContestService:
+    """ContestService instance with question repository wired."""
+    return ContestService(
+        repository=mock_contest_repository,
+        user_repository=mock_user_repository,
+        guard=mock_guard,
+        validator=mock_validator,
+        question_repository=mock_question_repository,
+    )
+
+
+@pytest.fixture
+def mock_question(user_id):
+    """Mock question with one testcase and one template."""
+    question = MagicMock(spec=Question)
+    question.id = uuid4()
+    question.question_text = "Sample question"
+    question.difficulty = QuestionDifficulty.EASY
+    question.time_limit_ms = 1000
+    question.memory_limit_mb = 256
+    question.created_by = user_id
+    question.created_at = datetime.now(timezone.utc)
+    question.updated_at = datetime.now(timezone.utc)
+    question.languages = []
+    question.tags = []
+
+    testcase = MagicMock()
+    testcase.id = uuid4()
+    testcase.input = "1"
+    testcase.output = "1"
+    testcase.is_hidden = False
+    testcase.weight = 1
+    testcase.order = 0
+
+    template = MagicMock()
+    template.id = uuid4()
+    template.language_id = 71
+    template.starter_code = "start"
+    template.driver_code = None
+    template.solution_code = None
+
+    question.testcases = [testcase]
+    question.templates = [template]
+    return question
+
+
+@pytest.mark.asyncio
+async def test_get_contest_questions_returns_paginated_summaries(
+    contest_service_with_questions: ContestService,
+    mock_contest_repository: AsyncMock,
+    mock_guard: AsyncMock,
+    mock_contest,
+    mock_question,
+    user_id,
+):
+    """get_contest_questions should validate read permission and map summaries."""
+    contest_id = mock_contest.id
+    mock_contest_repository.get_contest_or_raise.return_value = mock_contest
+    mock_contest_repository.get_contest_questions_paginated.return_value = (
+        PaginatedResult(
+            total=1,
+            items=[mock_question],
+        )
+    )
+
+    mapped_summary = MagicMock(spec=QuestionListSummaryResponse)
+    with patch.object(
+        QuestionListSummaryResponse,
+        "from_question",
+        return_value=mapped_summary,
+    ):
+        total, items = await contest_service_with_questions.get_contest_questions(
+            contest_id=contest_id,
+            user_id=user_id,
+            search_term="sample",
+            difficulty=QuestionDifficulty.EASY,
+            language_id=71,
+            tag_id=uuid4(),
+            skip=10,
+            limit=5,
+        )
+
+    assert total == 1
+    assert items == [mapped_summary]
+    mock_guard.check_read_contest.assert_called_once_with(
+        user_id=user_id,
+        contest=mock_contest,
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_contest_question_returns_question_response(
+    contest_service_with_questions: ContestService,
+    mock_contest_repository: AsyncMock,
+    mock_question_repository: AsyncMock,
+    mock_guard: AsyncMock,
+    mock_contest,
+    mock_question,
+    user_id,
+):
+    """get_contest_question should enforce manage permission via helper and map response."""
+    contest_id = mock_contest.id
+    question_id = mock_question.id
+
+    mock_contest_repository.get_contest_or_raise.return_value = mock_contest
+    mock_contest_repository.is_question_in_contest.return_value = True
+    mock_question_repository.get_question_or_raise.return_value = mock_question
+
+    mapped_response = MagicMock(spec=QuestionResponse)
+    with patch.object(QuestionResponse, "from_question", return_value=mapped_response):
+        result = await contest_service_with_questions.get_contest_question(
+            contest_id=contest_id,
+            question_id=question_id,
+            user_id=user_id,
+        )
+
+    assert result == mapped_response
+    mock_guard.check_manage_contest.assert_called_once_with(
+        user_id=user_id,
+        contest=mock_contest,
+    )
+
+
+@pytest.mark.asyncio
+async def test_update_single_testcase_supports_partial_payload(
+    contest_service_with_questions: ContestService,
+    mock_contest_repository: AsyncMock,
+    mock_question_repository: AsyncMock,
+    mock_contest,
+    mock_question,
+    user_id,
+):
+    """Single testcase patch should update only provided fields."""
+    contest_id = mock_contest.id
+    question_id = mock_question.id
+    testcase_id = mock_question.testcases[0].id
+
+    mock_contest_repository.get_contest_or_raise.return_value = mock_contest
+    mock_contest_repository.is_question_in_contest.return_value = True
+    mock_question_repository.get_question_or_raise.return_value = mock_question
+    mock_question_repository.update_question.return_value = mock_question
+
+    original_input = mock_question.testcases[0].input
+    payload = UpdateQuestionTestCaseRequest(is_hidden=True)
+
+    with patch.object(QuestionResponse, "from_question", return_value=MagicMock()):
+        await contest_service_with_questions.update_testcase_of_contest_question(
+            contest_id=contest_id,
+            question_id=question_id,
+            testcase_id=testcase_id,
+            payload=payload,
+            user_id=user_id,
+        )
+
+    assert mock_question.testcases[0].is_hidden is True
+    assert mock_question.testcases[0].input == original_input
+    mock_question_repository.update_question.assert_called_once_with(mock_question)
+
+
+@pytest.mark.asyncio
+async def test_update_single_testcase_raises_when_missing(
+    contest_service_with_questions: ContestService,
+    mock_contest_repository: AsyncMock,
+    mock_question_repository: AsyncMock,
+    mock_contest,
+    mock_question,
+    user_id,
+):
+    """Single testcase patch should fail if testcase id is not linked to question."""
+    contest_id = mock_contest.id
+    question_id = mock_question.id
+
+    mock_contest_repository.get_contest_or_raise.return_value = mock_contest
+    mock_contest_repository.is_question_in_contest.return_value = True
+    mock_question_repository.get_question_or_raise.return_value = mock_question
+
+    with pytest.raises(InvalidQuestionError):
+        await contest_service_with_questions.update_testcase_of_contest_question(
+            contest_id=contest_id,
+            question_id=question_id,
+            testcase_id=uuid4(),
+            payload=UpdateQuestionTestCaseRequest(is_hidden=True),
+            user_id=user_id,
+        )
+
+
+@pytest.mark.asyncio
+async def test_update_single_template_supports_partial_payload(
+    contest_service_with_questions: ContestService,
+    mock_contest_repository: AsyncMock,
+    mock_question_repository: AsyncMock,
+    mock_contest,
+    mock_question,
+    user_id,
+):
+    """Single template patch should update only provided fields."""
+    contest_id = mock_contest.id
+    question_id = mock_question.id
+    template_id = mock_question.templates[0].id
+
+    mock_contest_repository.get_contest_or_raise.return_value = mock_contest
+    mock_contest_repository.is_question_in_contest.return_value = True
+    mock_question_repository.get_question_or_raise.return_value = mock_question
+    mock_question_repository.update_question.return_value = mock_question
+
+    old_language_id = mock_question.templates[0].language_id
+    payload = UpdateQuestionTemplateRequest(starter_code="updated-starter")
+
+    with patch.object(QuestionResponse, "from_question", return_value=MagicMock()):
+        await contest_service_with_questions.update_template_of_contest_question(
+            contest_id=contest_id,
+            question_id=question_id,
+            template_id=template_id,
+            payload=payload,
+            user_id=user_id,
+        )
+
+    assert mock_question.templates[0].starter_code == "updated-starter"
+    assert mock_question.templates[0].language_id == old_language_id
+    mock_question_repository.update_question.assert_called_once_with(mock_question)
+
+
+@pytest.mark.asyncio
+async def test_update_single_template_raises_on_duplicate_language(
+    contest_service_with_questions: ContestService,
+    mock_contest_repository: AsyncMock,
+    mock_question_repository: AsyncMock,
+    mock_contest,
+    mock_question,
+    user_id,
+):
+    """Single template patch should reject duplicate language mappings."""
+    contest_id = mock_contest.id
+    question_id = mock_question.id
+    target_template_id = mock_question.templates[0].id
+
+    second_template = MagicMock()
+    second_template.id = uuid4()
+    second_template.language_id = 62
+    second_template.starter_code = "other"
+    second_template.driver_code = None
+    second_template.solution_code = None
+    mock_question.templates.append(second_template)
+
+    mock_contest_repository.get_contest_or_raise.return_value = mock_contest
+    mock_contest_repository.is_question_in_contest.return_value = True
+    mock_question_repository.get_question_or_raise.return_value = mock_question
+
+    with pytest.raises(TemplateAlreadyExistsError):
+        await contest_service_with_questions.update_template_of_contest_question(
+            contest_id=contest_id,
+            question_id=question_id,
+            template_id=target_template_id,
+            payload=UpdateQuestionTemplateRequest(language_id=62),
+            user_id=user_id,
+        )

@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
-from app.utils.enums import ContestStatus, TeamApprovalMode
+from app.utils.enums import ContestStatus, QuestionDifficulty, TeamApprovalMode
 
 
 class _UnsetType:
@@ -19,6 +19,16 @@ class ContestFilters:
     search_term: str | None = None
     status: ContestStatus | None = None
     is_public: bool | None = None
+
+
+@dataclass
+class ContestQuestionFilters:
+    """Filters for querying questions inside a contest."""
+
+    search_term: str | None = None
+    difficulty: QuestionDifficulty | None = None
+    language_id: int | None = None
+    tag_id: UUID | None = None
 
 
 @dataclass

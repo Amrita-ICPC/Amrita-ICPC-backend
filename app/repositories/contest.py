@@ -1,17 +1,25 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.exceptions.contest import ContestNotFoundError, InstructorNotAssignedError
 from app.exceptions.user import UserNotFoundError
-from app.models.contest import Contest, ContestInstructor
+from app.models.contest import Contest, ContestInstructor, ContestQuestion
+from app.models.question import Question, QuestionLanguage, TestCase
+from app.models.tag import QuestionTag
 from app.models.user import User
 from app.repositories.dto import (
     ContestFilters,
     PaginatedResult,
     PaginationParams,
+)
+from app.repositories.dto.contest import ContestQuestionFilters
+from app.repositories.dto.contest_question import (
+    AddContestQuestionData,
+    RemoveContestQuestionData,
 )
 from app.utils.enums import ContestStatus
 
@@ -431,3 +439,234 @@ class ContestRepository:
         if not user:
             raise UserNotFoundError(str(user_id))
         return user
+
+    async def is_question_in_contest(self, contest_id: UUID, question_id: UUID) -> bool:
+        """
+        Check if a question is already added to a contest.
+
+        This method is optimized to return early with a single database query.
+
+        Args:
+            contest_id: ID of the contest.
+            question_id: ID of the question.
+
+        Returns:
+            True if the question is in the contest, False otherwise.
+        """
+        result = await self.db.execute(
+            select(ContestQuestion).filter(
+                ContestQuestion.contest_id == contest_id,
+                ContestQuestion.question_id == question_id,
+            )
+        )
+        return result.scalars().first() is not None
+
+    async def add_question_to_contest(
+        self, data: AddContestQuestionData
+    ) -> ContestQuestion:
+        """
+        Add a question to a contest.
+
+        Creates a new ContestQuestion relationship with the specified metadata.
+        Assumes all validation has been completed before this call.
+
+        Args:
+            data: AddContestQuestionData containing contest_id, question_id, order,
+                  duration, score, and created_by.
+
+        Returns:
+            The created ContestQuestion entity.
+
+        Raises:
+            N/A: All validation is performed in the service layer.
+
+        Complexity:
+            - Time: O(1) single INSERT query
+            - Space: O(1)
+        """
+        from app.mappers.contest_question import build_contest_question_entity
+
+        contest_question = build_contest_question_entity(data)
+        self.db.add(contest_question)
+        await self.db.flush()
+        return contest_question
+
+    async def remove_question_from_contest(
+        self, data: RemoveContestQuestionData
+    ) -> None:
+        """
+        Remove a question from a contest.
+
+        Deletes the ContestQuestion relationship, cascading as defined in the model.
+
+        Args:
+            data: RemoveContestQuestionData containing contest_id and question_id.
+
+        Raises:
+            N/A: The caller is responsible for checking existence before removal.
+
+        Complexity:
+            - Time: O(1) single DELETE query
+            - Space: O(1)
+        """
+        result = await self.db.execute(
+            select(ContestQuestion).filter(
+                ContestQuestion.contest_id == data.contest_id,
+                ContestQuestion.question_id == data.question_id,
+            )
+        )
+        contest_question = result.scalars().first()
+        if contest_question:
+            await self.db.delete(contest_question)
+            await self.db.flush()
+
+    async def get_contest_questions_paginated(
+        self,
+        contest_id: UUID,
+        pagination: PaginationParams,
+        filters: ContestQuestionFilters | None = None,
+    ) -> PaginatedResult:
+        """
+        Retrieve questions in a contest with pagination and filters.
+
+        Args:
+            contest_id: ID of the contest.
+            pagination: Pagination parameters with skip and limit.
+            filters: Optional search and metadata filters.
+
+        Returns:
+            PaginatedResult containing Question entities.
+        """
+        filters = filters or ContestQuestionFilters()
+
+        base_query = (
+            select(Question)
+            .join(ContestQuestion, ContestQuestion.question_id == Question.id)
+            .options(
+                selectinload(Question.languages).selectinload(
+                    QuestionLanguage.language
+                ),
+                selectinload(Question.tags),
+                selectinload(Question.testcases),
+            )
+            .filter(ContestQuestion.contest_id == contest_id)
+        )
+
+        if filters.search_term:
+            base_query = base_query.filter(
+                Question.question_text.ilike(f"%{filters.search_term}%")
+            )
+
+        if filters.difficulty is not None:
+            base_query = base_query.filter(Question.difficulty == filters.difficulty)
+
+        if filters.language_id is not None:
+            base_query = base_query.filter(
+                exists(
+                    select(1).where(
+                        QuestionLanguage.question_id == Question.id,
+                        QuestionLanguage.language_id == filters.language_id,
+                    )
+                )
+            )
+
+        if filters.tag_id is not None:
+            base_query = base_query.filter(
+                exists(
+                    select(1).where(
+                        QuestionTag.question_id == Question.id,
+                        QuestionTag.tag_id == filters.tag_id,
+                    )
+                )
+            )
+
+        filtered_query = base_query
+
+        count_query = select(func.count()).select_from(
+            filtered_query.with_only_columns(Question.id).order_by(None).subquery()
+        )
+        total = (await self.db.execute(count_query)).scalar() or 0
+
+        paged_query = filtered_query.order_by(ContestQuestion.order, Question.id)
+
+        result = await self.db.execute(
+            paged_query.offset(pagination.skip).limit(pagination.limit)
+        )
+        questions = list(result.unique().scalars().all())
+
+        if questions:
+            question_ids = [question.id for question in questions]
+            count_result = await self.db.execute(
+                select(TestCase.question_id, func.count(TestCase.id))
+                .where(TestCase.question_id.in_(question_ids))
+                .group_by(TestCase.question_id)
+            )
+            testcase_counts = {
+                question_id: count for question_id, count in count_result.all()
+            }
+            for question in questions:
+                setattr(question, "testcase_count", testcase_counts.get(question.id, 0))
+
+        return PaginatedResult(total=total, items=questions)
+
+    async def add_questions_to_contest(
+        self, data_list: list[AddContestQuestionData]
+    ) -> list[ContestQuestion]:
+        """
+        Batch add multiple questions to a contest.
+
+        Creates multiple ContestQuestion relationships in a single batch operation.
+        All validation has been completed before this call.
+
+        Args:
+            data_list: List of AddContestQuestionData objects.
+
+        Returns:
+            List of created ContestQuestion entities.
+
+        Complexity:
+            - Time: O(n) where n is the number of questions (single INSERT with multiple values)
+            - Space: O(n)
+        """
+        from app.mappers.contest_question import build_contest_question_entity
+
+        contest_questions = []
+        for data in data_list:
+            contest_question = build_contest_question_entity(data)
+            contest_questions.append(contest_question)
+            self.db.add(contest_question)
+
+        await self.db.flush()
+        return contest_questions
+
+    async def remove_questions_from_contest(
+        self, contest_id: UUID, question_ids: list[UUID]
+    ) -> None:
+        """
+        Batch remove multiple questions from a contest.
+
+        Deletes multiple ContestQuestion relationships in a single batch delete operation.
+
+        Args:
+            contest_id: UUID of the contest.
+            question_ids: List of question IDs to remove.
+
+        Complexity:
+            - Time: O(n) where n is the number of question IDs (single DELETE with IN clause)
+            - Space: O(1)
+        """
+        if not question_ids:
+            return
+
+        delete_query = select(ContestQuestion).filter(
+            ContestQuestion.contest_id == contest_id,
+            ContestQuestion.question_id.in_(question_ids),
+        )
+        result = await self.db.execute(delete_query)
+        contest_questions = result.scalars().all()
+
+        for cq in contest_questions:
+            await self.db.delete(cq)
+
+        if contest_questions:
+            await self.db.flush()
