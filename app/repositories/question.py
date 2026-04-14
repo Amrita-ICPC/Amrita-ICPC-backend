@@ -175,3 +175,37 @@ class QuestionRepository:
             .limit(1)
         )
         return result.scalar_one_or_none() is not None
+
+    async def add_templates_to_question(
+        self, question_id: UUID, templates: list[QuestionTemplate]
+    ) -> None:
+        """Add multiple templates to an existing question.
+
+        Args:
+            question_id: ID of the question to add templates to.
+            templates: List of QuestionTemplate objects to persist.
+
+        Raises:
+            QuestionNotFoundError: If the question does not exist.
+        """
+        await self._fetch_question_or_raise(question_id)
+        for template in templates:
+            template.question_id = question_id
+            self.db.add(template)
+        await self.db.flush()
+
+    async def get_question_templates(self, question_id: UUID) -> list[QuestionTemplate]:
+        """Get all templates for a question.
+
+        Args:
+            question_id: ID of the question.
+
+        Returns:
+            List of QuestionTemplate objects for the question.
+        """
+        result = await self.db.execute(
+            select(QuestionTemplate)
+            .where(QuestionTemplate.question_id == question_id)
+            .options(selectinload(QuestionTemplate.language))
+        )
+        return cast(list[QuestionTemplate], result.scalars().all())

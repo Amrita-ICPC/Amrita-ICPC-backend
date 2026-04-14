@@ -1,5 +1,6 @@
 """TestCase Repository for test case database operations."""
 
+from typing import cast
 from uuid import UUID
 
 from sqlalchemy import select
@@ -43,7 +44,7 @@ class TestCaseRepository:
             .where(TestCase.question_id == question_id, TestCase.is_hidden.is_(False))
             .order_by(TestCase.order)
         )
-        return result.scalars().all()
+        return cast(list[TestCase], list(result.scalars().all()))
 
     async def get_all_by_question(self, question_id: UUID) -> list[TestCase]:
         """Fetch all test cases (hidden and visible) for a question.
@@ -72,7 +73,7 @@ class TestCaseRepository:
             .where(TestCase.question_id == question_id)
             .order_by(TestCase.order)
         )
-        return result.scalars().all()
+        return cast(list[TestCase], list(result.scalars().all()))
 
     async def get_by_id(self, testcase_id: UUID) -> TestCase | None:
         """Fetch a single test case by ID.
@@ -105,7 +106,7 @@ class TestCaseRepository:
         result = await self.db.execute(
             select(TestCase).where(TestCase.id.in_(testcase_ids))
         )
-        return result.scalars().all()
+        return cast(list[TestCase], list(result.scalars().all()))
 
     async def create(self, testcase: TestCase) -> TestCase:
         """Create a new test case.

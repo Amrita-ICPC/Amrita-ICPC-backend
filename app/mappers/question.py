@@ -13,6 +13,7 @@ from app.schema.question import (
     QuestionTemplateCreate,
     QuestionTestCaseCreate,
     QuestionUpdate,
+    UpdateQuestionMetadataRequest,
 )
 
 
@@ -53,6 +54,45 @@ def build_update_testcase_dtos(
             )
         )
     return testcase_dtos
+
+
+def build_appended_testcase_dtos(
+    testcases: list[QuestionTestCaseCreate],
+    *,
+    starting_order: int,
+) -> list[CreateQuestionTestCaseData]:
+    """Map testcase payloads to DTOs with an order offset for append operations."""
+    testcase_dtos: list[CreateQuestionTestCaseData] = []
+    for index, testcase in enumerate(testcases):
+        testcase_dtos.append(
+            CreateQuestionTestCaseData(
+                input=testcase.input,
+                output=testcase.output,
+                is_hidden=testcase.is_hidden,
+                weight=testcase.weight,
+                order=starting_order + index,
+            )
+        )
+    return testcase_dtos
+
+
+def build_testcase_entities(
+    testcase_dtos: list[CreateQuestionTestCaseData],
+    *,
+    created_by: UUID,
+) -> list[TestCase]:
+    """Map testcase DTOs to ORM entities for persistence."""
+    return [
+        TestCase(
+            input=testcase.input,
+            output=testcase.output,
+            is_hidden=testcase.is_hidden,
+            weight=testcase.weight,
+            order=testcase.order,
+            created_by=created_by,
+        )
+        for testcase in testcase_dtos
+    ]
 
 
 def build_template_dto(
@@ -109,6 +149,32 @@ def build_update_question_dto(
         templates=template_dtos,
         time_limit_ms=update_data.time_limit_ms,
         memory_limit_mb=update_data.memory_limit_mb,
+    )
+
+
+def build_metadata_update_dto(
+    metadata: UpdateQuestionMetadataRequest,
+) -> UpdateQuestionData:
+    """Map question metadata update schema to repository update DTO.
+
+    Converts metadata-only update request to DTO for persistence.
+    Testcases and templates are not modified by this mapper.
+
+    Args:
+        metadata: Metadata update request containing optional question fields.
+
+    Returns:
+        UpdateQuestionData DTO with metadata fields populated.
+    """
+    return UpdateQuestionData(
+        question_text=metadata.question_text,
+        difficulty=metadata.difficulty,
+        allowed_languages=metadata.allowed_languages,
+        tag_ids=metadata.tag_ids,
+        time_limit_ms=metadata.time_limit_ms,
+        memory_limit_mb=metadata.memory_limit_mb,
+        testcases=None,
+        templates=None,
     )
 
 

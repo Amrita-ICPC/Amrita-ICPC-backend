@@ -5,6 +5,7 @@ from app.exceptions.bank import (
     BankQuestionNotFoundError,
 )
 from app.exceptions.bank_validation import BankValidationError
+from app.exceptions.question import TemplateAlreadyExistsError
 
 
 class BankQuestionValidator:
@@ -18,6 +19,8 @@ class BankQuestionValidator:
         validate_unique_question_ids: Ensure incoming IDs are unique
         validate_question_already_exist: Ensure no duplicate question associations
         validate_questions_linked_to_bank: Ensure all required questions are associated
+        validate_template_language_ids: Ensure template language IDs are unique
+        validate_template_not_exists: Ensure template doesn't already exist for language
     """
 
     @staticmethod
@@ -96,3 +99,37 @@ class BankQuestionValidator:
             raise BankValidationError(
                 "Provide at least one question_id when copy_all is false"
             )
+
+    @staticmethod
+    def validate_template_language_ids(language_ids: list[int]) -> None:
+        """Validate that template language IDs are unique.
+
+        Args:
+            language_ids: List of language IDs from templates.
+
+        Raises:
+            BankValidationError: If duplicate language IDs are present.
+        """
+        unique_ids = set(language_ids)
+        if len(unique_ids) != len(language_ids):
+            raise BankValidationError(
+                "Duplicate language IDs in templates are not allowed"
+            )
+
+    @staticmethod
+    def validate_template_not_exists(
+        existing_templates: list, question_id: UUID, language_id: int
+    ) -> None:
+        """Validate that a template for a language doesn't already exist for the question.
+
+        Args:
+            existing_templates: List of existing QuestionTemplate objects.
+            question_id: UUID of the question.
+            language_id: Language ID to check.
+
+        Raises:
+            TemplateAlreadyExistsError: If a template for the language already exists.
+        """
+        for template in existing_templates:
+            if template.language_id == language_id:
+                raise TemplateAlreadyExistsError(question_id, language_id)
