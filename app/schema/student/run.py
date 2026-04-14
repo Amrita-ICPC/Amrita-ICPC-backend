@@ -4,6 +4,8 @@ Request schemas: What students send to test their code
 Response schemas: What server returns after execution
 """
 
+from __future__ import annotations
+
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 

@@ -3,25 +3,29 @@
 This service handles the /run endpoint:
 - Student submits code to test
 - Service verifies student is in contest
-- Calls Judge0 to execute code
+- Calls Judge0Repository to execute code
 - Returns result (NOT stored in DB - just for testing)
 """
 
 from uuid import UUID
-from sqlalchemy.orm import Session
 
-from app.core.clients.judge0 import Judge0Client
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.logger import logger
 from app.exceptions.auth import PermissionDeniedError
 from app.exceptions.contest import ContestNotFoundError
 from app.exceptions.question import QuestionNotFoundError
-from app.models.contest import Contest, ContestTeam, ContestTeamUser
+from app.models.contest import Contest, ContestTeam
 from app.models.question import Question, TestCase
+from app.models.team import TeamUser
+from app.repositories.dto.judge0 import Judge0ExecutionRequestDTO
 from app.repositories.dto.student.run import (
     StudentCodeRunRequestDTO,
     StudentCodeRunResponseDTO,
     StudentTestCaseRunResultDTO,
 )
+from app.repositories.judge0 import Judge0Repository
 
 
 class StudentRunService:
@@ -31,16 +35,16 @@ class StudentRunService:
     Does NOT store execution results in database.
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         """Initialize service with database session.
         
         Args:
-            db: SQLAlchemy database session.
+            db: SQLAlchemy async database session.
         """
         self.db = db
-        self.judge0_client = Judge0Client()
+        self.judge0_repo = Judge0Repository()
 
-    def run_code(
+    async def run_code(
         self,
         request: StudentCodeRunRequestDTO,
     ) -> StudentCodeRunResponseDTO:
@@ -66,20 +70,21 @@ class StudentRunService:
             QuestionNotFoundError: If question doesn't exist
         """
         # Verify contest exists
-        contest = self.db.query(Contest).filter(
-            Contest.id == request.contest_id
-        ).first()
+        stmt = select(Contest).where(Contest.id == request.contest_id)
+        result = await self.db.execute(stmt)
+        contest = result.scalars().first()
         
         if not contest:
             raise ContestNotFoundError(str(request.contest_id))
         
-        # Verify student is in contest (via team registration)
-        user_in_contest = self.db.query(ContestTeamUser).join(
-            ContestTeam
-        ).filter(
+        # Verify student is in contest (via team membership)
+        # User must be a member of a team that is registered in the contest
+        stmt = select(TeamUser).join(ContestTeam).where(
             ContestTeam.contest_id == request.contest_id,
-            ContestTeamUser.user_id == request.user_id
-        ).first()
+            TeamUser.user_id == request.user_id
+        )
+        result = await self.db.execute(stmt)
+        user_in_contest = result.scalars().first()
         
         if not user_in_contest:
             raise PermissionDeniedError(
@@ -87,25 +92,30 @@ class StudentRunService:
             )
         
         # Verify question exists in contest
-        question = self.db.query(Question).filter(
+        stmt = select(Question).where(
             Question.id == request.question_id,
             Question.bank_id == contest.bank_id  # Question must be from contest's bank
-        ).first()
+        )
+        result = await self.db.execute(stmt)
+        question = result.scalars().first()
         
         if not question:
             raise QuestionNotFoundError(str(request.question_id))
         
         # Get test case (use first if not specified)
         if request.testcase_id:
-            testcase = self.db.query(TestCase).filter(
+            stmt = select(TestCase).where(
                 TestCase.id == request.testcase_id,
                 TestCase.question_id == request.question_id
-            ).first()
+            )
         else:
             # Get first test case for this question
-            testcase = self.db.query(TestCase).filter(
+            stmt = select(TestCase).where(
                 TestCase.question_id == request.question_id
-            ).order_by(TestCase.created_at).first()
+            ).order_by(TestCase.created_at)
+        
+        result = await self.db.execute(stmt)
+        testcase = result.scalars().first()
         
         if not testcase:
             raise QuestionNotFoundError(
@@ -117,38 +127,47 @@ class StudentRunService:
             f"on question {request.question_id} in contest {request.contest_id}"
         )
         
-        # Execute code via Judge0
-        result = self.judge0_client.execute_code(
-            code=request.code,
+        # Build Judge0 request DTO
+        judge0_request = Judge0ExecutionRequestDTO(
+            question_id=str(request.question_id),
+            source_code=request.code,
             language_id=request.language_id,
-            stdin=testcase.input_data,
-            expected_output=testcase.expected_output,
         )
+        
+        # Submit code to Judge0
+        submission = await self.judge0_repo.submit_code(judge0_request, testcase.input)
+        
+        # Wait for execution result
+        judge0_result = await self.judge0_repo.wait_for_completion(submission.token)
+        
+        # Check if result passed (Accepted verdict = status 3)
+        passed = judge0_result.status_id == 3
         
         # Map Judge0 result to DTO
         run_result = StudentTestCaseRunResultDTO(
             testcase_id=testcase.id,
-            passed=result.passed,
-            status_code=result.status_code,
-            status_description=result.status_description,
-            time=result.time,
-            memory=result.memory,
-            stdout=result.stdout,
-            stderr=result.stderr,
-            compile_output=result.compile_output,
-            expected_output=testcase.expected_output,
+            passed=passed,
+            status_code=judge0_result.status_id,
+            status_description=judge0_result.status.name if judge0_result.status else "Unknown",
+            time=judge0_result.time or 0.0,
+            memory=judge0_result.memory or 0.0,
+            stdout=judge0_result.stdout,
+            stderr=judge0_result.stderr,
+            compile_output=judge0_result.compile_output,
+            expected_output=testcase.output,
         )
         
         response = StudentCodeRunResponseDTO(
             question_id=request.question_id,
             result=run_result,
             message="Code executed successfully",
-            passed=run_result.passed,
+            passed=passed,
         )
         
         logger.info(
             f"Code execution complete for user {request.user_id}: "
-            f"status={run_result.status_description}, passed={run_result.passed}"
+            f"status={run_result.status_description}, passed={passed}"
         )
         
         return response
+

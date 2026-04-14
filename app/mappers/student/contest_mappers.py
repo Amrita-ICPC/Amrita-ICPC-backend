@@ -4,6 +4,8 @@ Transforms ORM Contest objects and repository data into student-facing API respo
 Centralizes all contest response building logic in one place for easy maintenance and reusability.
 """
 
+from __future__ import annotations
+
 from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID

@@ -232,7 +232,11 @@ class StudentTeamService:
         logger.info(
             f"Student {user_id} queried available teams in contest {contest_id} (found: {len(result)})"
         )
-        return to_student_available_teams_list_response(result, contest_id)
+        return to_student_available_teams_list_response(
+            result, 
+            max_team_size=contest.max_team_size,
+            current_user_id=user_id
+        )
 
     @cache_delete(
         key_builder=lambda self, contest_id, user_id: [
