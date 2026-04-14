@@ -9,6 +9,7 @@ Only submissions are persisted, handled at the service layer.
 """
 
 import asyncio
+import logging
 from typing import Optional, cast
 
 import httpx
@@ -48,6 +49,23 @@ class Judge0Repository:
     def __init__(self) -> None:
         """Initialize Judge0 repository."""
         pass
+
+    @staticmethod
+    def _redact_payload_for_debug(payload: dict[str, object]) -> dict[str, object]:
+        """Return a redacted preview of a Judge0 payload for debug logging."""
+
+        def truncate(value: object) -> object:
+            if not isinstance(value, str):
+                return value
+            if len(value) <= 120:
+                return value
+            return f"{value[:120]}...<truncated>"
+
+        redacted = dict(payload)
+        for key in ("stdout", "stderr", "compile_output"):
+            if key in redacted:
+                redacted[key] = truncate(redacted[key])
+        return redacted
 
     async def submit_code(
         self, request: Judge0ExecutionRequestDTO, stdin: str
@@ -176,9 +194,13 @@ class Judge0Repository:
             if status_id is None and "status" in data:
                 status_id = data["status"].get("id")
 
-            logger.info(
-                f"DEBUG_GET_RESULT: token={token}, raw_data={data}, extracted_status_id={status_id}"
-            )
+            logger.info(f"DEBUG_GET_RESULT: token={token}, status_id={status_id}")
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    "DEBUG_GET_RESULT payload: token=%s payload=%s",
+                    token,
+                    self._redact_payload_for_debug(data),
+                )
 
             return Judge0SubmissionDTO(
                 token=token,
@@ -260,7 +282,6 @@ class Judge0Repository:
                         },
                     )
                     return result
-
                 attempts += 1
                 await asyncio.sleep(poll_interval)
 

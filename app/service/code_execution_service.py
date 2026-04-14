@@ -1,6 +1,7 @@
 """Service layer for code execution (practice "Run" operation)."""
 
 import asyncio
+import re
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -49,6 +50,38 @@ class CodeExecutionService:
         self.question_repo = QuestionRepository(db)
         self.testcase_repo = TestCaseRepository(db)
         self.judge0_repo = Judge0Repository()
+
+    @staticmethod
+    def _redact_first_result_for_debug(
+        result: Judge0SubmissionDTO,
+    ) -> dict[str, object]:
+        """Build a redacted debug payload for the first Judge0 result."""
+
+        def truncate(value: str | None, *, limit: int = 160) -> str | None:
+            if value is None:
+                return None
+            if len(value) <= limit:
+                return value
+            return f"{value[:limit]}...<truncated>"
+
+        def mask_message(value: str | None) -> str | None:
+            if value is None:
+                return None
+            masked = re.sub(
+                r"(?i)\b(password|secret|token|api[_-]?key|authorization)\b\s*[:=]\s*[^\s,;]+",
+                r"\1=<redacted>",
+                value,
+            )
+            return truncate(masked, limit=240)
+
+        return {
+            "token": result.token,
+            "status_id": result.status_id,
+            "status": result.status.name,
+            "stdout": truncate(result.stdout),
+            "compile_output": truncate(result.compile_output),
+            "message": mask_message(result.message),
+        }
 
     async def run_code(
         self,
@@ -111,8 +144,16 @@ class CodeExecutionService:
         first_result = await self.judge0_repo.wait_for_completion(first_token)
 
         logger.info(
-            f"DEBUG_FIRST_RESULT: status_id={first_result.status_id}, status={first_result.status.name}, stdout={first_result.stdout}, compile_output={first_result.compile_output}, message={first_result.message}"
+            f"DEBUG_FIRST_RESULT: token={first_token}, status_id={first_result.status_id}, status={first_result.status.name}"
         )
+        if logger.isEnabledFor(10):
+            logger.debug(
+                "DEBUG_FIRST_RESULT payload: question_id=%s token=%s status_id=%s payload=%s",
+                question_id,
+                first_token,
+                first_result.status_id,
+                self._redact_first_result_for_debug(first_result),
+            )
 
         if first_result.status == Judge0StatusCode.COMPILATION_ERROR:
             compile_error = (
