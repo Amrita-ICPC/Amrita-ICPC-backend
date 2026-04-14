@@ -34,6 +34,21 @@ class QuestionTemplateCreate(BaseModel):
     solution_code: str | None = None
 
 
+class UpdateQuestionTestCaseRequest(BaseModel):
+    input: str | None = None
+    output: str | None = None
+    is_hidden: bool | None = None
+    weight: int | None = Field(default=None, ge=1)
+    order: int | None = Field(default=None, ge=0)
+
+
+class UpdateQuestionTemplateRequest(BaseModel):
+    language_id: int | None = Field(default=None, gt=0)
+    starter_code: str | None = None
+    driver_code: str | None = None
+    solution_code: str | None = None
+
+
 class QuestionCreate(QuestionBase):
     allowed_languages: List[int] = Field(
         ..., description="List of allowed platform language IDs"
@@ -122,6 +137,36 @@ class UpdateQuestionMetadataRequest(BaseModel):
     tag_ids: Optional[List[UUID]] = Field(None, description="Updated list of tag IDs")
 
 
+class AddQuestionAllowedLanguagesRequest(BaseModel):
+    """Request model for adding allowed languages to an existing question."""
+
+    language_ids: List[int] = Field(
+        ...,
+        min_length=1,
+        description="List of language IDs to add to allowed languages",
+    )
+
+
+class RemoveQuestionAllowedLanguagesRequest(BaseModel):
+    """Request model for removing allowed languages from an existing question."""
+
+    language_ids: List[int] = Field(
+        ...,
+        min_length=1,
+        description="List of language IDs to remove from allowed languages",
+    )
+
+
+class UpdateQuestionAllowedLanguagesRequest(BaseModel):
+    """Request model for replacing all allowed languages of an existing question."""
+
+    language_ids: List[int] = Field(
+        ...,
+        min_length=1,
+        description="Full replacement list of allowed language IDs",
+    )
+
+
 class QuestionLanguageMappingResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -131,6 +176,7 @@ class QuestionLanguageMappingResponse(BaseModel):
 class QuestionTestCaseResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    id: UUID | None = None
     input: str
     output: str
     is_hidden: bool
@@ -141,6 +187,7 @@ class QuestionTestCaseResponse(BaseModel):
 class QuestionTemplateResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    id: UUID | None = None
     language_id: int
     starter_code: str
     driver_code: str | None
@@ -171,6 +218,7 @@ class QuestionResponse(QuestionBase):
 
         testcase_items = [
             QuestionTestCaseResponse(
+                id=testcase.id,
                 input=testcase.input,
                 output=testcase.output,
                 is_hidden=testcase.is_hidden,
@@ -182,6 +230,7 @@ class QuestionResponse(QuestionBase):
 
         template_items = [
             QuestionTemplateResponse(
+                id=template.id,
                 language_id=template.language_id,
                 starter_code=template.starter_code,
                 driver_code=template.driver_code,

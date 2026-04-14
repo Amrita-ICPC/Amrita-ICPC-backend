@@ -81,3 +81,43 @@ class InvalidInstructorRoleError(AppBaseException):
             message=f"User {user_id} is not an instructor",
             status_code=status.HTTP_400_BAD_REQUEST,
         )
+
+
+class QuestionAlreadyInContestError(AppBaseException):
+    """Raised when question is already added to the contest."""
+
+    def __init__(self, question_id: str, contest_id: str):
+        super().__init__(
+            message=f"Question {question_id} is already in contest {contest_id}",
+            status_code=status.HTTP_409_CONFLICT,
+        )
+
+
+class QuestionNotInContestError(AppBaseException):
+    """Raised when question is not found in the contest."""
+
+    def __init__(self, question_id: str, contest_id: str):
+        super().__init__(
+            message=f"Question {question_id} is not in contest {contest_id}",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+
+class InvalidContestQuestionDataError(AppBaseException):
+    """Raised when contest question data is invalid."""
+
+    def __init__(self, message: str = "Invalid contest question data"):
+        super().__init__(
+            message=message,
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+
+class DuplicateQuestionOrderError(AppBaseException):
+    """Raised when question order conflicts with existing questions."""
+
+    def __init__(self, order: int, contest_id: str):
+        super().__init__(
+            message=f"Question order {order} already exists in contest {contest_id}",
+            status_code=status.HTTP_409_CONFLICT,
+        )

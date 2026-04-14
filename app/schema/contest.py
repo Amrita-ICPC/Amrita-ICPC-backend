@@ -185,3 +185,63 @@ class InstructorResponse(BaseModel):
     created_at: datetime = Field(..., description="Account creation time (UTC)")
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class AddContestQuestionRequest(BaseModel):
+    """Schema for a single question to add to a contest."""
+
+    question_id: UUID = Field(..., description="Question ID to add to contest")
+    order: int = Field(
+        ..., gt=0, description="Position of the question in the contest (1-indexed)"
+    )
+    duration: int = Field(
+        ...,
+        gt=0,
+        description="Time allocated for this question in seconds",
+    )
+    score: int = Field(
+        ...,
+        gt=0,
+        description="Points awarded for solving this question",
+    )
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AddContestQuestionsRequest(BaseModel):
+    """Schema for adding multiple questions to a contest in batch."""
+
+    questions: List[AddContestQuestionRequest] = Field(
+        ...,
+        min_length=1,
+        description="List of questions to add to the contest",
+    )
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RemoveContestQuestionRequest(BaseModel):
+    """Schema for removing questions from a contest."""
+
+    question_ids: List[UUID] = Field(
+        ...,
+        min_length=1,
+        description="List of question IDs to remove from contest",
+    )
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ContestQuestionResponse(BaseModel):
+    """Schema for contest question response (detail view)."""
+
+    question_id: UUID = Field(..., description="Question ID")
+    order: int = Field(..., description="Position of the question in the contest")
+    duration: int = Field(
+        ..., description="Time allocated for this question in seconds"
+    )
+    score: int = Field(..., description="Points awarded for solving this question")
+    created_at: datetime = Field(..., description="When question was added to contest")
+    created_by: UUID = Field(..., description="User ID who added the question")
+
+    model_config = ConfigDict(from_attributes=True)

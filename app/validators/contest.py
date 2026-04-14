@@ -202,3 +202,45 @@ class ContestValidator:
             # Raise exception for the first missing instructor ID
             missing_id = next(iter(missing_instructor_ids))
             raise InstructorNotAssignedError(str(missing_id), str(contest_id))
+
+    @staticmethod
+    def validate_question_order(order: int) -> None:
+        """
+        Validate that question order is a positive integer.
+
+        Args:
+            order: The order/position of the question in the contest.
+
+        Raises:
+            InvalidContestError: If order is not positive.
+        """
+        if order <= 0:
+            raise InvalidContestError("Question order must be greater than 0")
+
+    @staticmethod
+    def validate_question_score(score: int) -> None:
+        """
+        Validate that question score is a positive integer.
+
+        Args:
+            score: The points awarded for this question.
+
+        Raises:
+            InvalidContestError: If score is not positive.
+        """
+        if score <= 0:
+            raise InvalidContestError("Question score must be greater than 0")
+
+    @staticmethod
+    def validate_question_duration(duration: int) -> None:
+        """
+        Validate that question duration is a positive integer.
+
+        Args:
+            duration: The time allocated for this question in seconds.
+
+        Raises:
+            InvalidContestError: If duration is not positive.
+        """
+        if duration <= 0:
+            raise InvalidContestError("Question duration must be greater than 0")
