@@ -4,6 +4,8 @@ Transforms ORM Team objects and repository data into student-facing API response
 Centralizes all team response building logic in one place for easy maintenance and reusability.
 """
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -123,6 +125,46 @@ def to_student_teams_list_response(
     )
 
 
+def to_student_available_teams_list_response(
+    teams: list["Team"],
+    max_team_size: int,
+    current_user_id: UUID,
+) -> StudentTeamListResponse:
+    """
+    Convert list of Team objects to StudentTeamListResponse for available teams.
+    
+    Transforms Team ORM objects into available team responses with:
+    - Team details and members
+    - Availability slot calculation
+    - User's ability to join
+    
+    Args:
+        teams: List of Team ORM objects with available slots
+        max_team_size: Maximum team size in contest
+        current_user_id: UUID of requesting user
+    
+    Returns:
+        StudentTeamListResponse with available teams list
+    """
+    team_responses = [
+        to_student_available_team_response(
+            team,
+            team.members,
+            current_user_id,
+            max_team_size,
+        )
+        for team in teams
+    ]
+    
+    return StudentTeamListResponse(
+        teams=team_responses,
+        total=len(teams),
+        page=1,
+        page_size=len(teams),
+        has_more=False,
+    )
+
+
 def to_student_available_team_response(
     team: "Team",
     team_members: list["TeamUser"],
@@ -162,6 +204,77 @@ def to_student_available_team_response(
         available_slots=available_slots,
         can_join=available_slots > 0 and not is_already_member,
         is_already_member=is_already_member,
+    )
+
+
+def to_student_available_teams_list_response(
+    teams: list["Team"],
+    max_team_size: int,
+    current_user_id: UUID,
+) -> StudentTeamListResponse:
+    """
+    Convert list of Team objects to StudentTeamListResponse for available teams.
+    
+    Transforms Team ORM objects into available team responses with:
+    - Team details and members
+    - Availability slot calculation
+    - User's ability to join
+    
+    Args:
+        teams: List of Team ORM objects with available slots
+        max_team_size: Maximum team size in contest
+        current_user_id: UUID of requesting user
+    
+    Returns:
+        StudentTeamListResponse with available teams list
+    """
+    team_responses = [
+        to_student_available_team_response(
+            team,
+            team.members,
+            current_user_id,
+            max_team_size,
+        )
+        for team in teams
+    ]
+    
+    return StudentTeamListResponse(
+        teams=team_responses,
+        total=len(teams),
+        page=1,
+        page_size=len(teams),
+        has_more=False,
+    )
+
+
+def to_student_team_response(
+    team: "Team",
+    team_members: list["TeamUser"],
+    current_user_id: UUID,
+) -> StudentTeamResponse:
+    """
+    Convert Team ORM to StudentTeamResponse.
+    
+    Args:
+        team: Team ORM object
+        team_members: List of TeamUser objects in this team
+        current_user_id: UUID of requesting user
+    
+    Returns:
+        StudentTeamResponse ready for API response
+    """
+    members = [to_student_team_member_response(tu) for tu in team_members]
+    is_leader = any(tu.user_id == current_user_id and tu.is_leader for tu in team_members)
+    
+    return StudentTeamResponse(
+        id=team.id,
+        name=team.name,
+        created_by=team.created_by,
+        created_at=team.created_at,
+        leader=members[0] if members and any(tu.is_leader for tu in team_members) else None,
+        members=members,
+        member_count=len(members),
+        is_leader=is_leader,
     )
 
 

@@ -81,10 +81,11 @@ class StudentTeamJoinResponse(BaseModel):
 
 
 class StudentTeamCreateRequest(BaseModel):
-    """Schema for creating a new team (POST /students/contests/{id}/teams/create-and-join)."""
+    """Schema for creating a new team (POST /students/contests/{id}/teams)."""
 
     name: str = Field(..., min_length=1, max_length=255, description="Team name")
     description: Optional[str] = Field(None, max_length=1000, description="Team description")
+    contest_id: UUID = Field(..., description="Contest UUID to create team for")
 
     model_config = ConfigDict(from_attributes=True)
 

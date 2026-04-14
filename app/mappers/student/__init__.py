@@ -15,6 +15,7 @@ from app.mappers.student.contest_mappers import (
 )
 from app.mappers.student.team_mappers import (
     to_student_available_team_response,
+    to_student_available_teams_list_response,
     to_student_leave_team_response,
     to_student_team_create_and_join_response,
     to_student_team_join_response,
@@ -37,6 +38,7 @@ __all__ = [
     "to_student_team_response",
     "to_student_teams_list_response",
     "to_student_available_team_response",
+    "to_student_available_teams_list_response",
     "to_student_team_join_response",
     "to_student_team_create_and_join_response",
     "to_student_leave_team_response",
