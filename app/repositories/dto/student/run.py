@@ -5,6 +5,8 @@ These DTOs handle the flow of data for code runs:
 2. Execution results returned from Judge0
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from uuid import UUID
 
