@@ -85,8 +85,9 @@ class StudentContestService:
         - Cache invalidated on registration operations
     """
 
-    def __init__(self, contest_repository: "ContestRepository"):
+    def __init__(self, contest_repository: "ContestRepository", team_repository: TeamRepository):
         self.repository = contest_repository
+        self.team_repository = team_repository
 
     @cache_get(
         key_builder=lambda self, user_id, search_term=None, status=None, skip=0, limit=10: f"student:contests:available:user:{user_id}:search:{search_term}:status:{status}:skip:{skip}:limit:{limit}",
@@ -354,12 +355,10 @@ class StudentContestService:
             raise ContestNotFoundError(str(contest_id))
 
         # Verify team exists
-        team = await self.repository.get_team_or_raise(team_id)
-        if team.is_deleted:
-            raise TeamNotFoundError(str(team_id), str(contest_id))
+        team = await self.team_repository.get_team_or_raise(team_id)
 
         # CRITICAL: Verify user is a member of the team (cannot register other's teams)
-        is_team_member = await self.repository.is_user_in_team(team_id, user_id)
+        is_team_member = await self.team_repository.is_student_in_team(team_id, user_id)
         if not is_team_member:
             raise PermissionDeniedError(
                 "You can only register for contests with teams you are a member of"
