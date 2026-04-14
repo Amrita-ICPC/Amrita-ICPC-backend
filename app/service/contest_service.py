@@ -7,6 +7,7 @@ from app.core.guards.contest import ContestOperationGuard
 from app.core.logger import logger
 from app.exceptions.contest import (
     ContestNotFoundError,
+    DuplicateQuestionOrderError,
     InvalidContestError,
     QuestionAlreadyInContestError,
     QuestionNotInContestError,
@@ -239,7 +240,7 @@ class ContestService:
         key_builder=lambda self,
         contest_id,
         question_id,
-        user_id: f"contest:{contest_id}:question:{question_id}:user:{user_id}",
+        user_id: f"contest:{contest_id}:questions:item:{question_id}:user:{user_id}",
         ttl=300,
     )
     async def get_contest_question(
@@ -763,7 +764,19 @@ class ContestService:
             raise InvalidContestError("Question repository not initialized in service")
 
         dto_list = []
+        seen_question_ids: set[UUID] = set()
+        seen_orders: set[int] = set()
+        existing_orders = await self.repository.get_ordered_question_orders_for_contest(
+            contest_id
+        )
+
         for question_request in request.questions:
+            if question_request.question_id in seen_question_ids:
+                raise QuestionAlreadyInContestError(
+                    str(question_request.question_id), str(contest_id)
+                )
+            seen_question_ids.add(question_request.question_id)
+
             # Validate question exists
             await self.question_repository.get_question_or_raise(
                 question_request.question_id
@@ -780,6 +793,19 @@ class ContestService:
 
             # Validate business rules (order, duration, score)
             self.validator.validate_question_order(question_request.order)
+
+            if question_request.order in seen_orders:
+                raise DuplicateQuestionOrderError(
+                    question_request.order,
+                    str(contest_id),
+                )
+            if question_request.order in existing_orders:
+                raise DuplicateQuestionOrderError(
+                    question_request.order,
+                    str(contest_id),
+                )
+            seen_orders.add(question_request.order)
+
             self.validator.validate_question_duration(question_request.duration)
             self.validator.validate_question_score(question_request.score)
 

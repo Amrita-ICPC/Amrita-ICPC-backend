@@ -1,11 +1,18 @@
+import re
 from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import exists, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.exceptions.contest import ContestNotFoundError, InstructorNotAssignedError
+from app.exceptions.contest import (
+    ContestNotFoundError,
+    DuplicateQuestionOrderError,
+    InstructorNotAssignedError,
+    QuestionAlreadyInContestError,
+)
 from app.exceptions.user import UserNotFoundError
 from app.models.contest import Contest, ContestInstructor, ContestQuestion
 from app.models.question import Question, QuestionLanguage, TestCase
@@ -59,6 +66,75 @@ class ContestRepository:
 
     def __init__(self, db: AsyncSession):
         self.db = db
+
+    def _translate_contest_question_integrity_error(
+        self,
+        exc: IntegrityError,
+        *,
+        contest_id: UUID,
+        question_id: UUID | None = None,
+        order: int | None = None,
+    ) -> None:
+        """Translate contest_question unique violations to domain exceptions."""
+        orig = getattr(exc, "orig", None)
+        diag = getattr(orig, "diag", None)
+        constraint_name = (
+            getattr(diag, "constraint_name", None)
+            or getattr(orig, "constraint_name", None)
+            or ""
+        )
+        message = str(orig or exc)
+        normalized_message = message.lower()
+        normalized_constraint = constraint_name.lower()
+
+        is_question_duplicate = (
+            normalized_constraint == "contest_question_pkey"
+            or (
+                "contest_question" in normalized_constraint
+                and "pkey" in normalized_constraint
+            )
+            or "contest_question_pkey" in normalized_message
+            or "(contest_id, question_id)" in normalized_message
+        )
+
+        if is_question_duplicate:
+            resolved_question_id = question_id
+            if resolved_question_id is None:
+                match = re.search(
+                    r"\(contest_id,\s*question_id\)=\([^,]+,\s*([0-9a-f-]{36})\)",
+                    normalized_message,
+                )
+                if match:
+                    resolved_question_id = UUID(match.group(1))
+            raise QuestionAlreadyInContestError(
+                str(resolved_question_id or "unknown"),
+                str(contest_id),
+            ) from None
+
+        is_order_duplicate = (
+            normalized_constraint == "contest_question_contest_id_order_key"
+            or (
+                "contest_question" in normalized_constraint
+                and "order" in normalized_constraint
+            )
+            or "contest_question_contest_id_order_key" in normalized_message
+            or "(contest_id, order)" in normalized_message
+            or '(contest_id, "order")' in normalized_message
+        )
+
+        if is_order_duplicate:
+            resolved_order = order
+            if resolved_order is None:
+                match = re.search(
+                    r"\(contest_id,\s*\"?order\"?\)=\([^,]+,\s*([0-9]+)\)",
+                    normalized_message,
+                )
+                if match:
+                    resolved_order = int(match.group(1))
+            raise DuplicateQuestionOrderError(
+                resolved_order if resolved_order is not None else -1,
+                str(contest_id),
+            ) from None
 
     async def get_contest_or_raise(self, contest_id: UUID) -> Contest:
         """
@@ -461,6 +537,17 @@ class ContestRepository:
         )
         return result.scalars().first() is not None
 
+    async def get_ordered_question_orders_for_contest(
+        self, contest_id: UUID
+    ) -> set[int]:
+        """Return the set of existing question order positions for a contest."""
+        result = await self.db.execute(
+            select(ContestQuestion.order).filter(
+                ContestQuestion.contest_id == contest_id
+            )
+        )
+        return {order for order in result.scalars().all()}
+
     async def add_question_to_contest(
         self, data: AddContestQuestionData
     ) -> ContestQuestion:
@@ -488,7 +575,16 @@ class ContestRepository:
 
         contest_question = build_contest_question_entity(data)
         self.db.add(contest_question)
-        await self.db.flush()
+        try:
+            await self.db.flush()
+        except IntegrityError as exc:
+            self._translate_contest_question_integrity_error(
+                exc,
+                contest_id=data.contest_id,
+                question_id=data.question_id,
+                order=data.order,
+            )
+            raise
         return contest_question
 
     async def remove_question_from_contest(
@@ -630,13 +726,26 @@ class ContestRepository:
         """
         from app.mappers.contest_question import build_contest_question_entity
 
-        contest_questions = []
+        contest_questions: list[ContestQuestion] = []
+        if not data_list:
+            return contest_questions
+
         for data in data_list:
             contest_question = build_contest_question_entity(data)
             contest_questions.append(contest_question)
             self.db.add(contest_question)
 
-        await self.db.flush()
+        try:
+            await self.db.flush()
+        except IntegrityError as exc:
+            first_item = data_list[0]
+            self._translate_contest_question_integrity_error(
+                exc,
+                contest_id=first_item.contest_id,
+                question_id=first_item.question_id,
+                order=first_item.order,
+            )
+            raise
         return contest_questions
 
     async def remove_questions_from_contest(

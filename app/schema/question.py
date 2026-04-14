@@ -1,10 +1,12 @@
 from datetime import datetime
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Annotated, List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.utils.enums import QuestionDifficulty
+
+PositiveLanguageId = Annotated[int, Field(gt=0)]
 
 if TYPE_CHECKING:
     from app.models.question import Question
@@ -107,7 +109,7 @@ class RemoveQuestionTestCasesRequest(BaseModel):
 class RemoveQuestionTemplatesRequest(BaseModel):
     """Request model for removing multiple templates from an existing question."""
 
-    language_ids: List[int] = Field(
+    language_ids: List[PositiveLanguageId] = Field(
         ..., description="List of language IDs whose templates should be removed"
     )
 
@@ -140,7 +142,7 @@ class UpdateQuestionMetadataRequest(BaseModel):
 class AddQuestionAllowedLanguagesRequest(BaseModel):
     """Request model for adding allowed languages to an existing question."""
 
-    language_ids: List[int] = Field(
+    language_ids: List[PositiveLanguageId] = Field(
         ...,
         min_length=1,
         description="List of language IDs to add to allowed languages",
@@ -150,7 +152,7 @@ class AddQuestionAllowedLanguagesRequest(BaseModel):
 class RemoveQuestionAllowedLanguagesRequest(BaseModel):
     """Request model for removing allowed languages from an existing question."""
 
-    language_ids: List[int] = Field(
+    language_ids: List[PositiveLanguageId] = Field(
         ...,
         min_length=1,
         description="List of language IDs to remove from allowed languages",
@@ -160,7 +162,7 @@ class RemoveQuestionAllowedLanguagesRequest(BaseModel):
 class UpdateQuestionAllowedLanguagesRequest(BaseModel):
     """Request model for replacing all allowed languages of an existing question."""
 
-    language_ids: List[int] = Field(
+    language_ids: List[PositiveLanguageId] = Field(
         ...,
         min_length=1,
         description="Full replacement list of allowed language IDs",
