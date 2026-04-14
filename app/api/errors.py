@@ -12,10 +12,14 @@ from app.exceptions.contest import (
     ContestAlreadyExistsError,
     ContestNotFoundError,
     ContestOperationError,
+    DuplicateQuestionOrderError,
     InstructorAlreadyAssignedError,
     InstructorNotAssignedError,
     InstructorNotFoundError,
     InvalidContestError,
+    InvalidContestQuestionDataError,
+    QuestionAlreadyInContestError,
+    QuestionNotInContestError,
 )
 from app.exceptions.execution import (
     CodeExecutionError,
@@ -181,6 +185,58 @@ def setup_exception_handlers(app: FastAPI) -> None:
             status_code=exc.status_code,
             message=exc.message,
             error_code="INVALID_CONTEST",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(QuestionAlreadyInContestError)
+    async def question_already_in_contest_handler(
+        request: Request, exc: QuestionAlreadyInContestError
+    ):
+        logger.warning(f"Question already in contest: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="QUESTION_ALREADY_IN_CONTEST",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(QuestionNotInContestError)
+    async def question_not_in_contest_handler(
+        request: Request, exc: QuestionNotInContestError
+    ):
+        logger.warning(f"Question not in contest: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="QUESTION_NOT_IN_CONTEST",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(InvalidContestQuestionDataError)
+    async def invalid_contest_question_data_handler(
+        request: Request, exc: InvalidContestQuestionDataError
+    ):
+        logger.warning(f"Invalid contest question data: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="INVALID_CONTEST_QUESTION_DATA",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(DuplicateQuestionOrderError)
+    async def duplicate_question_order_handler(
+        request: Request, exc: DuplicateQuestionOrderError
+    ):
+        logger.warning(f"Duplicate question order: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="DUPLICATE_QUESTION_ORDER",
             details=[exc.detail] if exc.detail else None,
         )
 

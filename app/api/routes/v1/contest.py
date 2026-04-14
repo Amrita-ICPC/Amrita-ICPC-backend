@@ -290,7 +290,7 @@ async def get_contest_questions(
     ),
     service: ContestService = Depends(get_contest_service),
     user_id: UUID = Depends(get_current_user_id),
-):
+) -> APIResponse[list[QuestionListSummaryResponse]]:
     """
     Get paginated overview questions for a contest.
 
@@ -348,7 +348,7 @@ async def get_contest_question(
     question_id: UUID,
     user_id: UUID = Depends(get_current_user_id),
     service: ContestService = Depends(get_contest_service),
-):
+) -> APIResponse[QuestionResponse]:
     """
     Get detailed question data for a contest question.
 
@@ -370,7 +370,7 @@ async def get_contest_question(
     """
     question = await service.get_contest_question(contest_id, question_id, user_id)
     logger.info(
-        f"Fetched question {question_id} from contest {contest_id} by user {user_id}"
+        f"Fetched question {question_id} from contest {contest_id} (actor=REDACTED)"
     )
     return create_api_response(
         request,
@@ -781,7 +781,7 @@ async def add_question_to_contest(
         contest_id, questions_request, user_id
     )
     logger.info(
-        f"Added {len(questions_request.questions)} questions to contest {contest_id} by user {user_id}"
+        f"Added {len(questions_request.questions)} questions to contest {contest_id} (actor=REDACTED)"
     )
 
     return create_api_response(
@@ -794,7 +794,7 @@ async def add_question_to_contest(
 
 @router.delete(
     "/{contest_id}/questions",
-    response_model=APIResponse,
+    response_model=APIResponse[None],
     status_code=status.HTTP_200_OK,
     summary="Remove questions from contest",
     dependencies=[can_update("contests")],
@@ -805,7 +805,7 @@ async def remove_question_from_contest(
     questions_request: RemoveContestQuestionRequest,
     user_id: UUID = Depends(get_current_user_id),
     service: ContestService = Depends(get_contest_service),
-) -> APIResponse:
+) -> APIResponse[None]:
     """
     Remove multiple questions from a contest in batch.
 
@@ -829,7 +829,7 @@ async def remove_question_from_contest(
     """
     await service.remove_questions_from_contest(contest_id, questions_request, user_id)
     logger.info(
-        f"Removed {len(questions_request.question_ids)} questions from contest {contest_id} by user {user_id}"
+        f"Removed {len(questions_request.question_ids)} questions from contest {contest_id} (actor=REDACTED)"
     )
 
     return create_api_response(
@@ -841,7 +841,7 @@ async def remove_question_from_contest(
 
 @router.patch(
     "/{contest_id}/questions/{question_id}/metadata",
-    response_model=APIResponse,
+    response_model=APIResponse[QuestionResponse],
     status_code=status.HTTP_200_OK,
     summary="Update contest question metadata",
     dependencies=[can_update("contests")],
@@ -853,13 +853,13 @@ async def update_contest_question_metadata(
     payload: UpdateQuestionMetadataRequest,
     user_id: UUID = Depends(get_current_user_id),
     service: ContestService = Depends(get_contest_service),
-):
+) -> APIResponse[QuestionResponse]:
     """Update metadata fields of a question linked to a contest."""
     question = await service.update_contest_question_metadata(
         contest_id, question_id, payload, user_id
     )
     logger.info(
-        f"Updated metadata for question {question_id} in contest {contest_id} by user {user_id}"
+        f"Updated metadata for question {question_id} in contest {contest_id} (actor=REDACTED)"
     )
     return create_api_response(
         request,
@@ -870,7 +870,7 @@ async def update_contest_question_metadata(
 
 @router.post(
     "/{contest_id}/questions/{question_id}/testcases",
-    response_model=APIResponse,
+    response_model=APIResponse[QuestionResponse],
     status_code=status.HTTP_201_CREATED,
     summary="Add testcases to contest question",
     dependencies=[can_update("contests")],
@@ -882,13 +882,13 @@ async def add_testcases_to_contest_question(
     payload: AddQuestionTestCasesRequest,
     user_id: UUID = Depends(get_current_user_id),
     service: ContestService = Depends(get_contest_service),
-):
+) -> APIResponse[QuestionResponse]:
     """Append testcases to a question linked to a contest."""
     question = await service.add_testcases_to_contest_question(
         contest_id, question_id, payload, user_id
     )
     logger.info(
-        f"Added {len(payload.testcases)} testcases to question {question_id} in contest {contest_id} by user {user_id}"
+        f"Added {len(payload.testcases)} testcases to question {question_id} in contest {contest_id} (actor=REDACTED)"
     )
     return create_api_response(
         request,
@@ -900,7 +900,7 @@ async def add_testcases_to_contest_question(
 
 @router.delete(
     "/{contest_id}/questions/{question_id}/testcases",
-    response_model=APIResponse,
+    response_model=APIResponse[QuestionResponse],
     status_code=status.HTTP_200_OK,
     summary="Remove testcases from contest question",
     dependencies=[can_update("contests")],
@@ -912,13 +912,13 @@ async def remove_testcases_from_contest_question(
     payload: RemoveQuestionTestCasesRequest,
     user_id: UUID = Depends(get_current_user_id),
     service: ContestService = Depends(get_contest_service),
-):
+) -> APIResponse[QuestionResponse]:
     """Remove testcases from a question linked to a contest."""
     question = await service.remove_testcases_from_contest_question(
         contest_id, question_id, payload, user_id
     )
     logger.info(
-        f"Removed {len(payload.testcase_ids)} testcases from question {question_id} in contest {contest_id} by user {user_id}"
+        f"Removed {len(payload.testcase_ids)} testcases from question {question_id} in contest {contest_id} (actor=REDACTED)"
     )
     return create_api_response(
         request,
@@ -929,7 +929,7 @@ async def remove_testcases_from_contest_question(
 
 @router.patch(
     "/{contest_id}/questions/{question_id}/testcases",
-    response_model=APIResponse,
+    response_model=APIResponse[QuestionResponse],
     status_code=status.HTTP_200_OK,
     summary="Update testcases of contest question",
     dependencies=[can_update("contests")],
@@ -941,13 +941,13 @@ async def update_testcases_of_contest_question(
     payload: AddQuestionTestCasesRequest,
     user_id: UUID = Depends(get_current_user_id),
     service: ContestService = Depends(get_contest_service),
-):
+) -> APIResponse[QuestionResponse]:
     """Replace all testcases of a question linked to a contest."""
     question = await service.update_testcases_of_contest_question(
         contest_id, question_id, payload, user_id
     )
     logger.info(
-        f"Updated testcases of question {question_id} in contest {contest_id} by user {user_id}"
+        f"Updated testcases of question {question_id} in contest {contest_id} (actor=REDACTED)"
     )
     return create_api_response(
         request,
@@ -958,7 +958,7 @@ async def update_testcases_of_contest_question(
 
 @router.patch(
     "/{contest_id}/questions/{question_id}/testcases/{id}",
-    response_model=APIResponse,
+    response_model=APIResponse[QuestionResponse],
     status_code=status.HTTP_200_OK,
     summary="Update one testcase of contest question",
     dependencies=[can_update("contests")],
@@ -971,13 +971,13 @@ async def update_testcase_of_contest_question(
     payload: UpdateQuestionTestCaseRequest,
     user_id: UUID = Depends(get_current_user_id),
     service: ContestService = Depends(get_contest_service),
-):
+) -> APIResponse[QuestionResponse]:
     """Update one testcase in a question linked to a contest."""
     question = await service.update_testcase_of_contest_question(
         contest_id, question_id, id, payload, user_id
     )
     logger.info(
-        f"Updated testcase {id} of question {question_id} in contest {contest_id} by user {user_id}"
+        f"Updated testcase {id} of question {question_id} in contest {contest_id} (actor=REDACTED)"
     )
     return create_api_response(
         request,
@@ -988,7 +988,7 @@ async def update_testcase_of_contest_question(
 
 @router.post(
     "/{contest_id}/questions/{question_id}/templates",
-    response_model=APIResponse,
+    response_model=APIResponse[QuestionResponse],
     status_code=status.HTTP_201_CREATED,
     summary="Add templates to contest question",
     dependencies=[can_update("contests")],
@@ -1000,13 +1000,13 @@ async def add_templates_to_contest_question(
     payload: AddQuestionTemplatesRequest,
     user_id: UUID = Depends(get_current_user_id),
     service: ContestService = Depends(get_contest_service),
-):
+) -> APIResponse[QuestionResponse]:
     """Append templates to a question linked to a contest."""
     question = await service.add_templates_to_contest_question(
         contest_id, question_id, payload, user_id
     )
     logger.info(
-        f"Added {len(payload.templates)} templates to question {question_id} in contest {contest_id} by user {user_id}"
+        f"Added {len(payload.templates)} templates to question {question_id} in contest {contest_id} (actor=REDACTED)"
     )
     return create_api_response(
         request,
@@ -1018,7 +1018,7 @@ async def add_templates_to_contest_question(
 
 @router.delete(
     "/{contest_id}/questions/{question_id}/templates",
-    response_model=APIResponse,
+    response_model=APIResponse[QuestionResponse],
     status_code=status.HTTP_200_OK,
     summary="Remove templates from contest question",
     dependencies=[can_update("contests")],
@@ -1030,13 +1030,13 @@ async def remove_templates_from_contest_question(
     payload: RemoveQuestionTemplatesRequest,
     user_id: UUID = Depends(get_current_user_id),
     service: ContestService = Depends(get_contest_service),
-):
+) -> APIResponse[QuestionResponse]:
     """Remove templates from a question linked to a contest."""
     question = await service.remove_templates_from_contest_question(
         contest_id, question_id, payload, user_id
     )
     logger.info(
-        f"Removed {len(payload.language_ids)} templates from question {question_id} in contest {contest_id} by user {user_id}"
+        f"Removed {len(payload.language_ids)} templates from question {question_id} in contest {contest_id} (actor=REDACTED)"
     )
     return create_api_response(
         request,
@@ -1047,7 +1047,7 @@ async def remove_templates_from_contest_question(
 
 @router.patch(
     "/{contest_id}/questions/{question_id}/templates",
-    response_model=APIResponse,
+    response_model=APIResponse[QuestionResponse],
     status_code=status.HTTP_200_OK,
     summary="Update templates of contest question",
     dependencies=[can_update("contests")],
@@ -1059,13 +1059,13 @@ async def update_templates_of_contest_question(
     payload: AddQuestionTemplatesRequest,
     user_id: UUID = Depends(get_current_user_id),
     service: ContestService = Depends(get_contest_service),
-):
+) -> APIResponse[QuestionResponse]:
     """Replace all templates of a question linked to a contest."""
     question = await service.update_templates_of_contest_question(
         contest_id, question_id, payload, user_id
     )
     logger.info(
-        f"Updated templates of question {question_id} in contest {contest_id} by user {user_id}"
+        f"Updated templates of question {question_id} in contest {contest_id} (actor=REDACTED)"
     )
     return create_api_response(
         request,
@@ -1076,7 +1076,7 @@ async def update_templates_of_contest_question(
 
 @router.patch(
     "/{contest_id}/questions/{question_id}/templates/{template_id}",
-    response_model=APIResponse,
+    response_model=APIResponse[QuestionResponse],
     status_code=status.HTTP_200_OK,
     summary="Update one template of contest question",
     dependencies=[can_update("contests")],
@@ -1089,13 +1089,13 @@ async def update_template_of_contest_question(
     payload: UpdateQuestionTemplateRequest,
     user_id: UUID = Depends(get_current_user_id),
     service: ContestService = Depends(get_contest_service),
-):
+) -> APIResponse[QuestionResponse]:
     """Update one template in a question linked to a contest."""
     question = await service.update_template_of_contest_question(
         contest_id, question_id, template_id, payload, user_id
     )
     logger.info(
-        f"Updated template {template_id} of question {question_id} in contest {contest_id} by user {user_id}"
+        f"Updated template {template_id} of question {question_id} in contest {contest_id} (actor=REDACTED)"
     )
     return create_api_response(
         request,
@@ -1106,7 +1106,7 @@ async def update_template_of_contest_question(
 
 @router.post(
     "/{contest_id}/questions/{question_id}/languages",
-    response_model=APIResponse,
+    response_model=APIResponse[QuestionResponse],
     status_code=status.HTTP_200_OK,
     summary="Add allowed languages to contest question",
     dependencies=[can_update("contests")],
@@ -1118,13 +1118,13 @@ async def add_allowed_languages_to_contest_question(
     payload: AddQuestionAllowedLanguagesRequest,
     user_id: UUID = Depends(get_current_user_id),
     service: ContestService = Depends(get_contest_service),
-):
+) -> APIResponse[QuestionResponse]:
     """Add allowed languages to a question linked to a contest."""
     question = await service.add_allowed_languages_to_contest_question(
         contest_id, question_id, payload, user_id
     )
     logger.info(
-        f"Added {len(payload.language_ids)} allowed languages to question {question_id} in contest {contest_id} by user {user_id}"
+        f"Added {len(payload.language_ids)} allowed languages to question {question_id} in contest {contest_id} (actor=REDACTED)"
     )
     return create_api_response(
         request,
@@ -1135,7 +1135,7 @@ async def add_allowed_languages_to_contest_question(
 
 @router.delete(
     "/{contest_id}/questions/{question_id}/languages",
-    response_model=APIResponse,
+    response_model=APIResponse[QuestionResponse],
     status_code=status.HTTP_200_OK,
     summary="Remove allowed languages from contest question",
     dependencies=[can_update("contests")],
@@ -1147,13 +1147,13 @@ async def remove_allowed_languages_from_contest_question(
     payload: RemoveQuestionAllowedLanguagesRequest,
     user_id: UUID = Depends(get_current_user_id),
     service: ContestService = Depends(get_contest_service),
-):
+) -> APIResponse[QuestionResponse]:
     """Remove allowed languages from a question linked to a contest."""
     question = await service.remove_allowed_languages_from_contest_question(
         contest_id, question_id, payload, user_id
     )
     logger.info(
-        f"Removed {len(payload.language_ids)} allowed languages from question {question_id} in contest {contest_id} by user {user_id}"
+        f"Removed {len(payload.language_ids)} allowed languages from question {question_id} in contest {contest_id} (actor=REDACTED)"
     )
     return create_api_response(
         request,
@@ -1164,7 +1164,7 @@ async def remove_allowed_languages_from_contest_question(
 
 @router.put(
     "/{contest_id}/questions/{question_id}/languages",
-    response_model=APIResponse,
+    response_model=APIResponse[QuestionResponse],
     status_code=status.HTTP_200_OK,
     summary="Update allowed languages of contest question",
     dependencies=[can_update("contests")],
@@ -1176,13 +1176,13 @@ async def update_allowed_languages_of_contest_question(
     payload: UpdateQuestionAllowedLanguagesRequest,
     user_id: UUID = Depends(get_current_user_id),
     service: ContestService = Depends(get_contest_service),
-):
+) -> APIResponse[QuestionResponse]:
     """Replace allowed languages of a question linked to a contest."""
     question = await service.update_allowed_languages_of_contest_question(
         contest_id, question_id, payload, user_id
     )
     logger.info(
-        f"Updated allowed languages of question {question_id} in contest {contest_id} by user {user_id}"
+        f"Updated allowed languages of question {question_id} in contest {contest_id} (actor=REDACTED)"
     )
     return create_api_response(
         request,
