@@ -2,7 +2,7 @@ from uuid import UUID
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 
 from app.exceptions.contest import ContestNotFoundError
 from app.exceptions.team import TeamNotFoundError
@@ -550,23 +550,36 @@ class TeamRepository:
         Returns:
             PaginatedResult with teams user is member of
         """
-        base_query = (
-            select(Team)
+        # Count total teams for this user
+        count_query = (
+            select(func.count(Team.id))
             .join(TeamUser, TeamUser.team_id == Team.id)
             .filter(TeamUser.user_id == user_id)
         )
-
-        # Get total count
-        count_query = select(func.count()).select_from(
-            base_query.with_only_columns(Team.id).subquery()
-        )
         total = (await self.db.execute(count_query)).scalar() or 0
 
-        # Get paginated results
-        result = await self.db.execute(
-            base_query.offset(pagination.skip).limit(pagination.limit)
+        # First, get the team IDs for pagination
+        teams_ids_query = (
+            select(Team.id)
+            .join(TeamUser, TeamUser.team_id == Team.id)
+            .filter(TeamUser.user_id == user_id)
+            .distinct()
+            .offset(pagination.skip)
+            .limit(pagination.limit)
         )
-        teams = list(result.unique().scalars().all())
+        result = await self.db.execute(teams_ids_query)
+        team_ids = [row[0] for row in result.fetchall()]
+
+        # Now get the full Team objects with members
+        if team_ids:
+            teams_result = await self.db.execute(
+                select(Team)
+                .where(Team.id.in_(team_ids))
+                .options(selectinload(Team.members))
+            )
+            teams = list(teams_result.scalars().all())
+        else:
+            teams = []
 
         return PaginatedResult(total=total, items=teams)
 

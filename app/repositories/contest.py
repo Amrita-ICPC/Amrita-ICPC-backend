@@ -582,11 +582,15 @@ class ContestRepository:
             pagination: PaginationParams for skip/limit
 
         Returns:
-            PaginatedResult with registered contests
+            PaginatedResult with (Contest, ContestTeam) tuples
         """
-        base_query = (
-            select(Contest)
-            .options(selectinload(Contest.questions))
+        # Query contests with ContestTeam and eagerly load Team relationship
+        query = (
+            select(Contest, ContestTeam)
+            .options(
+                selectinload(Contest.questions),
+                selectinload(ContestTeam.team),
+            )
             .join(ContestTeam, ContestTeam.contest_id == Contest.id)
             .join(Team, ContestTeam.team_id == Team.id)
             .join(TeamUser, TeamUser.team_id == Team.id)
@@ -598,18 +602,25 @@ class ContestRepository:
         )
 
         # Get total count
-        count_query = select(func.count()).select_from(
-            base_query.with_only_columns(Contest.id).subquery()
+        count_result = await self.db.execute(
+            select(func.count(func.distinct(Contest.id)))
+            .join(ContestTeam, ContestTeam.contest_id == Contest.id)
+            .join(Team, ContestTeam.team_id == Team.id)
+            .join(TeamUser, TeamUser.team_id == Team.id)
+            .filter(
+                TeamUser.user_id == user_id,
+                Contest.is_deleted.is_(False),
+            )
         )
-        total = (await self.db.execute(count_query)).scalar() or 0
+        total = count_result.scalar() or 0
 
         # Get paginated results
         result = await self.db.execute(
-            base_query.offset(pagination.skip).limit(pagination.limit)
+            query.offset(pagination.skip).limit(pagination.limit)
         )
-        contests = list(result.unique().scalars().all())
+        items = list(result.unique().all())
 
-        return PaginatedResult(total=total, items=contests)
+        return PaginatedResult(total=total, items=items)
 
     async def get_contest_problems(
         self,
