@@ -4,7 +4,7 @@ from uuid import UUID
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 
 from app.exceptions.contest import (
     ContestNotFoundError,
@@ -539,7 +539,9 @@ class ContestRepository:
         Returns:
             PaginatedResult with available contests
         """
-        base_query = select(Contest).filter(
+        base_query = select(Contest).options(
+            selectinload(Contest.questions)
+        ).filter(
             Contest.is_public.is_(True),
             Contest.is_deleted.is_(False),
             Contest.status.in_([ContestStatus.SCHEDULED, ContestStatus.RUNNING]),
@@ -584,6 +586,7 @@ class ContestRepository:
         """
         base_query = (
             select(Contest)
+            .options(selectinload(Contest.questions))
             .join(ContestTeam, ContestTeam.contest_id == Contest.id)
             .join(Team, ContestTeam.team_id == Team.id)
             .join(TeamUser, TeamUser.team_id == Team.id)
