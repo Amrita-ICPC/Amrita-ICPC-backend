@@ -239,9 +239,9 @@ class StudentTeamService:
         )
 
     @cache_delete(
-        key_builder=lambda self, contest_id, user_id: [
-            f"student:teams:user:{user_id}:*",
-            f"student:contest:{contest_id}:teams:available:user:{user_id}:*",
+        key_builder=lambda self, contest_id, team_data, created_by: [
+            f"student:teams:user:{created_by}:*",
+            f"student:contest:{contest_id}:teams:available:user:{created_by}:*",
         ]
     )
     async def create_and_join_team(
@@ -310,7 +310,7 @@ class StudentTeamService:
             )
 
         # Create team and register in contest
-        team, contest_team, progress = await self.repository.create_student_team_for_contest(
+        team, contest_team, progress, team_user = await self.repository.create_student_team_for_contest(
             team_name=team_data.name,
             team_description=team_data.description,
             contest_id=contest_id,

@@ -738,3 +738,56 @@ class ContestRepository:
             .limit(limit)
         )
         return list(result.unique().scalars().all())
+
+    async def register_team_to_contest(
+        self,
+        contest_id: UUID,
+        team_id: UUID,
+    ) -> ContestTeam:
+        """
+        Register an existing team for a contest.
+
+        Creates a ContestTeam record to register the team for the contest
+        and initializes progress tracking. If already registered, returns existing registration.
+
+        Args:
+            contest_id: Contest ID
+            team_id: Team ID (team must already exist)
+
+        Returns:
+            Created or existing ContestTeam object
+
+        Raises:
+            ValueError: If team or contest not found
+        """
+        # Check if already registered
+        existing = await self.db.execute(
+            select(ContestTeam).filter(
+                ContestTeam.contest_id == contest_id,
+                ContestTeam.team_id == team_id,
+            )
+        )
+        existing_registration = existing.scalar_one_or_none()
+        if existing_registration:
+            return existing_registration
+
+        # Create ContestTeam registration
+        contest_team = ContestTeam(
+            contest_id=contest_id,
+            team_id=team_id,
+            team_status="CONFIRMED",
+            approval_status=TeamApprovalStatus.APPROVED,
+        )
+        self.db.add(contest_team)
+
+        # Create progress tracking
+        progress = ContestTeamProgress(
+            contest_id=contest_id,
+            team_id=team_id,
+            score=0,
+        )
+        self.db.add(progress)
+
+        await self.db.flush()
+        await self.db.refresh(contest_team)
+        return contest_team

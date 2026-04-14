@@ -22,6 +22,7 @@ from app.schema.student.teams import (
 from app.utils.enums import UserRole
 
 if TYPE_CHECKING:
+    from app.models.contest import ContestTeam
     from app.models.team import Team, TeamUser
     from app.models.user import User
     from app.repositories.dto import PaginatedResult
@@ -307,31 +308,29 @@ def to_student_team_join_response(
 
 def to_student_team_create_and_join_response(
     team: "Team",
-    creator_user: "User",
+    contest_team: "ContestTeam",
     user_id: UUID,
 ) -> StudentTeamCreateAndJoinResponse:
     """
-    Convert Team and creator info to StudentTeamCreateAndJoinResponse.
+    Convert Team and ContestTeam info to StudentTeamCreateAndJoinResponse.
     
     Response confirming successful team creation and self-join.
     Acts as team leader after creation.
     
     Args:
         team: Newly created Team ORM object
-        creator_user: User ORM object who created team
-        user_id: UUID of creating user
+        contest_team: ContestTeam record created for registration
+        user_id: UUID of creating user (team leader)
     
     Returns:
         StudentTeamCreateAndJoinResponse with creation and join confirmation
     """
     return StudentTeamCreateAndJoinResponse(
         team_id=team.id,
+        contest_id=contest_team.contest_id,
         team_name=team.name,
-        created_by=team.created_by,
-        created_at=team.created_at,
-        user_id=user_id,
-        status="created_and_joined",
-        is_leader=True,
+        approval_status=contest_team.approval_status,
+        you_are_leader=True,
         message=f"Team '{team.name}' created and you are now the leader",
     )
 
