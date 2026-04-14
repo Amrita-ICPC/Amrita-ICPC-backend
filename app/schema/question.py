@@ -61,6 +61,67 @@ class QuestionUpdate(BaseModel):
     memory_limit_mb: Optional[int] = Field(None, gt=0)
 
 
+class AddQuestionTemplatesRequest(BaseModel):
+    """Request model for adding multiple templates to an existing question.
+
+    Each template is associated with a language and contains starter code
+    plus optional driver and solution code.
+    """
+
+    templates: List[QuestionTemplateCreate] = Field(
+        ..., description="List of templates to add to the question"
+    )
+
+
+class AddQuestionTestCasesRequest(BaseModel):
+    """Request model for adding multiple test cases to an existing question."""
+
+    testcases: List[QuestionTestCaseCreate] = Field(
+        ..., description="List of test cases to add to the question"
+    )
+
+
+class RemoveQuestionTestCasesRequest(BaseModel):
+    """Request model for removing multiple test cases from an existing question."""
+
+    testcase_ids: List[UUID] = Field(
+        ..., description="List of test case IDs to remove from the question"
+    )
+
+
+class RemoveQuestionTemplatesRequest(BaseModel):
+    """Request model for removing multiple templates from an existing question."""
+
+    language_ids: List[int] = Field(
+        ..., description="List of language IDs whose templates should be removed"
+    )
+
+
+class UpdateQuestionMetadataRequest(BaseModel):
+    """Request model for updating question metadata without modifying test cases or templates.
+
+    Allows updating question text, difficulty level, execution limits, allowed languages, and tags.
+    All fields are optional for partial updates.
+    """
+
+    question_text: Optional[str] = Field(
+        None, description="Updated problem statement and description"
+    )
+    difficulty: Optional[QuestionDifficulty] = Field(
+        None, description="Updated difficulty level"
+    )
+    time_limit_ms: Optional[int] = Field(
+        None, gt=0, description="Updated time limit in milliseconds"
+    )
+    memory_limit_mb: Optional[int] = Field(
+        None, gt=0, description="Updated memory limit in megabytes"
+    )
+    allowed_languages: Optional[List[int]] = Field(
+        None, description="Updated list of allowed language IDs"
+    )
+    tag_ids: Optional[List[UUID]] = Field(None, description="Updated list of tag IDs")
+
+
 class QuestionLanguageMappingResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

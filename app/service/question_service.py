@@ -15,10 +15,12 @@ from app.exceptions.question import (
 )
 from app.mappers.question import (
     apply_question_updates,
+    build_appended_testcase_dtos,
     build_create_question_dto,
     build_create_testcase_dtos,
     build_question_entity,
     build_template_dto,
+    build_testcase_entities,
     build_update_question_dto,
     build_update_testcase_dtos,
 )
@@ -28,12 +30,15 @@ from app.repositories.dto.question import (
 from app.repositories.language import LanguageRepository
 from app.repositories.question import QuestionRepository
 from app.schema.question import (
+    AddQuestionTestCasesRequest,
     Judge0LanguageResponse,
     PlatformLanguageCreateRequest,
     PlatformLanguageResponse,
     QuestionCreate,
     QuestionResponse,
     QuestionUpdate,
+    RemoveQuestionTemplatesRequest,
+    RemoveQuestionTestCasesRequest,
 )
 from app.validators.question import QuestionValidator
 
@@ -458,6 +463,142 @@ class QuestionService:
         except Exception:
             await self.repository.rollback()
             raise
+
+    @cache_delete(
+        key_builder=lambda self,
+        question_id,
+        *args,
+        **kwargs: self._get_question_cache_keys(question_id)
+    )
+    async def add_testcases_to_question(
+        self,
+        question_id: UUID,
+        payload: AddQuestionTestCasesRequest,
+        user_id: UUID,
+    ) -> QuestionResponse:
+        """Append multiple test cases to an existing question.
+
+        Args:
+            question_id: Target question ID.
+            payload: Request containing test cases to append.
+            user_id: Authenticated user requesting the mutation.
+
+        Returns:
+            Updated question response.
+
+        Raises:
+            QuestionNotFoundError: If the question does not exist.
+            QuestionPermissionError: If user cannot manage the question.
+            InvalidQuestionError: If testcase payload is invalid.
+        """
+        question = await self.repository.get_question_or_raise(question_id)
+        await self.guard.check_manage_question(user_id=user_id, question=question)
+
+        self.validator.validate_testcases_format(payload.testcases)
+        starting_order = len(question.testcases)
+        testcase_dtos = build_appended_testcase_dtos(
+            payload.testcases,
+            starting_order=starting_order,
+        )
+        question.testcases.extend(
+            build_testcase_entities(testcase_dtos, created_by=user_id)
+        )
+        updated_question = await self.repository.update_question(question)
+        response = QuestionResponse.from_question(updated_question)
+        return await self._hydrate_question_template_codes(response)
+
+    @cache_delete(
+        key_builder=lambda self,
+        question_id,
+        *args,
+        **kwargs: self._get_question_cache_keys(question_id)
+    )
+    async def remove_testcases_from_question(
+        self,
+        question_id: UUID,
+        payload: RemoveQuestionTestCasesRequest,
+        user_id: UUID,
+    ) -> QuestionResponse:
+        """Remove multiple test cases from an existing question.
+
+        Args:
+            question_id: Target question ID.
+            payload: Request containing testcase IDs to remove.
+            user_id: Authenticated user requesting the mutation.
+
+        Returns:
+            Updated question response.
+
+        Raises:
+            QuestionNotFoundError: If the question does not exist.
+            QuestionPermissionError: If user cannot manage the question.
+            InvalidQuestionError: If testcase IDs are invalid or missing.
+        """
+        question = await self.repository.get_question_or_raise(question_id)
+        await self.guard.check_manage_question(user_id=user_id, question=question)
+
+        testcase_ids = payload.testcase_ids
+        self.validator.validate_unique_testcase_ids(testcase_ids)
+        existing_ids = {testcase.id for testcase in question.testcases}
+        self.validator.validate_question_testcases_exist(existing_ids, testcase_ids)
+
+        question.testcases = [
+            testcase
+            for testcase in question.testcases
+            if testcase.id not in testcase_ids
+        ]
+        updated_question = await self.repository.update_question(question)
+        response = QuestionResponse.from_question(updated_question)
+        return await self._hydrate_question_template_codes(response)
+
+    @cache_delete(
+        key_builder=lambda self,
+        question_id,
+        *args,
+        **kwargs: self._get_question_cache_keys(question_id)
+    )
+    async def remove_templates_from_question(
+        self,
+        question_id: UUID,
+        payload: RemoveQuestionTemplatesRequest,
+        user_id: UUID,
+    ) -> QuestionResponse:
+        """Remove multiple templates from an existing question.
+
+        Args:
+            question_id: Target question ID.
+            payload: Request containing language IDs to remove.
+            user_id: Authenticated user requesting the mutation.
+
+        Returns:
+            Updated question response.
+
+        Raises:
+            QuestionNotFoundError: If the question does not exist.
+            QuestionPermissionError: If user cannot manage the question.
+            InvalidQuestionError: If language IDs are invalid or missing.
+        """
+        question = await self.repository.get_question_or_raise(question_id)
+        await self.guard.check_manage_question(user_id=user_id, question=question)
+
+        language_ids = payload.language_ids
+        self.validator.validate_unique_template_language_ids(language_ids)
+        existing_language_ids = {
+            template.language_id for template in question.templates
+        }
+        self.validator.validate_question_template_languages_exist(
+            existing_language_ids,
+            language_ids,
+        )
+
+        question.templates = [
+            template
+            for template in question.templates
+            if template.language_id not in language_ids
+        ]
+        updated_question = await self.repository.update_question(question)
+        response = QuestionResponse.from_question(updated_question)
+        return await self._hydrate_question_template_codes(response)
 
     @cache_delete(
         key_builder=lambda self,

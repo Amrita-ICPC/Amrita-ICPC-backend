@@ -13,13 +13,16 @@ from app.exceptions.execution import (
     NoTestCasesError,
 )
 from app.exceptions.judge0 import Judge0ClientError, Judge0TimeoutError
-from app.repositories.dto.judge0 import Judge0ExecutionRequestDTO, Judge0ExecutionResultDTO
+from app.repositories.dto.judge0 import (
+    Judge0ExecutionRequestDTO,
+    Judge0ExecutionResultDTO,
+    Judge0SubmissionDTO,
+)
 from app.repositories.judge0 import Judge0Repository
 from app.repositories.question import QuestionRepository
 from app.repositories.testcase import TestCaseRepository
 from app.schema.execution import CodeRunResponse, TestCaseRunResult
 from app.utils.enums import ExecutionStatus
-
 
 JUDGE0_TO_EXECUTION_STATUS: dict[Judge0StatusCode, ExecutionStatus] = {
     Judge0StatusCode.ACCEPTED: ExecutionStatus.ACCEPTED,
@@ -73,14 +76,14 @@ class CodeExecutionService:
         logger.info(f"Starting code execution for question {question_id}")
 
         question = await self.question_repo.get_question_or_raise(question_id)
-        logger.debug(f"Question found: {question.question_text[:50]}... (id={question.id})")
+        logger.debug(
+            f"Question found: {question.question_text[:50]}... (id={question.id})"
+        )
 
         testcases = await self.testcase_repo.get_non_hidden_by_question(question_id)
         if not testcases:
             logger.warning(f"No non-hidden test cases for question {question_id}")
-            raise NoTestCasesError(
-                f"Question {question_id} has no visible test cases"
-            )
+            raise NoTestCasesError(f"Question {question_id} has no visible test cases")
 
         logger.info(
             f"Found {len(testcases)} non-hidden test cases for question {question_id}"
@@ -98,9 +101,7 @@ class CodeExecutionService:
         ]
         submissions = await asyncio.gather(*submit_tasks)
 
-        token_to_testcase = {
-            sub.token: tc for sub, tc in zip(submissions, testcases)
-        }
+        token_to_testcase = {sub.token: tc for sub, tc in zip(submissions, testcases)}
         all_tokens = [sub.token for sub in submissions]
 
         logger.debug(f"Submitted {len(all_tokens)} submissions to Judge0")
@@ -109,7 +110,9 @@ class CodeExecutionService:
         logger.debug("Checking compilation on first test case")
         first_result = await self.judge0_repo.wait_for_completion(first_token)
 
-        logger.info(f"DEBUG_FIRST_RESULT: status_id={first_result.status_id}, status={first_result.status.name}, stdout={first_result.stdout}, compile_output={first_result.compile_output}, message={first_result.message}")
+        logger.info(
+            f"DEBUG_FIRST_RESULT: status_id={first_result.status_id}, status={first_result.status.name}, stdout={first_result.stdout}, compile_output={first_result.compile_output}, message={first_result.message}"
+        )
 
         if first_result.status == Judge0StatusCode.COMPILATION_ERROR:
             compile_error = (
@@ -123,7 +126,10 @@ class CodeExecutionService:
             raise CompilationError(compile_error)
 
         # Check stderr for compilation errors (Python, Ruby, etc. report SyntaxError during execution)
-        if first_result.status == Judge0StatusCode.INTERNAL_ERROR and first_result.stderr:
+        if (
+            first_result.status == Judge0StatusCode.INTERNAL_ERROR
+            and first_result.stderr
+        ):
             stderr_lower = first_result.stderr.lower()
             compilation_error_indicators = [
                 "syntaxerror",
@@ -135,7 +141,9 @@ class CodeExecutionService:
                 "typeerror",
                 "attributeerror",
             ]
-            if any(indicator in stderr_lower for indicator in compilation_error_indicators):
+            if any(
+                indicator in stderr_lower for indicator in compilation_error_indicators
+            ):
                 logger.warning(
                     f"Detected compilation-like error in stderr for question {question_id}: {first_result.stderr[:200]}"
                 )
@@ -170,38 +178,46 @@ class CodeExecutionService:
             time=first_result.time,
             memory=first_result.memory,
         )
-        all_execution_results = [first_execution]
+        all_execution_results: list[Judge0ExecutionResultDTO] = [first_execution]
 
         remaining_tokens = all_tokens[1:]
         if remaining_tokens:
-            logger.debug(f"Batch polling {len(remaining_tokens)} remaining submissions until completion")
+            logger.debug(
+                f"Batch polling {len(remaining_tokens)} remaining submissions until completion"
+            )
             try:
-                batch_results = {}
+                batch_results: dict[str, Judge0SubmissionDTO] = {}
                 pending_tokens = set(remaining_tokens)
                 poll_interval = self.judge0_repo.POLL_INTERVAL_MS / 1000
                 attempts = 0
                 max_attempts = self.judge0_repo.MAX_POLL_ATTEMPTS
-                
+
                 while attempts < max_attempts and pending_tokens:
-                    current_batch = await self.judge0_repo.batch_get_results(list(pending_tokens))
+                    current_batch = await self.judge0_repo.batch_get_results(
+                        list(pending_tokens)
+                    )
                     batch_results.update(current_batch)
-                    
+
                     remaining_pending = []
                     for token in pending_tokens:
-                        result = batch_results.get(token)
-                        if result and not result.is_completed:
+                        pending_result = batch_results.get(token)
+                        if pending_result and not pending_result.is_completed:
                             remaining_pending.append(token)
-                    
+
                     if not remaining_pending:
-                        logger.info(f"All {len(remaining_tokens)} remaining submissions completed")
+                        logger.info(
+                            f"All {len(remaining_tokens)} remaining submissions completed"
+                        )
                         break
-                    
+
                     pending_tokens = set(remaining_pending)
                     attempts += 1
                     if pending_tokens and attempts < max_attempts:
                         await asyncio.sleep(poll_interval)
-                        logger.debug(f"Still waiting for {len(pending_tokens)} submissions to complete (attempt {attempts}/{max_attempts})")
-                
+                        logger.debug(
+                            f"Still waiting for {len(pending_tokens)} submissions to complete (attempt {attempts}/{max_attempts})"
+                        )
+
                 if pending_tokens and attempts >= max_attempts:
                     elapsed_ms = attempts * self.judge0_repo.POLL_INTERVAL_MS
                     error_msg = f"Batch polling timeout after {elapsed_ms}ms with {len(pending_tokens)} submissions still pending"
@@ -251,7 +267,7 @@ class CodeExecutionService:
                 all_execution_results.append(execution_result)
 
         logger.debug(f"Mapping {len(all_execution_results)} results to response schema")
-        testcase_results = []
+        testcase_results: list[TestCaseRunResult] = []
         for execution_result in all_execution_results:
             execution_status = JUDGE0_TO_EXECUTION_STATUS.get(
                 execution_result.status,
@@ -262,7 +278,7 @@ class CodeExecutionService:
                     f"Unmapped Judge0 status {execution_result.status.name}, "
                     f"defaulting to RUNTIME_ERROR"
                 )
-            result = TestCaseRunResult(
+            testcase_result = TestCaseRunResult(
                 testcase_id=execution_result.testcase_id,
                 status=execution_status,
                 passed=execution_result.passed,
@@ -272,7 +288,7 @@ class CodeExecutionService:
                 time=execution_result.time,
                 memory=execution_result.memory,
             )
-            testcase_results.append(result)
+            testcase_results.append(testcase_result)
 
         total_tests = len(testcase_results)
         passed_tests = sum(1 for result in testcase_results if result.passed)
@@ -287,5 +303,3 @@ class CodeExecutionService:
             total=total_tests,
             passed=passed_tests,
         )
-
-

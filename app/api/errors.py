@@ -17,19 +17,19 @@ from app.exceptions.contest import (
     InstructorNotFoundError,
     InvalidContestError,
 )
-from app.exceptions.team import (
-    TeamNotFoundError,
-)
-from app.exceptions.question import QuestionNotFoundError
 from app.exceptions.execution import (
+    CodeExecutionError,
+    CompilationError,
     InvalidCodeError,
     InvalidLanguageError,
     InvalidSubmissionTokenError,
-    CodeExecutionError,
     NoTestCasesError,
-    CompilationError,
 )
 from app.exceptions.judge0 import Judge0NotInitializedError
+from app.exceptions.question import QuestionNotFoundError, TemplateAlreadyExistsError
+from app.exceptions.team import (
+    TeamNotFoundError,
+)
 from app.schema.base import APIErrorResponse, ErrorDetails, MetaResponse
 from app.schema.execution import CompilationErrorResponse
 
@@ -258,6 +258,19 @@ def setup_exception_handlers(app: FastAPI) -> None:
             details=[exc.detail] if exc.detail else None,
         )
 
+    @app.exception_handler(TemplateAlreadyExistsError)
+    async def template_already_exists_handler(
+        request: Request, exc: TemplateAlreadyExistsError
+    ):
+        logger.warning(f"Template already exists: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="TEMPLATE_ALREADY_EXISTS",
+            details=[exc.detail] if exc.detail else None,
+        )
+
     @app.exception_handler(InvalidCodeError)
     async def invalid_code_error_handler(request: Request, exc: InvalidCodeError):
         logger.warning(f"Invalid code error: {exc.message}")
@@ -270,7 +283,9 @@ def setup_exception_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(InvalidLanguageError)
-    async def invalid_language_error_handler(request: Request, exc: InvalidLanguageError):
+    async def invalid_language_error_handler(
+        request: Request, exc: InvalidLanguageError
+    ):
         logger.warning(f"Invalid language error: {exc.message}")
         return _create_error_response(
             request=request,
@@ -281,7 +296,9 @@ def setup_exception_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(InvalidSubmissionTokenError)
-    async def invalid_submission_token_handler(request: Request, exc: InvalidSubmissionTokenError):
+    async def invalid_submission_token_handler(
+        request: Request, exc: InvalidSubmissionTokenError
+    ):
         logger.warning(f"Invalid submission token: {exc.message}")
         return _create_error_response(
             request=request,
@@ -303,7 +320,9 @@ def setup_exception_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(Judge0NotInitializedError)
-    async def judge0_not_initialized_handler(request: Request, exc: Judge0NotInitializedError):
+    async def judge0_not_initialized_handler(
+        request: Request, exc: Judge0NotInitializedError
+    ):
         logger.error(f"Judge0 not initialized: {exc.message}")
         return _create_error_response(
             request=request,

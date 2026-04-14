@@ -12,6 +12,13 @@ from app.repositories.bank import BankRepository
 from app.repositories.question import QuestionRepository
 from app.schema.bank import BankQuestionBulk, BankQuestionCloneRequest
 from app.schema.base import PaginationResponse
+from app.schema.question import (
+    AddQuestionTemplatesRequest,
+    AddQuestionTestCasesRequest,
+    RemoveQuestionTemplatesRequest,
+    RemoveQuestionTestCasesRequest,
+    UpdateQuestionMetadataRequest,
+)
 from app.service.bank_question_service import BankQuestionService
 from app.validators.bank import BankValidator
 
@@ -112,6 +119,142 @@ async def remove_questions_from_bank(
     logger.info(f"Questions removed from bank {bank_id} by user {user_id}")
     return create_api_response(
         request, message="Questions removed from bank successfully"
+    )
+
+
+@router.post(
+    "/{bank_id}/questions/{question_id}/testcases",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[can_update("banks")],
+)
+async def add_testcases_to_question(
+    request: Request,
+    bank_id: UUID,
+    question_id: UUID,
+    payload: AddQuestionTestCasesRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    service: BankQuestionService = Depends(get_bank_question_service),
+):
+    """Append multiple test cases to a question in a bank.
+
+    Args:
+        request: FastAPI request object.
+        bank_id: Target bank ID.
+        question_id: Target question ID.
+        payload: Request body containing test cases to add.
+        user_id: Authenticated user ID.
+        service: Injected BankQuestionService.
+
+    Returns:
+        API response containing the updated question.
+
+    Raises:
+        BankNotFoundError: If the bank does not exist.
+        BankAccessDeniedError: If user lacks edit permission for the bank.
+        BankQuestionNotFoundError: If the question is not linked to the bank.
+        InvalidQuestionError: If testcase payload is invalid.
+    """
+    question = await service.add_testcases_to_question(
+        bank_id, question_id, payload, user_id
+    )
+    logger.info(
+        f"Added {len(payload.testcases)} testcases to question {question_id} in bank {bank_id} by user {user_id}"
+    )
+    return create_api_response(
+        request,
+        data=question.model_dump(),
+        message="Test cases added successfully",
+        status_code=status.HTTP_201_CREATED,
+    )
+
+
+@router.delete(
+    "/{bank_id}/questions/{question_id}/testcases",
+    status_code=status.HTTP_200_OK,
+    dependencies=[can_update("banks")],
+)
+async def remove_testcases_from_question(
+    request: Request,
+    bank_id: UUID,
+    question_id: UUID,
+    payload: RemoveQuestionTestCasesRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    service: BankQuestionService = Depends(get_bank_question_service),
+):
+    """Remove multiple test cases from a question in a bank.
+
+    Args:
+        request: FastAPI request object.
+        bank_id: Target bank ID.
+        question_id: Target question ID.
+        payload: Request body containing testcase IDs to remove.
+        user_id: Authenticated user ID.
+        service: Injected BankQuestionService.
+
+    Returns:
+        API response containing the updated question.
+
+    Raises:
+        BankNotFoundError: If the bank does not exist.
+        BankAccessDeniedError: If user lacks edit permission for the bank.
+        BankQuestionNotFoundError: If the question is not linked to the bank.
+        InvalidQuestionError: If testcase IDs are invalid.
+    """
+    question = await service.remove_testcases_from_question(
+        bank_id, question_id, payload, user_id
+    )
+    logger.info(
+        f"Removed {len(payload.testcase_ids)} testcases from question {question_id} in bank {bank_id} by user {user_id}"
+    )
+    return create_api_response(
+        request,
+        data=question.model_dump(),
+        message="Test cases removed successfully",
+    )
+
+
+@router.put(
+    "/{bank_id}/questions/{question_id}/testcases",
+    status_code=status.HTTP_200_OK,
+    dependencies=[can_update("banks")],
+)
+async def update_testcases_of_question(
+    request: Request,
+    bank_id: UUID,
+    question_id: UUID,
+    payload: AddQuestionTestCasesRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    service: BankQuestionService = Depends(get_bank_question_service),
+):
+    """Replace all test cases of a question in a bank.
+
+    Args:
+        request: FastAPI request object.
+        bank_id: Target bank ID.
+        question_id: Target question ID.
+        payload: Request body containing replacement testcases.
+        user_id: Authenticated user ID.
+        service: Injected BankQuestionService.
+
+    Returns:
+        API response containing the updated question.
+
+    Raises:
+        BankNotFoundError: If the bank does not exist.
+        BankAccessDeniedError: If user lacks edit permission for the bank.
+        BankQuestionNotFoundError: If the question is not linked to the bank.
+        InvalidQuestionError: If testcase payload is invalid.
+    """
+    question = await service.update_testcases_of_question(
+        bank_id, question_id, payload, user_id
+    )
+    logger.info(
+        f"Updated all testcases for question {question_id} in bank {bank_id} by user {user_id}"
+    )
+    return create_api_response(
+        request,
+        data=question.model_dump(),
+        message="Test cases updated successfully",
     )
 
 
@@ -251,4 +394,196 @@ async def get_bank_question(
         request,
         data=question.model_dump(),
         message="Bank question fetched successfully",
+    )
+
+
+@router.post(
+    "/{bank_id}/questions/{question_id}/templates",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[can_update("banks")],
+)
+async def add_templates_to_question(
+    request: Request,
+    bank_id: UUID,
+    question_id: UUID,
+    payload: AddQuestionTemplatesRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    service: BankQuestionService = Depends(get_bank_question_service),
+):
+    """Add multiple templates to an existing question in a bank.
+
+    This endpoint allows adding code templates (starter, driver, and solution code)
+    for multiple languages to an already existing question. It validates that:
+    - The question exists and is associated with the bank
+    - The user has update permission for the bank
+    - Template language IDs are unique within the request
+    - No template already exists for each specified language
+
+    Args:
+        request: FastAPI request object.
+        bank_id: ID of the bank containing the question.
+        question_id: ID of the question to add templates to.
+        payload: Request body containing list of templates to add.
+        user_id: Authenticated user ID performing the operation.
+        service: Injected BankQuestionService instance.
+
+    Returns:
+        API response with success message indicating templates were added.
+
+    Raises:
+        BankNotFoundError: If the bank does not exist.
+        BankAccessDeniedError: If the user lacks update permission for the bank.
+        BankQuestionNotFoundError: If the question is not linked to the bank.
+        QuestionNotFoundError: If the question does not exist.
+        QuestionPermissionError: If the user lacks permission to modify the question.
+        BankValidationError: If template language IDs are not unique in the request.
+        TemplateAlreadyExistsError: If a template already exists for any language.
+    """
+    await service.add_templates_to_question(bank_id, question_id, payload, user_id)
+    logger.info(
+        f"Added {len(payload.templates)} templates to question {question_id} in bank {bank_id} by user {user_id}"
+    )
+    return create_api_response(
+        request,
+        message="Templates added to question successfully",
+        status_code=status.HTTP_201_CREATED,
+    )
+
+
+@router.delete(
+    "/{bank_id}/questions/{question_id}/templates",
+    status_code=status.HTTP_200_OK,
+    dependencies=[can_update("banks")],
+)
+async def remove_templates_from_question(
+    request: Request,
+    bank_id: UUID,
+    question_id: UUID,
+    payload: RemoveQuestionTemplatesRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    service: BankQuestionService = Depends(get_bank_question_service),
+):
+    """Remove multiple templates from a question in a bank.
+
+    Args:
+        request: FastAPI request object.
+        bank_id: Target bank ID.
+        question_id: Target question ID.
+        payload: Request body containing language IDs to remove.
+        user_id: Authenticated user ID.
+        service: Injected BankQuestionService.
+
+    Returns:
+        API response containing the updated question.
+
+    Raises:
+        BankNotFoundError: If the bank does not exist.
+        BankAccessDeniedError: If user lacks edit permission for the bank.
+        BankQuestionNotFoundError: If the question is not linked to the bank.
+        InvalidQuestionError: If language IDs are invalid.
+    """
+    question = await service.remove_templates_from_question(
+        bank_id, question_id, payload, user_id
+    )
+    logger.info(
+        f"Removed {len(payload.language_ids)} templates from question {question_id} in bank {bank_id} by user {user_id}"
+    )
+    return create_api_response(
+        request,
+        data=question.model_dump(),
+        message="Templates removed successfully",
+    )
+
+
+@router.put(
+    "/{bank_id}/questions/{question_id}/templates",
+    status_code=status.HTTP_200_OK,
+    dependencies=[can_update("banks")],
+)
+async def update_templates_of_question(
+    request: Request,
+    bank_id: UUID,
+    question_id: UUID,
+    payload: AddQuestionTemplatesRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    service: BankQuestionService = Depends(get_bank_question_service),
+):
+    """Replace all templates of a question in a bank.
+
+    Args:
+        request: FastAPI request object.
+        bank_id: Target bank ID.
+        question_id: Target question ID.
+        payload: Request body containing replacement templates.
+        user_id: Authenticated user ID.
+        service: Injected BankQuestionService.
+
+    Returns:
+        API response containing the updated question.
+
+    Raises:
+        BankNotFoundError: If the bank does not exist.
+        BankAccessDeniedError: If user lacks edit permission for the bank.
+        BankQuestionNotFoundError: If the question is not linked to the bank.
+        InvalidQuestionError: If template language IDs are invalid.
+    """
+    question = await service.update_templates_of_question(
+        bank_id, question_id, payload, user_id
+    )
+    logger.info(
+        f"Updated all templates for question {question_id} in bank {bank_id} by user {user_id}"
+    )
+    return create_api_response(
+        request,
+        data=question.model_dump(),
+        message="Templates updated successfully",
+    )
+
+
+@router.patch(
+    "/{bank_id}/questions/{question_id}",
+    status_code=status.HTTP_200_OK,
+    dependencies=[can_update("banks")],
+)
+async def update_question_metadata(
+    request: Request,
+    bank_id: UUID,
+    question_id: UUID,
+    payload: UpdateQuestionMetadataRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    service: BankQuestionService = Depends(get_bank_question_service),
+):
+    """Update question metadata (text, difficulty, limits, languages, tags) in a bank.
+
+    Allows updating question metadata fields without modifying testcases or templates.
+    All fields are optional for partial updates. At least one field must be provided.
+
+    Args:
+        request: FastAPI request object.
+        bank_id: Target bank ID.
+        question_id: Target question ID.
+        payload: Request body containing metadata fields to update.
+        user_id: Authenticated user ID.
+        service: Injected BankQuestionService.
+
+    Returns:
+        API response containing the updated question with new metadata.
+
+    Raises:
+        BankNotFoundError: If the bank does not exist.
+        BankAccessDeniedError: If user lacks edit permission for the bank.
+        BankQuestionNotFoundError: If the question is not linked to the bank.
+        QuestionNotFoundError: If the question does not exist.
+        InvalidQuestionError: If metadata validation fails or no fields provided.
+    """
+    question = await service.update_question_metadata(
+        bank_id, question_id, payload, user_id
+    )
+    logger.info(
+        f"Updated metadata for question {question_id} in bank {bank_id} by user {user_id}"
+    )
+    return create_api_response(
+        request,
+        data=question.model_dump(),
+        message="Question metadata updated successfully",
     )

@@ -9,17 +9,34 @@ from app.exceptions.bank import (
 )
 from app.exceptions.question import CodeStorageError
 from app.mappers.bank_question import (
+    build_template_entities,
     to_bank_question_response,
     to_bank_question_summary_responses,
+)
+from app.mappers.question import (
+    apply_question_updates,
+    build_appended_testcase_dtos,
+    build_create_testcase_dtos,
+    build_metadata_update_dto,
+    build_testcase_entities,
 )
 from app.models.question import Question
 from app.repositories.bank import BankRepository
 from app.repositories.dto.pagination import PaginationParams
 from app.repositories.question import QuestionRepository
-from app.schema.question import QuestionListSummaryResponse, QuestionResponse
+from app.schema.question import (
+    AddQuestionTemplatesRequest,
+    AddQuestionTestCasesRequest,
+    QuestionListSummaryResponse,
+    QuestionResponse,
+    RemoveQuestionTemplatesRequest,
+    RemoveQuestionTestCasesRequest,
+    UpdateQuestionMetadataRequest,
+)
 from app.utils.question_clone import deep_copy_question_for_clone
 from app.validators.bank import BankValidator
 from app.validators.bank_question import BankQuestionValidator
+from app.validators.question import QuestionValidator
 
 
 class BankQuestionService:
@@ -350,3 +367,417 @@ class BankQuestionService:
         question = await self.question_repo.get_question_or_raise(question_id)
         response = to_bank_question_response(question)
         return await self._hydrate_question_template_codes(response)
+
+    @cache_delete(
+        key_builder=lambda self, question_id, *args, **kwargs: [
+            f"question:{question_id}",
+            f"question:{question_id}:*",
+            f"bank:question:*:{question_id}:*",
+            "banks:questions:*",
+        ]
+    )
+    async def add_templates_to_question(
+        self,
+        bank_id: UUID,
+        question_id: UUID,
+        payload: AddQuestionTemplatesRequest,
+        user_id: UUID,
+    ) -> None:
+        """Add multiple templates to an existing question.
+
+        This method validates that:
+        1. Question exists and user has update permission
+        2. Template language IDs are unique within the request
+        3. No template already exists for each language in the question
+
+        Args:
+            question_id: ID of the question to add templates to.
+            payload: Request containing templates to add.
+            user_id: Authenticated user performing the operation.
+
+        Raises:
+            QuestionNotFoundError: If question does not exist.
+            QuestionPermissionError: If user lacks update permission.
+            BankValidationError: If template language IDs are not unique.
+            TemplateAlreadyExistsError: If a template for a language already exists.
+        """
+        bank = await self.repository.get_bank_or_raise(bank_id, load_relations=True)
+        self.validator.check_edit_bank(user_id=user_id, bank=bank)
+
+        existing = await self.repository.get_questions_in_bank_by_ids(
+            bank_id, [question_id]
+        )
+        if not existing:
+            raise BankQuestionNotFoundError(str(bank_id), str(question_id))
+
+        await self.question_repo.get_question_or_raise(question_id)
+
+        language_ids = [template.language_id for template in payload.templates]
+        QuestionValidator.validate_unique_template_language_ids(language_ids)
+        existing_templates = await self.question_repo.get_question_templates(
+            question_id
+        )
+        for template in payload.templates:
+            BankQuestionValidator.validate_template_not_exists(
+                existing_templates, question_id, template.language_id
+            )
+
+        template_entities = build_template_entities(payload.templates)
+        await self.question_repo.add_templates_to_question(
+            question_id, template_entities
+        )
+
+    @cache_delete(
+        key_builder=lambda self,
+        bank_id,
+        question_id,
+        *args,
+        **kwargs: self._get_bank_question_cache_keys(bank_id)
+        + [
+            f"question:{question_id}",
+            f"question:{question_id}:*",
+            f"bank:question:*:{question_id}:*",
+            "banks:questions:*",
+        ]
+    )
+    async def update_question_metadata(
+        self,
+        bank_id: UUID,
+        question_id: UUID,
+        payload: UpdateQuestionMetadataRequest,
+        user_id: UUID,
+    ) -> QuestionResponse:
+        """Update question metadata (text, difficulty, limits, languages, tags).
+
+        This method validates that:
+        1. Question exists and is linked to the bank
+        2. User has edit permission for the bank
+        3. Metadata fields are valid (positive limits, unique languages, etc.)
+        4. At least one field is being updated
+
+        Args:
+            bank_id: Target bank ID.
+            question_id: Target question ID.
+            payload: Request containing metadata fields to update.
+            user_id: Authenticated user performing the operation.
+
+        Returns:
+            Updated question response with applied metadata changes.
+
+        Raises:
+            BankNotFoundError: If bank does not exist.
+            BankAccessDeniedError: If user cannot edit the bank.
+            BankQuestionNotFoundError: If question is not linked to the bank.
+            QuestionNotFoundError: If question does not exist.
+            InvalidQuestionError: If metadata validation fails or no fields provided.
+        """
+        bank = await self.repository.get_bank_or_raise(bank_id, load_relations=True)
+        self.validator.check_edit_bank(user_id=user_id, bank=bank)
+
+        existing = await self.repository.get_questions_in_bank_by_ids(
+            bank_id, [question_id]
+        )
+        if not existing:
+            raise BankQuestionNotFoundError(str(bank_id), str(question_id))
+
+        question = await self.question_repo.get_question_or_raise(question_id)
+
+        QuestionValidator.validate_metadata_update(payload)
+
+        update_dto = build_metadata_update_dto(payload)
+        apply_question_updates(question, update_dto)
+
+        updated_question = await self.question_repo.update_question(question)
+        return to_bank_question_response(updated_question)
+
+    @cache_delete(
+        key_builder=lambda self,
+        bank_id,
+        question_id,
+        *args,
+        **kwargs: self._get_bank_question_cache_keys(bank_id)
+        + [
+            f"question:{question_id}",
+            f"question:{question_id}:*",
+            f"bank:question:*:{question_id}:*",
+            "banks:questions:*",
+        ]
+    )
+    async def add_testcases_to_question(
+        self,
+        bank_id: UUID,
+        question_id: UUID,
+        payload: AddQuestionTestCasesRequest,
+        user_id: UUID,
+    ) -> QuestionResponse:
+        """Append multiple test cases to a question within a bank.
+
+        Args:
+            bank_id: Target bank ID.
+            question_id: Target question ID.
+            payload: Request containing test cases to append.
+            user_id: Authenticated user performing the operation.
+
+        Returns:
+            Updated question response.
+
+        Raises:
+            BankNotFoundError: If bank does not exist.
+            BankAccessDeniedError: If user cannot edit the bank.
+            BankQuestionNotFoundError: If question is not linked to the bank.
+            InvalidQuestionError: If testcase payload is invalid.
+        """
+        bank = await self.repository.get_bank_or_raise(bank_id, load_relations=True)
+        self.validator.check_edit_bank(user_id=user_id, bank=bank)
+
+        existing = await self.repository.get_questions_in_bank_by_ids(
+            bank_id, [question_id]
+        )
+        if not existing:
+            raise BankQuestionNotFoundError(str(bank_id), str(question_id))
+
+        question = await self.question_repo.get_question_or_raise(question_id)
+        QuestionValidator.validate_testcases_format(payload.testcases)
+
+        testcase_dtos = build_appended_testcase_dtos(
+            payload.testcases,
+            starting_order=len(question.testcases),
+        )
+        question.testcases.extend(
+            build_testcase_entities(testcase_dtos, created_by=user_id)
+        )
+        updated_question = await self.question_repo.update_question(question)
+        return to_bank_question_response(updated_question)
+
+    @cache_delete(
+        key_builder=lambda self,
+        bank_id,
+        question_id,
+        *args,
+        **kwargs: self._get_bank_question_cache_keys(bank_id)
+        + [
+            f"question:{question_id}",
+            f"question:{question_id}:*",
+            f"bank:question:*:{question_id}:*",
+            "banks:questions:*",
+        ]
+    )
+    async def update_testcases_of_question(
+        self,
+        bank_id: UUID,
+        question_id: UUID,
+        payload: AddQuestionTestCasesRequest,
+        user_id: UUID,
+    ) -> QuestionResponse:
+        """Replace all test cases of a question within a bank.
+
+        Args:
+            bank_id: Target bank ID.
+            question_id: Target question ID.
+            payload: Request containing the full replacement testcase list.
+            user_id: Authenticated user performing the operation.
+
+        Returns:
+            Updated question response.
+
+        Raises:
+            BankNotFoundError: If bank does not exist.
+            BankAccessDeniedError: If user cannot edit the bank.
+            BankQuestionNotFoundError: If question is not linked to the bank.
+            InvalidQuestionError: If testcase payload is invalid.
+        """
+        bank = await self.repository.get_bank_or_raise(bank_id, load_relations=True)
+        self.validator.check_edit_bank(user_id=user_id, bank=bank)
+
+        existing = await self.repository.get_questions_in_bank_by_ids(
+            bank_id, [question_id]
+        )
+        if not existing:
+            raise BankQuestionNotFoundError(str(bank_id), str(question_id))
+
+        question = await self.question_repo.get_question_or_raise(question_id)
+        QuestionValidator.validate_testcases_format(payload.testcases)
+
+        testcase_dtos = build_create_testcase_dtos(payload.testcases)
+        question.testcases = build_testcase_entities(testcase_dtos, created_by=user_id)
+        updated_question = await self.question_repo.update_question(question)
+        return to_bank_question_response(updated_question)
+
+    @cache_delete(
+        key_builder=lambda self,
+        bank_id,
+        question_id,
+        *args,
+        **kwargs: self._get_bank_question_cache_keys(bank_id)
+        + [
+            f"question:{question_id}",
+            f"question:{question_id}:*",
+            f"bank:question:*:{question_id}:*",
+            "banks:questions:*",
+        ]
+    )
+    async def remove_testcases_from_question(
+        self,
+        bank_id: UUID,
+        question_id: UUID,
+        payload: RemoveQuestionTestCasesRequest,
+        user_id: UUID,
+    ) -> QuestionResponse:
+        """Remove multiple test cases from a question within a bank.
+
+        Args:
+            bank_id: Target bank ID.
+            question_id: Target question ID.
+            payload: Request containing testcase IDs to remove.
+            user_id: Authenticated user performing the operation.
+
+        Returns:
+            Updated question response.
+
+        Raises:
+            BankNotFoundError: If bank does not exist.
+            BankAccessDeniedError: If user cannot edit the bank.
+            BankQuestionNotFoundError: If question is not linked to the bank.
+            InvalidQuestionError: If testcase IDs are invalid.
+        """
+        bank = await self.repository.get_bank_or_raise(bank_id, load_relations=True)
+        self.validator.check_edit_bank(user_id=user_id, bank=bank)
+
+        existing = await self.repository.get_questions_in_bank_by_ids(
+            bank_id, [question_id]
+        )
+        if not existing:
+            raise BankQuestionNotFoundError(str(bank_id), str(question_id))
+
+        question = await self.question_repo.get_question_or_raise(question_id)
+        testcase_ids = payload.testcase_ids
+        QuestionValidator.validate_unique_testcase_ids(testcase_ids)
+        existing_ids = {testcase.id for testcase in question.testcases}
+        QuestionValidator.validate_question_testcases_exist(existing_ids, testcase_ids)
+
+        question.testcases = [
+            testcase
+            for testcase in question.testcases
+            if testcase.id not in testcase_ids
+        ]
+        updated_question = await self.question_repo.update_question(question)
+        return to_bank_question_response(updated_question)
+
+    @cache_delete(
+        key_builder=lambda self,
+        bank_id,
+        question_id,
+        *args,
+        **kwargs: self._get_bank_question_cache_keys(bank_id)
+        + [
+            f"question:{question_id}",
+            f"question:{question_id}:*",
+            f"bank:question:*:{question_id}:*",
+            "banks:questions:*",
+        ]
+    )
+    async def remove_templates_from_question(
+        self,
+        bank_id: UUID,
+        question_id: UUID,
+        payload: RemoveQuestionTemplatesRequest,
+        user_id: UUID,
+    ) -> QuestionResponse:
+        """Remove multiple templates from a question within a bank.
+
+        Args:
+            bank_id: Target bank ID.
+            question_id: Target question ID.
+            payload: Request containing language IDs to remove.
+            user_id: Authenticated user performing the operation.
+
+        Returns:
+            Updated question response.
+
+        Raises:
+            BankNotFoundError: If bank does not exist.
+            BankAccessDeniedError: If user cannot edit the bank.
+            BankQuestionNotFoundError: If question is not linked to the bank.
+            InvalidQuestionError: If language IDs are invalid.
+        """
+        bank = await self.repository.get_bank_or_raise(bank_id, load_relations=True)
+        self.validator.check_edit_bank(user_id=user_id, bank=bank)
+
+        existing = await self.repository.get_questions_in_bank_by_ids(
+            bank_id, [question_id]
+        )
+        if not existing:
+            raise BankQuestionNotFoundError(str(bank_id), str(question_id))
+
+        question = await self.question_repo.get_question_or_raise(question_id)
+        language_ids = payload.language_ids
+        QuestionValidator.validate_unique_template_language_ids(language_ids)
+        existing_language_ids = {
+            template.language_id for template in question.templates
+        }
+        QuestionValidator.validate_question_template_languages_exist(
+            existing_language_ids,
+            language_ids,
+        )
+
+        question.templates = [
+            template
+            for template in question.templates
+            if template.language_id not in language_ids
+        ]
+        updated_question = await self.question_repo.update_question(question)
+        return to_bank_question_response(updated_question)
+
+    @cache_delete(
+        key_builder=lambda self,
+        bank_id,
+        question_id,
+        *args,
+        **kwargs: self._get_bank_question_cache_keys(bank_id)
+        + [
+            f"question:{question_id}",
+            f"question:{question_id}:*",
+            f"bank:question:*:{question_id}:*",
+            "banks:questions:*",
+        ]
+    )
+    async def update_templates_of_question(
+        self,
+        bank_id: UUID,
+        question_id: UUID,
+        payload: AddQuestionTemplatesRequest,
+        user_id: UUID,
+    ) -> QuestionResponse:
+        """Replace all templates of a question within a bank.
+
+        Args:
+            bank_id: Target bank ID.
+            question_id: Target question ID.
+            payload: Request containing the full replacement template list.
+            user_id: Authenticated user performing the operation.
+
+        Returns:
+            Updated question response.
+
+        Raises:
+            BankNotFoundError: If bank does not exist.
+            BankAccessDeniedError: If user cannot edit the bank.
+            BankQuestionNotFoundError: If question is not linked to the bank.
+            InvalidQuestionError: If template language IDs are invalid.
+        """
+        bank = await self.repository.get_bank_or_raise(bank_id, load_relations=True)
+        self.validator.check_edit_bank(user_id=user_id, bank=bank)
+
+        existing = await self.repository.get_questions_in_bank_by_ids(
+            bank_id, [question_id]
+        )
+        if not existing:
+            raise BankQuestionNotFoundError(str(bank_id), str(question_id))
+
+        question = await self.question_repo.get_question_or_raise(question_id)
+        language_ids = [template.language_id for template in payload.templates]
+        QuestionValidator.validate_unique_template_language_ids(language_ids)
+
+        question.templates = build_template_entities(payload.templates)
+        updated_question = await self.question_repo.update_question(question)
+        return to_bank_question_response(updated_question)

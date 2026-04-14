@@ -9,11 +9,11 @@ Only submissions are persisted, handled at the service layer.
 """
 
 import asyncio
-from typing import Optional
+from typing import Optional, cast
 
 import httpx
 
-from app.core.clients.judge0 import Judge0StatusCode, get_judge0_client
+from app.core.clients.judge0 import get_judge0_client
 from app.core.logger import logger
 from app.exceptions.judge0 import (
     Judge0APIError,
@@ -24,7 +24,6 @@ from app.exceptions.judge0 import (
 )
 from app.repositories.dto.judge0 import (
     Judge0ExecutionRequestDTO,
-    Judge0ExecutionResultDTO,
     Judge0SubmissionDTO,
 )
 
@@ -117,7 +116,12 @@ class Judge0Repository:
                 message=data.get("message"),
             )
 
-        except (Judge0APIError, Judge0ServiceUnavailableError, Judge0ConnectionError, Judge0TimeoutError):
+        except (
+            Judge0APIError,
+            Judge0ServiceUnavailableError,
+            Judge0ConnectionError,
+            Judge0TimeoutError,
+        ):
             # Preserve domain exceptions (status/detail from Judge0)
             raise
         except httpx.TimeoutException as e:
@@ -125,16 +129,12 @@ class Judge0Repository:
             raise Judge0TimeoutError(f"Judge0 submission timed out: {str(e)}")
         except httpx.ConnectError as e:
             logger.error(f"Judge0 connection error: {str(e)}")
-            raise Judge0ConnectionError(
-                f"Failed to connect to Judge0 API: {str(e)}"
-            )
+            raise Judge0ConnectionError(f"Failed to connect to Judge0 API: {str(e)}")
         except Exception as e:
             logger.error(f"Judge0 submission error: {str(e)}", exc_info=True)
             raise Judge0ClientError(f"Failed to submit code to Judge0: {str(e)}")
 
-    async def get_submission_result(
-        self, token: str
-    ) -> Judge0SubmissionDTO:
+    async def get_submission_result(self, token: str) -> Judge0SubmissionDTO:
         """Get current execution result for a submission token (single poll).
 
         Returns the latest status without waiting. Use `wait_for_completion()`
@@ -176,7 +176,9 @@ class Judge0Repository:
             if status_id is None and "status" in data:
                 status_id = data["status"].get("id")
 
-            logger.info(f"DEBUG_GET_RESULT: token={token}, raw_data={data}, extracted_status_id={status_id}")
+            logger.info(
+                f"DEBUG_GET_RESULT: token={token}, raw_data={data}, extracted_status_id={status_id}"
+            )
 
             return Judge0SubmissionDTO(
                 token=token,
@@ -189,20 +191,21 @@ class Judge0Repository:
                 message=data.get("message"),
             )
 
-        except (Judge0APIError, Judge0ServiceUnavailableError, Judge0ConnectionError, Judge0TimeoutError) as e:
+        except (
+            Judge0APIError,
+            Judge0ServiceUnavailableError,
+            Judge0ConnectionError,
+            Judge0TimeoutError,
+        ) as e:
             # Preserve domain exceptions (status/detail from Judge0)
             logger.warning(f"Judge0 result retrieval error for token {token}: {str(e)}")
             raise
         except httpx.TimeoutException as e:
             logger.error(f"Judge0 result retrieval timeout: {str(e)}")
-            raise Judge0TimeoutError(
-                f"Judge0 result retrieval timed out: {str(e)}"
-            )
+            raise Judge0TimeoutError(f"Judge0 result retrieval timed out: {str(e)}")
         except httpx.ConnectError as e:
             logger.error(f"Judge0 connection error: {str(e)}")
-            raise Judge0ConnectionError(
-                f"Failed to connect to Judge0 API: {str(e)}"
-            )
+            raise Judge0ConnectionError(f"Failed to connect to Judge0 API: {str(e)}")
         except Exception as e:
             logger.error(f"Judge0 result retrieval error: {str(e)}", exc_info=True)
             raise Judge0ClientError(
@@ -274,9 +277,7 @@ class Judge0Repository:
 
         # Timeout
         elapsed_ms = attempts * self.POLL_INTERVAL_MS
-        logger.error(
-            f"Judge0 polling timeout for token {token} after {elapsed_ms}ms"
-        )
+        logger.error(f"Judge0 polling timeout for token {token} after {elapsed_ms}ms")
         raise Judge0TimeoutError(
             f"Judge0 execution did not complete within {elapsed_ms}ms timeout"
         )
@@ -302,8 +303,8 @@ class Judge0Repository:
         if not tokens:
             return {}
 
-        results = {}
-        errors = {}
+        results: dict[str, Judge0SubmissionDTO] = {}
+        errors: dict[str, Exception] = {}
 
         # Fetch in batches to avoid rate limiting
         for i in range(0, len(tokens), self.BATCH_POLL_SIZE):
@@ -317,19 +318,18 @@ class Judge0Repository:
                 if isinstance(result, Exception):
                     errors[token] = result
                 else:
-                    results[token] = result
+                    results[token] = cast(Judge0SubmissionDTO, result)
 
         # Surface any errors - don't silently omit failed tokens
         if errors:
             error_messages = [
-                f"Token {token}: {str(exc)}" 
-                for token, exc in errors.items()
+                f"Token {token}: {str(exc)}" for token, exc in errors.items()
             ]
             logger.error(
                 f"Batch result retrieval had {len(errors)} errors out of {len(tokens)} tokens: "
                 f"{'; '.join(error_messages)}"
             )
-            
+
             # Raise ExceptionGroup to report all failed tokens
             raise ExceptionGroup(
                 f"Judge0 batch result retrieval failed for {len(errors)} token(s)",

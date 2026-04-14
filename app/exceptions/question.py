@@ -63,3 +63,13 @@ class LanguageConflictError(AppBaseException):
             message=message,
             status_code=status.HTTP_409_CONFLICT,
         )
+
+
+class TemplateAlreadyExistsError(AppBaseException):
+    """Exception raised when a template for a language already exists in a question."""
+
+    def __init__(self, question_id: str | UUID, language_id: int):
+        super().__init__(
+            message=f"Template for language {language_id} already exists for question {question_id}.",
+            status_code=status.HTTP_409_CONFLICT,
+        )
