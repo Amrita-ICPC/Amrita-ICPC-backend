@@ -293,7 +293,7 @@ class StudentContestService:
         return to_student_contest_problems_list_response(contest, problems)
 
     @cache_delete(
-        key_builder=lambda self, contest_id, user_id: [
+        key_builder=lambda self, contest_id, team_id, user_id: [
             f"student:contests:available:user:{user_id}:*",
             f"student:contests:registered:user:{user_id}:*",
         ]

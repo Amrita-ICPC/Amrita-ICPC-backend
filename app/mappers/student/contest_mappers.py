@@ -22,6 +22,7 @@ from app.schema.student.contests import (
 
 if TYPE_CHECKING:
     from app.models.contest import Contest, ContestQuestion, ContestTeam
+    from app.models.team import Team
     from app.repositories.dto import PaginatedResult
 
 
@@ -98,6 +99,7 @@ def to_student_available_contests_list_response(
 def to_student_registered_contest_response(
     contest: "Contest",
     contest_team: "ContestTeam" | None = None,
+    team: "Team" | None = None,
     problem_count: int = 0,
 ) -> StudentRegisteredContestResponse:
     """
@@ -109,6 +111,7 @@ def to_student_registered_contest_response(
     Args:
         contest: Contest ORM object from database
         contest_team: ContestTeam object linking student's team to contest
+        team: Team object that student is registered with
         problem_count: Number of problems in the contest
     
     Returns:
@@ -131,8 +134,8 @@ def to_student_registered_contest_response(
         max_team_size=contest.max_team_size,
         registered_at=contest_team.enrolled_at if contest_team else datetime.utcnow(),
         registered_as_team=True,
-        team_id=contest_team.team_id if contest_team else None,
-        team_name=contest_team.team.name if contest_team else None,
+        team_id=team.id if team else None,
+        team_name=team.name if team else None,
     )
 
 
@@ -156,6 +159,7 @@ def to_student_registered_contests_list_response(
         to_student_registered_contest_response(
             contest,
             contest_team=contest_team,
+            team=contest_team.team if contest_team else None,
             problem_count=len(contest.questions),
         )
         for contest, contest_team in paginated_result.items

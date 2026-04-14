@@ -126,7 +126,7 @@ class StudentTeamService:
         )
 
         logger.info(f"Student {user_id} queried their teams (found: {result.total})")
-        return to_student_teams_list_response(result.items, result.total, user_id)
+        return to_student_teams_list_response(result, skip, limit, user_id)
 
     @cache_get(
         key_builder=lambda self, team_id, user_id: get_student_team_key(team_id, user_id),
@@ -169,14 +169,8 @@ class StudentTeamService:
         # Fetch team members with details
         members = await self.repository.get_team_members_detailed(team_id)
 
-        # Check if current user is member/leader
-        is_current_user_member = any(member.id == user_id for member in members)
-        is_current_user_leader = team.leader_id == user_id
-
         logger.info(f"Student {user_id} viewed team {team_id} details")
-        return to_student_team_response(
-            team, members, is_current_user_member, is_current_user_leader, user_id
-        )
+        return to_student_team_response(team, members, user_id)
 
     @cache_get(
         key_builder=lambda self, contest_id, user_id, skip=0, limit=10: f"student:contest:{contest_id}:teams:available:user:{user_id}:skip:{skip}:limit:{limit}",
@@ -392,7 +386,7 @@ class StudentTeamService:
 
         logger.info(f"Student {user_id} joined team {team_id} in contest {contest_id}")
 
-        return to_student_team_join_response(team, contest, team_user)
+        return to_student_team_join_response(team, user_id, team_user.created_at)
 
     @cache_delete(
         key_builder=lambda self, team_id, user_id: [
