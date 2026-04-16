@@ -558,7 +558,7 @@ class TeamRepository:
         )
         total = (await self.db.execute(count_query)).scalar() or 0
 
-        # Get paginated teams (no relationship loading)
+        # Get paginated teams
         teams_query = (
             select(Team)
             .join(TeamUser, TeamUser.team_id == Team.id)
@@ -569,11 +569,17 @@ class TeamRepository:
         result = await self.db.execute(teams_query)
         teams = list(result.scalars().all())
         
-        # Load members for each team separately to avoid relationship loading issues
+        # Load members with user data for each team
         for team in teams:
-            members_query = select(TeamUser).filter(TeamUser.team_id == team.id)
+            # Get all team members with their users eagerly loaded
+            members_query = (
+                select(TeamUser)
+                .options(selectinload(TeamUser.user))
+                .filter(TeamUser.team_id == team.id)
+            )
             members_result = await self.db.execute(members_query)
-            team.members = list(members_result.scalars().all())
+            members = list(members_result.scalars().all())
+            team.members = members
 
         return PaginatedResult(total=total, items=teams)
 
@@ -683,7 +689,7 @@ class TeamRepository:
     async def get_team_members_detailed(
         self,
         team_id: UUID,
-    ) -> list[User]:
+    ) -> list[TeamUser]:
         """
         Retrieve all members of a team with full user details.
 
@@ -691,11 +697,11 @@ class TeamRepository:
             team_id: Team ID
 
         Returns:
-            List of User objects representing team members
+            List of TeamUser objects with user data populated
         """
         result = await self.db.execute(
-            select(User)
-            .join(TeamUser, TeamUser.user_id == User.id)
+            select(TeamUser)
+            .options(selectinload(TeamUser.user))
             .filter(TeamUser.team_id == team_id)
         )
         return list(result.scalars().all())
