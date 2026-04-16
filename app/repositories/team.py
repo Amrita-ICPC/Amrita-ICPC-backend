@@ -558,28 +558,22 @@ class TeamRepository:
         )
         total = (await self.db.execute(count_query)).scalar() or 0
 
-        # First, get the team IDs for pagination
-        teams_ids_query = (
-            select(Team.id)
+        # Get paginated teams (no relationship loading)
+        teams_query = (
+            select(Team)
             .join(TeamUser, TeamUser.team_id == Team.id)
             .filter(TeamUser.user_id == user_id)
-            .distinct()
             .offset(pagination.skip)
             .limit(pagination.limit)
         )
-        result = await self.db.execute(teams_ids_query)
-        team_ids = [row[0] for row in result.fetchall()]
-
-        # Now get the full Team objects with members
-        if team_ids:
-            teams_result = await self.db.execute(
-                select(Team)
-                .where(Team.id.in_(team_ids))
-                .options(selectinload(Team.members))
-            )
-            teams = list(teams_result.scalars().all())
-        else:
-            teams = []
+        result = await self.db.execute(teams_query)
+        teams = list(result.scalars().all())
+        
+        # Load members for each team separately to avoid relationship loading issues
+        for team in teams:
+            members_query = select(TeamUser).filter(TeamUser.team_id == team.id)
+            members_result = await self.db.execute(members_query)
+            team.members = list(members_result.scalars().all())
 
         return PaginatedResult(total=total, items=teams)
 
