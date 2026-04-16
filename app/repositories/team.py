@@ -151,6 +151,39 @@ class TeamRepository:
             )
         return team
 
+    async def get_team_with_contests_or_raise(
+        self, team_id: UUID, contest_id: UUID | None = None
+    ) -> Team:
+        """
+        Retrieve a team with eagerly loaded contest relationships.
+
+        Eagerly loads all relationships needed to access nested data without
+        triggering lazy loads that violate async context.
+
+        Args:
+            team_id: ID of the team to retrieve.
+            contest_id: Optional ID of the contest for context in error messages.
+
+        Returns:
+            The Team object if found with all relationships eagerly loaded.
+
+        Raises:
+            TeamNotFoundError: If the team with the given ID does not exist.
+        """
+        result = await self.db.execute(
+            select(Team)
+            .options(
+                selectinload(Team.team_contests).selectinload(ContestTeam.contest)
+            )
+            .filter(Team.id == team_id)
+        )
+        team = result.scalars().first()
+        if not team:
+            raise TeamNotFoundError(
+                str(team_id), str(contest_id) if contest_id else "unknown"
+            )
+        return team
+
     async def get_contest_team_or_raise(
         self, contest_id: UUID, team_id: UUID
     ) -> ContestTeam:
@@ -558,35 +591,24 @@ class TeamRepository:
         )
         total = (await self.db.execute(count_query)).scalar() or 0
 
-        # Get paginated teams
+        # Get paginated teams with eagerly loaded members and their users
         teams_query = (
             select(Team)
+            .options(selectinload(Team.members).selectinload(TeamUser.user))
             .join(TeamUser, TeamUser.team_id == Team.id)
             .filter(TeamUser.user_id == user_id)
             .offset(pagination.skip)
             .limit(pagination.limit)
+            .distinct()  # DISTINCT to avoid duplicate rows from the join
         )
         result = await self.db.execute(teams_query)
-        teams = list(result.scalars().all())
-        
-        # Load members with user data for each team
-        for team in teams:
-            # Get all team members with their users eagerly loaded
-            members_query = (
-                select(TeamUser)
-                .options(selectinload(TeamUser.user))
-                .filter(TeamUser.team_id == team.id)
-            )
-            members_result = await self.db.execute(members_query)
-            members = list(members_result.scalars().all())
-            team.members = members
+        teams = list(result.scalars().unique().all())
 
         return PaginatedResult(total=total, items=teams)
 
     async def get_available_teams_in_contest(
         self,
         contest_id: UUID,
-        max_team_size: int,
         skip: int = 0,
         limit: int = 100,
     ) -> list[Team]:
@@ -595,16 +617,31 @@ class TeamRepository:
 
         Args:
             contest_id: Contest ID
-            max_team_size: Maximum team size for the contest
             skip: Pagination offset
             limit: Pagination limit
 
         Returns:
             List of Team objects with available slots
         """
+        # Import here to avoid circular imports
+        from app.models.contest import Contest
+        
+        # Get contest to retrieve max_team_size
+        contest_result = await self.db.execute(
+            select(Contest).where(Contest.id == contest_id)
+        )
+        contest = contest_result.scalar_one_or_none()
+        
+        if not contest:
+            return []
+        
+        max_team_size = contest.max_team_size
+        
+        # Eagerly load members and their user details to avoid lazy loading later
         result = await self.db.execute(
             select(Team)
             .join(ContestTeam, ContestTeam.team_id == Team.id)
+            .options(selectinload(Team.members).selectinload(TeamUser.user))
             .filter(ContestTeam.contest_id == contest_id)
             .offset(skip)
             .limit(limit)

@@ -803,3 +803,151 @@ class ContestRepository:
         await self.db.flush()
         await self.db.refresh(contest_team)
         return contest_team
+
+    async def get_user_or_raise(self, user_id: UUID) -> User:
+        """
+        Retrieve a user by their ID or raise an exception if not found.
+
+        Args:
+            user_id: ID of the user to retrieve
+
+        Returns:
+            The User object if found
+
+        Raises:
+            UserNotFoundError: If user not found
+        """
+        result = await self.db.execute(select(User).filter(User.id == user_id))
+        user = result.scalars().first()
+        if not user:
+            raise UserNotFoundError(str(user_id))
+        return user
+
+    async def get_contests_by_difficulty(
+        self,
+        filters: StudentContestFilters,
+        pagination: PaginationParams,
+    ) -> PaginatedResult:
+        """
+        Retrieve public contests filtered by problem difficulty level.
+
+        Returns public, available contests that contain problems of specified difficulty.
+        Helps students find contests matching their skill level.
+
+        Implementation:
+        - Joins Contest with ContestQuestion with Question
+        - Filters for public contests only
+        - Filters by difficulty level
+        - Returns distinct contests to avoid duplicates from multiple problems
+
+        Args:
+            filters: StudentContestFilters with difficulty_level specified
+            pagination: PaginationParams for skip/limit
+
+        Returns:
+            PaginatedResult with contests containing problems of specified difficulty
+
+        Raises:
+            ValueError: If difficulty not specified in filters
+        """
+        if not filters.difficulty_level:
+            raise ValueError("Difficulty level must be specified in filters")
+
+        from app.models.question import Question
+
+        # Build base query joining contests with their problems
+        base_query = (
+            select(Contest)
+            .options(selectinload(Contest.questions))
+            .join(ContestQuestion, ContestQuestion.contest_id == Contest.id)
+            .join(Question, Question.id == ContestQuestion.question_id)
+            .filter(
+                Contest.is_public.is_(True),
+                Contest.is_deleted.is_(False),
+                Contest.status.in_([ContestStatus.SCHEDULED, ContestStatus.RUNNING]),
+                Question.difficulty == filters.difficulty_level,
+            )
+            .distinct()
+        )
+
+        # Apply additional search filter
+        if filters.search_term:
+            base_query = base_query.filter(
+                Contest.name.ilike(f"%{filters.search_term}%")
+            )
+
+        # Get total count
+        count_query = select(func.count()).select_from(
+            base_query.with_only_columns(Contest.id).subquery()
+        )
+        total = (await self.db.execute(count_query)).scalar() or 0
+
+        # Get paginated results
+        result = await self.db.execute(
+            base_query.offset(pagination.skip).limit(pagination.limit)
+        )
+        contests = list(result.unique().scalars().all())
+
+        return PaginatedResult(total=total, items=contests)
+
+    async def get_past_contests(
+        self,
+        user_id: UUID,
+        pagination: PaginationParams,
+    ) -> PaginatedResult:
+        """
+        Retrieve finished contests that student participated in.
+
+        Returns contests with FINISHED status where student was registered via team.
+        Allows students to review past competitions and results.
+
+        Implementation:
+        - Filters for Contest.status == FINISHED
+        - Joins with ContestTeam and TeamUser
+        - Ensures student is team member
+        - Eager loads relationships
+        - Orders by end_time descending (most recent first)
+
+        Args:
+            user_id: UUID of the student
+            pagination: PaginationParams for skip/limit
+
+        Returns:
+            PaginatedResult with past contests student participated in
+        """
+        base_query = (
+            select(Contest)
+            .options(selectinload(Contest.questions))
+            .join(ContestTeam, ContestTeam.contest_id == Contest.id)
+            .join(Team, ContestTeam.team_id == Team.id)
+            .join(TeamUser, TeamUser.team_id == Team.id)
+            .filter(
+                TeamUser.user_id == user_id,
+                Contest.status == ContestStatus.FINISHED,
+                Contest.is_deleted.is_(False),
+            )
+            .order_by(Contest.end_time.desc())
+            .distinct()
+        )
+
+        # Get total count
+        count_result = await self.db.execute(
+            select(func.count(func.distinct(Contest.id)))
+            .join(ContestTeam, ContestTeam.contest_id == Contest.id)
+            .join(Team, ContestTeam.team_id == Team.id)
+            .join(TeamUser, TeamUser.team_id == Team.id)
+            .filter(
+                TeamUser.user_id == user_id,
+                Contest.status == ContestStatus.FINISHED,
+                Contest.is_deleted.is_(False),
+            )
+        )
+        total = count_result.scalar() or 0
+
+        # Get paginated results
+        result = await self.db.execute(
+            base_query.offset(pagination.skip).limit(pagination.limit)
+        )
+        items = list(result.unique().scalars().all())
+
+        return PaginatedResult(total=total, items=items)
