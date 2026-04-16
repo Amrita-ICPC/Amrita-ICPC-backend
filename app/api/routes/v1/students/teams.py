@@ -24,10 +24,11 @@ from app.schema.student.teams import (
     StudentTeamResponse,
     StudentTeamAddMemberRequest,
     StudentTeamAddMemberResponse,
-    StudentTeamRemoveMemberRequest,
+    StudentTeamRemoveMemberResponse,
     StudentLeaveTeamResponse,
 )
-from app.service.student.student_team_service import StudentTeamService
+from app.core.guards.team import TeamOperationGuard
+from app.service.student.teams import StudentTeamService
 
 router = APIRouter(prefix="/students/teams", tags=["Student - Teams"])
 
@@ -35,7 +36,8 @@ router = APIRouter(prefix="/students/teams", tags=["Student - Teams"])
 def get_student_team_service(db: AsyncSession = Depends(get_db)) -> StudentTeamService:
     """Provide StudentTeamService instance."""
     team_repo = TeamRepository(db)
-    return StudentTeamService(team_repo)
+    guard = TeamOperationGuard(db)
+    return StudentTeamService(team_repo, guard)
 
 
 @router.get(
@@ -242,7 +244,7 @@ async def leave_team(
     "/{team_id}/members",
     response_model=StudentTeamAddMemberResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Add member to team (leader only)",
+    summary="Add members to team (leader only)",
     dependencies=[can_read("contests")],
 )
 async def add_member_to_team(
@@ -252,29 +254,41 @@ async def add_member_to_team(
     service: StudentTeamService = Depends(get_student_team_service),
 ) -> StudentTeamAddMemberResponse:
     """
-    Add a member to team (leader only).
+    Add members to team (leader only).
+    
+    Only the team leader can add new members. Follows the same strategy as
+    the regular team endpoints.
+    
+    All member additions are assumed to be within the student's current contest context.
+    The method determines the contest from the team's relationship.
     
     Args:
         team_id: Team UUID
-        request: Add member request with user_id
+        request: Add members request with list of user_ids
         user_id: Current authenticated user (must be leader)
         service: StudentTeamService instance
         
     Returns:
-        Addition confirmation
+        Updated team members list and confirmation
+        
+    Raises:
+        PermissionDenied: If user is not the team leader
+        TeamNotFound: If team does not exist
+        UserNotFound: If any user IDs don't exist
+        InvalidTeamSize: If adding members would exceed team size limit
     """
     result = await service.add_member_to_team(
         team_id=team_id,
         leader_user_id=user_id,
-        member_email=request.member_email,
+        member_ids=request.member_ids,
     )
-    logger.info(f"User {user_id} added member {request.member_email} to team {team_id}")
+    logger.info(f"User {user_id} added {len(request.member_ids)} members to team {team_id}")
     return result
 
 
 @router.delete(
     "/{team_id}/members/{member_id}",
-    response_model=StudentLeaveTeamResponse,
+    response_model=StudentTeamRemoveMemberResponse,
     status_code=status.HTTP_200_OK,
     summary="Remove member from team (leader only)",
     dependencies=[can_read("contests")],
@@ -284,7 +298,7 @@ async def remove_member_from_team(
     member_id: UUID,
     user_id: UUID = Depends(get_current_user_id),
     service: StudentTeamService = Depends(get_student_team_service),
-) -> StudentLeaveTeamResponse:
+) -> StudentTeamRemoveMemberResponse:
     """
     Remove a member from team (leader only).
     
@@ -299,8 +313,8 @@ async def remove_member_from_team(
     """
     result = await service.remove_member_from_team(
         team_id=team_id,
-        leader_user_id=user_id,
-        member_user_id=member_id,
+        member_id=member_id,
+        user_id=user_id,
     )
     logger.info(f"User {user_id} removed member {member_id} from team {team_id}")
     return result

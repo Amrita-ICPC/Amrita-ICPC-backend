@@ -26,8 +26,8 @@ from uuid import UUID
 from app.core.cache.decorators import cache_delete, cache_get, cache_set
 from app.core.logger import logger
 from app.exceptions.auth import PermissionDeniedError
-from app.exceptions.contest import ContestNotFoundError
-from app.exceptions.team import TeamNotFoundError
+from app.exceptions.student.contests import ContestNotFoundError
+from app.exceptions.student.teams import TeamNotFoundError
 from app.mappers.student.contest_mappers import (
     to_student_available_contest_response,
     to_student_available_contests_list_response,

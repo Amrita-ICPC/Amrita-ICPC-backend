@@ -1,7 +1,24 @@
-"""Mapper functions for student contest responses.
+"""
+Mapper functions for student contest operations and responses.
 
-Transforms ORM Contest objects and repository data into student-facing API response schemas.
-Centralizes all contest response building logic in one place for easy maintenance and reusability.
+Centralizes all ORM-to-response and request-to-DTO transformations for student contest operations.
+Maintains consistency between API schemas and internal data models.
+
+Mapper Organization:
+    - Response Mappers: ORM → API Response Schemas
+      - to_student_available_contest_response() - Single contest to summary response
+      - to_student_available_contests_list_response() - Paginated contest list
+      - to_student_registered_contest_response() - Single registered contest
+      - to_student_registered_contests_list_response() - Paginated registered list
+      - to_student_contest_details_response() - Full contest with problems
+      - to_student_contest_problem_response() - Single problem in contest
+      - to_student_contest_problems_list_response() - All problems in contest
+
+Key Principles:
+    - Pure functions: No side effects, deterministic outputs
+    - Type safety: Explicit parameter and return types
+    - Documentation: Comprehensive docstrings with use cases
+    - Reusability: Share common transformation logic
 """
 
 from __future__ import annotations
@@ -26,21 +43,37 @@ if TYPE_CHECKING:
     from app.repositories.dto import PaginatedResult
 
 
+# Response Mappers: ORM → API Schemas
+
+
 def to_student_available_contest_response(
     contest: "Contest", problem_count: int = 0
 ) -> StudentContestAvailableResponse:
     """
-    Convert Contest ORM object to StudentContestAvailableResponse.
+    Map Contest ORM object to student available contest response.
     
-    Maps a contest to the response shown in the available contests list.
-    Includes contest metadata and team configuration but hides instructor details.
+    Used in GET /students/contests/available endpoint.
+    Transforms a public contest into summary view for discovery.
+    
+    Includes:
+        - Contest metadata (name, description, image)
+        - Time windows (start, end, registration periods)
+        - Status and visibility (public, status flag)
+        - Team configuration (size constraints, approval mode)
+        - Problem count for summary display
+    
+    Excludes:
+        - Instructor details
+        - Scoring configuration
+        - Student registration status
+        - Leaderboard settings
     
     Args:
         contest: Contest ORM object from database
-        problem_count: Number of problems in the contest (pre-calculated for performance)
+        problem_count: Number of problems in contest (for efficient list queries)
     
     Returns:
-        StudentContestAvailableResponse ready for API response
+        StudentContestAvailableResponse ready for API serialization
     """
     return StudentContestAvailableResponse(
         id=contest.id,
@@ -66,18 +99,23 @@ def to_student_available_contests_list_response(
     limit: int,
 ) -> StudentContestListResponse:
     """
-    Convert paginated Contest results to StudentContestListResponse.
+    Map paginated Contest results to paginated list response.
     
-    Transforms a PaginatedResult of Contest objects into a paginated list response.
-    Calculates problem counts and includes pagination metadata.
+    Used in GET /students/contests/available with pagination.
+    
+    Transformation Process:
+        1. Extract Contest objects from PaginatedResult
+        2. Calculate problem counts from contest.questions
+        3. Map each contest to summary response
+        4. Calculate pagination metadata (page, has_more)
     
     Args:
-        paginated_result: PaginatedResult containing Contest objects
-        skip: Number of items skipped (for pagination info)
-        limit: Limit used in query (for pagination info)
+        paginated_result: PaginatedResult containing Contest ORM objects
+        skip: Number of items skipped (0-based offset)
+        limit: Number of items per page
     
     Returns:
-        StudentContestListResponse with pagination and contest list
+        StudentContestListResponse with paginated contest summaries
     """
     contests = [
         to_student_available_contest_response(contest, problem_count=len(contest.questions))
@@ -86,11 +124,12 @@ def to_student_available_contests_list_response(
     
     total = paginated_result.total
     has_more = (skip + limit) < total
+    current_page = (skip // limit) + 1 if limit > 0 else 1
     
     return StudentContestListResponse(
         contests=contests,
         total=total,
-        page=(skip // limit) + 1 if limit > 0 else 1,
+        page=current_page,
         page_size=limit,
         has_more=has_more,
     )
@@ -103,16 +142,21 @@ def to_student_registered_contest_response(
     problem_count: int = 0,
 ) -> StudentRegisteredContestResponse:
     """
-    Convert Contest ORM object to StudentRegisteredContestResponse.
+    Map Contest ORM to student registered contest response.
     
-    Maps a contest where student is registered to response including
-    registration timestamp and team information.
+    Used in GET /students/contests/registered endpoint.
+    Shows contests student is already registered in with team details.
+    
+    Includes all available contest info plus:
+        - Registration timestamp (when enrolled)
+        - Team information (id, name)
+        - Registration context (registered_as_team flag)
     
     Args:
         contest: Contest ORM object from database
-        contest_team: ContestTeam object linking student's team to contest
-        team: Team object that student is registered with
-        problem_count: Number of problems in the contest
+        contest_team: ContestTeam linking student's team to contest (optional)
+        team: Team ORM object student is registered with (optional)
+        problem_count: Number of problems in contest (pre-calculated for performance)
     
     Returns:
         StudentRegisteredContestResponse with registration details
@@ -145,15 +189,23 @@ def to_student_registered_contests_list_response(
     limit: int,
 ) -> StudentRegisteredContestListResponse:
     """
-    Convert paginated registered Contest results to StudentRegisteredContestListResponse.
+    Map paginated registered Contest results to paginated list response.
+    
+    Used in GET /students/contests/registered with pagination.
+    
+    Transformation Process:
+        1. Extract (Contest, ContestTeam) tuples from PaginatedResult
+        2. Calculate problem counts and extract team info
+        3. Map each registered contest with team details
+        4. Calculate pagination metadata
     
     Args:
-        paginated_result: PaginatedResult containing tuples of (Contest, ContestTeam)
-        skip: Number of items skipped (for pagination info)
-        limit: Limit used in query (for pagination info)
+        paginated_result: PaginatedResult containing (Contest, ContestTeam) tuples
+        skip: Number of items skipped (0-based offset)
+        limit: Number of items per page
     
     Returns:
-        StudentRegisteredContestListResponse with pagination and contest list
+        StudentRegisteredContestListResponse with paginated registered contests
     """
     contests = [
         to_student_registered_contest_response(
@@ -167,11 +219,12 @@ def to_student_registered_contests_list_response(
     
     total = paginated_result.total
     has_more = (skip + limit) < total
+    current_page = (skip // limit) + 1 if limit > 0 else 1
     
     return StudentRegisteredContestListResponse(
         contests=contests,
         total=total,
-        page=(skip // limit) + 1 if limit > 0 else 1,
+        page=current_page,
         page_size=limit,
         has_more=has_more,
     )
@@ -181,13 +234,23 @@ def to_student_contest_problem_response(
     question: "ContestQuestion",
 ) -> StudentContestProblemResponse:
     """
-    Convert ContestQuestion ORM object to StudentContestProblemResponse.
+    Map ContestQuestion ORM to student problem response.
     
-    Maps a problem within a contest to the student's view, showing only
-    student-relevant information (title, difficulty, score, time limit).
+    Transforms a problem within a contest into the student view.
+    Shows only student-relevant information:
+        - Problem identity and order
+        - Difficulty level
+        - Score/points
+        - Time limit
+    
+    Hides:
+        - Judge details
+        - Test case information
+        - Solution references
+        - Instructor notes
     
     Args:
-        question: ContestQuestion ORM object representing a problem in contest
+        question: ContestQuestion ORM object linking question to contest
     
     Returns:
         StudentContestProblemResponse with problem details
@@ -209,16 +272,22 @@ def to_student_contest_details_response(
     user_id: UUID,
 ) -> StudentContestDetailsResponse:
     """
-    Convert Contest ORM and problems to StudentContestDetailsResponse.
+    Map Contest ORM and problems to detailed contest response.
     
-    Builds complete contest details including all problems and student's
-    registration status. Used for the detailed contest view endpoint.
+    Used in GET /students/contests/{id}/details endpoint.
+    Builds comprehensive contest view for registered students.
+    
+    Transformation Process:
+        1. Map each problem to student problem response
+        2. Include all contest metadata
+        3. Include student's registration status
+        4. Prepare for detailed student view
     
     Args:
-        contest: Contest ORM object
+        contest: Contest ORM object from database
         problems: List of ContestQuestion objects for this contest
         is_student_registered: Whether current student is registered
-        user_id: Current student's UUID (for logging)
+        user_id: Current student's UUID (for audit/logging)
     
     Returns:
         StudentContestDetailsResponse with full contest and problem details
@@ -243,7 +312,7 @@ def to_student_contest_details_response(
         show_leaderboard=contest.show_leaderboard,
         problems=problem_responses,
         student_registered=is_student_registered,
-        student_team_id=None,  # Will be populated by service if needed
+        student_team_id=None,  # Populated by service layer if needed
     )
 
 
@@ -252,16 +321,17 @@ def to_student_contest_problems_list_response(
     problems: list["ContestQuestion"],
 ) -> StudentContestProblemsListResponse:
     """
-    Convert Contest and problems to StudentContestProblemsListResponse.
+    Map Contest and problems to problems list response.
     
-    Builds a list of problems for a specific contest.
+    Used in GET /students/contests/{id}/problems endpoint.
+    Returns all problems for a specific contest with metadata.
     
     Args:
-        contest: Contest ORM object
-        problems: List of ContestQuestion objects for this contest
+        contest: Contest ORM object from database
+        problems: List of ContestQuestion objects in contest
     
     Returns:
-        StudentContestProblemsListResponse with problems and metadata
+        StudentContestProblemsListResponse with problems list and count
     """
     problem_responses = [to_student_contest_problem_response(p) for p in problems]
     

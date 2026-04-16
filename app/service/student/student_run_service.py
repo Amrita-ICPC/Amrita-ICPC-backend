@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logger import logger
 from app.exceptions.auth import PermissionDeniedError
-from app.exceptions.contest import ContestNotFoundError
+from app.exceptions.student.contests import ContestNotFoundError
 from app.exceptions.question import QuestionNotFoundError
 from app.models.contest import Contest, ContestTeam
 from app.models.question import Question, TestCase
