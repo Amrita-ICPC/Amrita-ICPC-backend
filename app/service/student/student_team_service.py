@@ -382,12 +382,12 @@ class StudentTeamService:
 
         # Add student to team (validates size and membership)
         team_user = await self.repository.add_student_to_team(
-            team_id=team_id, user_id=user_id, contest_id=contest_id
+            team_id=team_id, user_id=user_id
         )
 
         logger.info(f"Student {user_id} joined team {team_id} in contest {contest_id}")
 
-        return to_student_team_join_response(team, user_id, team_user.created_at)
+        return to_student_team_join_response(team, user_id, joined_at=team.created_at)
 
     @cache_delete(
         key_builder=lambda self, team_id, user_id: [

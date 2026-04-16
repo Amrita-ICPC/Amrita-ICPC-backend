@@ -31,6 +31,7 @@ from uuid import UUID
 
 from app.core.cache.decorators import cache_delete, cache_get
 from app.core.logger import logger
+from app.core.permissions import ContestPermission
 from app.exceptions.auth import PermissionDeniedError
 from app.exceptions.student.contests import ContestNotFoundError
 from app.mappers.student.contest_mappers import (
@@ -234,6 +235,17 @@ class StudentContestService:
         contest = await self.contest_repository.get_contest_or_raise(contest_id)
 
         if contest.is_deleted:
+            raise ContestNotFoundError(str(contest_id))
+
+        # Enforce domain-level permission check
+        try:
+            await ContestPermission.can_read_contest(
+                self.contest_repository.db,
+                user_id=user_id,
+                contest=contest,
+            )
+        except PermissionDeniedError:
+            # Don't leak that the contest exists
             raise ContestNotFoundError(str(contest_id))
 
         # Check if student is registered

@@ -250,8 +250,8 @@ class StudentTeamService:
         # Verify contest exists
         contest = await self.repository.get_contest_or_raise(contest_id)
 
-        # Check permissions
-        await self.guard.check_create_team(
+        # Check permissions - validate student eligibility for self-service creation
+        await self.guard.check_create_team_for_student(
             user_id=created_by,
             contest=contest,
             member_ids=[created_by]
@@ -330,6 +330,12 @@ class StudentTeamService:
             - Invalidates user's team list
             - Invalidates team details
         """
+        # Fetch contest to get team_approval_mode
+        contest = await self.repository.get_contest_or_raise(contest_id)
+
+        # Verify team belongs to the requested contest
+        await self.repository.get_contest_team_or_raise(contest_id, team_id)
+
         # Fetch team with members eagerly loaded
         team = await self.repository.get_team_or_raise(team_id)
         team_members_detailed = await self.repository.get_team_members_detailed(team_id)
@@ -348,12 +354,22 @@ class StudentTeamService:
 
         logger.info(f"Student {user_id} joined team {team_id} in contest {contest_id}")
 
+        # Determine approval status based on contest's team_approval_mode
+        from app.utils.enums import TeamApprovalMode, TeamApprovalStatus
+        
+        if contest.team_approval_mode == TeamApprovalMode.AUTO_APPROVE:
+            status = "success"
+            approval_status = TeamApprovalStatus.APPROVED
+        else:  # TeamApprovalMode.INSTRUCTOR_REVIEW
+            status = "pending_approval"
+            approval_status = TeamApprovalStatus.WAITING
+
         return StudentTeamJoinResponse(
             team_id=team_id,
             contest_id=contest_id,
-            message="Successfully joined team",
-            status="success",
-            approval_status=None,
+            message="Successfully joined team" if status == "success" else "Join request pending instructor approval",
+            status=status,
+            approval_status=approval_status,
         )
 
     @cache_delete(
