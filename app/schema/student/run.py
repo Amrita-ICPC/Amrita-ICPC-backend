@@ -119,7 +119,7 @@ class StudentCodeRunResponse(BaseModel):
         ```
     """
 
-    success: bool
+    success: bool = Field(alias="passed")
     """Whether code execution completed without errors."""
 
     message: str
