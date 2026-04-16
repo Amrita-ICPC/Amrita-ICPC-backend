@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import and_, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -721,7 +722,7 @@ class ContestRepository:
                 ),
             )
         )
-        return result.scalar_one_or_none() is not None
+        return result.scalars().first() is not None
 
     async def get_contest_leaderboard(
         self,
