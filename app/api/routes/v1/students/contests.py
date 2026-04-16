@@ -24,7 +24,7 @@ from app.schema.student.contests import (
     StudentRegisteredContestListResponse,
     StudentContestProblemsListResponse,
 )
-from app.service.student.student_contest_service import StudentContestService
+from app.service.student.contests import StudentContestService
 
 router = APIRouter(prefix="/students/contests", tags=["Student - Contests"])
 
@@ -172,9 +172,9 @@ async def get_contest_details(
     Returns:
         Full contest details
     """
-    result = await service.get_contest_details(
-        user_id=user_id,
+    result = await service.get_contest_by_id(
         contest_id=contest_id,
+        user_id=user_id,
     )
     return result
 
@@ -236,10 +236,10 @@ async def register_for_contest(
     Returns:
         Registration confirmation
     """
-    result = await service.register_for_contest(
-        user_id=user_id,
+    result = await service.register_team_for_contest(
         contest_id=contest_id,
         team_id=request.team_id,
+        user_id=user_id,
     )
     logger.info(f"User {user_id} registered team {request.team_id} for contest {contest_id}")
     return result

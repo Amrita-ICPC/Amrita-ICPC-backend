@@ -29,7 +29,7 @@ from uuid import UUID
 from app.core.cache.decorators import cache_delete, cache_get, cache_set
 from app.core.logger import logger
 from app.exceptions.auth import PermissionDeniedError
-from app.exceptions.team import TeamNotFoundError
+from app.exceptions.student.teams import TeamNotFoundError
 from app.mappers.student.team_mappers import (
     to_student_available_teams_list_response,
     to_student_team_create_and_join_response,
@@ -46,6 +46,7 @@ from app.schema.student.teams import (
     StudentTeamCreateRequest,
     StudentTeamJoinResponse,
     StudentTeamListResponse,
+    StudentTeamMemberResponse,
     StudentTeamRemoveMemberResponse,
     StudentTeamResponse,
 )
@@ -464,101 +465,112 @@ class StudentTeamService:
         self,
         team_id: UUID,
         leader_user_id: UUID,
-        member_email: str,
+        member_ids: list[UUID],
     ) -> StudentTeamAddMemberResponse:
         """
-        Add a member to a team (leader only).
+        Add members to a team (leader only).
 
-        Adds a new student to an existing team. Only team leaders can add members.
-        Validates team size constraints and membership eligibility.
+        Adds new students to an existing team. Only team leaders can add members.
+        Follows the same strategy as the regular TeamService.add_team_members.
+
+        Validation Flow (identical to TeamService.add_team_members):
+        1. Get team and verify leader authorization
+        2. Get all existing team members
+        3. Get contest via ContestTeam join
+        4. Validate team size won't exceed maximum after adding members
+        5. Validate all member user IDs exist in database
+        6. Validate no duplicate memberships
+        7. Add members via repository
+        8. Return updated member list
 
         Business Rules:
         1. Only team leader can add members
-        2. Team must not be at max capacity
-        3. User to add must exist
-        4. User must not already be team member
-        5. User must not be in multiple teams in same contest
-
-        Add Process:
-        1. Verify requester is team leader
-        2. Validate team size limit
-        3. Find user by email
-        4. Verify user is not already in team
-        5. Add user to team
-        6. Invalidate team caches
-
-        Implementation:
-        - Checks team.leader_id == user_id for authorization
-        - Enforces max_team_size from contest settings
-        - Finds user by email via repository
-        - Adds TeamUser relationship
+        2. Team must not exceed max_team_size after adding
+        3. All user IDs must exist in database
+        4. No user can be added twice
+        5. Members cannot already be in the team
 
         Args:
-            team_id: UUID of team to add member to
+            team_id: UUID of team to add members to
             leader_user_id: UUID of user making request (must be leader)
-            member_email: Email of user to add to team
+            member_ids: List of user IDs to add to team
 
         Returns:
-            StudentTeamAddMemberResponse with add status
+            StudentTeamAddMemberResponse with added members and team details
 
         Raises:
             TeamNotFoundError: If team not found
             PermissionDeniedError: If requester is not team leader
-            UserNotFoundError: If user with email not found
-            MemberAlreadyInTeamError: If user already in team
-            TeamFullError: If team at capacity
-
-        Cache Behavior:
-            - Invalidates team details cache
-            - Invalidates available teams list
+            UserNotFoundError: If any specified member does not exist
+            ValueError: If duplicate members or already in team
         """
+        from sqlalchemy import select
+        from app.models.contest import Contest, ContestTeam
+        
+        # Step 1: Get team and verify requester is leader
         team = await self.repository.get_team_or_raise(team_id)
-
-        # CRITICAL: Only team leader can add members
+        
         if team.leader_id != leader_user_id:
-            raise PermissionDeniedError(
-                "Only team leader can add members"
+            raise PermissionDeniedError("Only team leader can add members")
+
+        # Step 2: Get existing team members count
+        existing_team_members = await self.repository.get_all_team_members(team_id)
+        current_count = len(existing_team_members)
+        new_members_count = len(member_ids)
+
+        # Step 3: Get contest for this team via direct query
+        # Query: Contest <- ContestTeam where team_id = ?
+        contest = await self.repository.db.execute(
+            select(Contest).join(
+                ContestTeam, Contest.id == ContestTeam.contest_id
+            ).filter(ContestTeam.team_id == team_id)
+        )
+        contest_record = contest.scalars().first()
+        if not contest_record:
+            raise ValueError("Team is not registered in any contest")
+
+        # Step 4: Validate team size constraint
+        if current_count + new_members_count > contest_record.max_team_size:
+            raise ValueError(
+                f"Adding {new_members_count} members would exceed team limit of {contest_record.max_team_size}"
             )
 
-        # Get team members and contest to check capacity
-        team_users = await self.repository.get_team_users(team_id)
-        current_count = len(team_users)
+        # Step 5: Validate all users exist
+        await self.repository.get_users_or_raise(user_ids=member_ids)
 
-        # Get contest to check max_team_size
-        contest = await self.repository.get_contest_for_team(team_id)
-        if current_count >= contest.max_team_size:
-            return StudentTeamAddMemberResponse(
-                message=f"Team is full (max {contest.max_team_size} members)",
-                team_id=team_id,
-                added_user_email=member_email,
-                new_member_count=current_count,
-                status="team_full",
+        # Step 6: Validate members are not already in team
+        existing_member_ids = {tu.user_id for tu in existing_team_members}
+        already_members = set(member_ids) & existing_member_ids
+        if already_members:
+            raise ValueError("Some members are already in the team")
+
+        # Step 7: Add members via repository
+        await self.repository.add_team_members(
+            team_id=team_id,
+            member_ids=member_ids,
+            leader_id=None,  # Don't change leader when adding members
+        )
+
+        logger.info(f"User {leader_user_id} added {len(member_ids)} members to team {team_id}")
+
+        # Step 8: Fetch and return updated member list
+        updated_members = await self.repository.get_team_members_detailed(team_id)
+        member_responses = [
+            StudentTeamMemberResponse(
+                id=tu.user_id,
+                name=tu.user.name,
+                email=tu.user.email,
+                is_leader=team.leader_id == tu.user_id,
             )
-
-        # Check if user already exists in team
-        existing_members = {tu.user.email for tu in team_users}
-        if member_email in existing_members:
-            return StudentTeamAddMemberResponse(
-                message="User already in team",
-                team_id=team_id,
-                added_user_email=member_email,
-                new_member_count=current_count,
-                status="already_member",
-            )
-
-        # Find user by email
-        user = await self.repository.get_user_by_email_or_raise(member_email)
-
-        # Add user to team
-        await self.repository.add_student_to_team(team_id, user.id, is_leader=False)
-
-        logger.info(f"User {leader_user_id} added {member_email} to team {team_id}")
+            for tu in updated_members
+        ]
 
         return StudentTeamAddMemberResponse(
-            message=f"Successfully added {member_email} to team",
+            message=f"Successfully added {len(member_ids)} members to team",
             team_id=team_id,
-            added_user_email=member_email,
-            new_member_count=current_count + 1,
+            added_count=len(member_ids),
+            total_member_count=current_count + new_members_count,
+            members=member_responses,
             status="success",
         )
 

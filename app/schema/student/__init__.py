@@ -27,7 +27,6 @@ from app.schema.student.teams import (
     StudentTeamJoinResponse,
     StudentTeamListResponse,
     StudentTeamMemberResponse,
-    StudentTeamRemoveMemberRequest,
     StudentTeamRemoveMemberResponse,
     StudentTeamResponse,
 )
