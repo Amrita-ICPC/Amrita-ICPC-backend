@@ -39,7 +39,7 @@ def setup_security(app: FastAPI):
         keycloak_configuration=keycloak_config,
         user_mapper=map_user,
         exclude_patterns=[
-            f"/{config.API_PREFIX}/health",
+            f"{config.API_PREFIX}/health",
             "/docs",
             "/openapi.json",
             "/redoc",
