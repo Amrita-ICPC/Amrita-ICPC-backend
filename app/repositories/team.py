@@ -779,12 +779,30 @@ class TeamRepository:
         team_user = TeamUser(team_id=team.id, user_id=created_by)
         self.db.add(team_user)
 
+        # Fetch contest to determine initial approval status
+        contest_result = await self.db.execute(
+            select(Contest).where(Contest.id == contest_id)
+        )
+        contest = contest_result.scalar_one_or_none()
+        if not contest:
+            raise ContestNotFoundError(str(contest_id))
+
+        # Determine initial approval status based on contest configuration
+        from app.utils.enums import TeamApprovalMode
+
+        if contest.team_approval_mode == TeamApprovalMode.AUTO_APPROVE:
+            initial_approval_status = TeamApprovalStatus.APPROVED
+            initial_team_status = "CONFIRMED"
+        else:  # INSTRUCTOR_REVIEW
+            initial_approval_status = TeamApprovalStatus.PENDING
+            initial_team_status = "PENDING"
+
         # Register team in contest
         contest_team = ContestTeam(
             contest_id=contest_id,
             team_id=team.id,
-            team_status="CONFIRMED",
-            approval_status=TeamApprovalStatus.APPROVED,
+            team_status=initial_team_status,
+            approval_status=initial_approval_status,
         )
         self.db.add(contest_team)
 

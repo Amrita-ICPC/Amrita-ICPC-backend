@@ -115,3 +115,31 @@ class TeamOperationGuard:
         await ContestPermission.can_manage_contest(
             self.db, user_id=user_id, contest=contest
         )
+
+    async def check_create_team_for_student(
+        self,
+        user_id: UUID,
+        contest: Contest,
+        member_ids: list[UUID],
+    ):
+        """
+        Validates student self-service team creation.
+
+        For student self-service workflows, only validates student eligibility
+        instead of requiring contest management permissions.
+
+        Validates:
+        - User is eligible student for the contest
+        - All members are eligible students for the contest
+
+        Args:
+            user_id: Student user ID creating the team
+            contest: Contest ORM object
+            member_ids: List of student user IDs to add to team
+
+        Raises:
+            PermissionDeniedError: If user or members not eligible for contest
+        """
+        await TeamPermission.is_student_allowed_for_contest(
+            self.db, user_ids=[user_id] + member_ids, contest_id=contest.id
+        )

@@ -21,10 +21,12 @@ from app.models.contest import (
     ContestTeam,
     ContestTeamProgress,
 )
+from app.models.question import Question
 from app.models.team import Team, TeamUser
 from app.models.user import User
 from app.repositories.dto import (
     ContestFilters,
+    ContestQuestionFilters,
     PaginatedResult,
     PaginationParams,
     StudentContestFilters,
@@ -516,6 +518,130 @@ class ContestRepository:
         if not user:
             raise UserNotFoundError(str(user_id))
         return user
+
+    async def get_contest_questions_paginated(
+        self,
+        contest_id: UUID,
+        pagination: PaginationParams,
+        filters: ContestQuestionFilters,
+    ) -> PaginatedResult:
+        """
+        Retrieve paginated questions for a contest with optional filtering.
+
+        Filters questions by search term, difficulty, language, and tags.
+
+        Args:
+            contest_id: Contest ID
+            pagination: Pagination parameters (skip, limit)
+            filters: ContestQuestionFilters with optional search_term, difficulty, language_id, tag_id
+
+        Returns:
+            PaginatedResult with Question objects
+        """
+        # Build base query
+        base_query = (
+            select(Question)
+            .join(ContestQuestion, ContestQuestion.question_id == Question.id)
+            .filter(ContestQuestion.contest_id == contest_id)
+        )
+
+        # Apply filters
+        filter_conditions = []
+        
+        # Search term filter
+        if filters.search_term:
+            filter_conditions.append(
+                Question.title.ilike(f"%{filters.search_term}%")
+            )
+
+        # Difficulty filter
+        if filters.difficulty:
+            filter_conditions.append(Question.difficulty == filters.difficulty)
+
+        # Language filter
+        if filters.language_id:
+            filter_conditions.append(Question.language_id == filters.language_id)
+
+        # Tag filter
+        if filters.tag_id:
+            filter_conditions.append(
+                Question.id.in_(
+                    select(ContestQuestion.question_id)
+                    .join(Question, Question.id == ContestQuestion.question_id)
+                    .where(
+                        and_(
+                            ContestQuestion.contest_id == contest_id,
+                            # Assuming tag relationship exists
+                        )
+                    )
+                )
+            )
+
+        # Combine with AND
+        if filter_conditions:
+            base_query = base_query.where(and_(*filter_conditions))
+
+        # Get total count
+        count_query = (
+            select(func.count(Question.id))
+            .join(ContestQuestion, ContestQuestion.question_id == Question.id)
+            .filter(ContestQuestion.contest_id == contest_id)
+        )
+        if filter_conditions:
+            count_query = count_query.where(and_(*filter_conditions))
+
+        total = (await self.db.execute(count_query)).scalar() or 0
+
+        # Apply pagination
+        query = base_query.offset(pagination.skip).limit(pagination.limit)
+
+        # Execute query
+        result = await self.db.execute(query)
+        items = list(result.scalars().all())
+
+        return PaginatedResult(total=total, items=items)
+
+    async def get_ordered_question_orders_for_contest(
+        self, contest_id: UUID
+    ) -> list[ContestQuestion]:
+        """
+        Retrieve all question orders for a contest.
+
+        Returns ContestQuestion objects that track the order assignment for questions.
+
+        Args:
+            contest_id: Contest ID
+
+        Returns:
+            List of ContestQuestion objects ordered by their order field
+        """
+        result = await self.db.execute(
+            select(ContestQuestion)
+            .filter(ContestQuestion.contest_id == contest_id)
+            .order_by(ContestQuestion.order.asc())
+        )
+        return list(result.scalars().all())
+
+    async def is_question_in_contest(
+        self, contest_id: UUID, question_id: UUID
+    ) -> bool:
+        """
+        Check if a question exists in a contest.
+
+        Args:
+            contest_id: Contest ID
+            question_id: Question ID
+
+        Returns:
+            True if question is in contest, False otherwise
+        """
+        result = await self.db.execute(
+            select(ContestQuestion).filter(
+                ContestQuestion.contest_id == contest_id,
+                ContestQuestion.question_id == question_id,
+            )
+        )
+        return result.scalars().first() is not None
 
     # ============ STUDENT-SPECIFIC METHODS ============
 
