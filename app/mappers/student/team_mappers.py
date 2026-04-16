@@ -28,7 +28,10 @@ if TYPE_CHECKING:
     from app.repositories.dto import PaginatedResult
 
 
-def to_student_team_member_response(team_user: "TeamUser") -> StudentTeamMemberResponse:
+def to_student_team_member_response(
+    team_user: "TeamUser",
+    team_leader_id: "UUID | None" = None,
+) -> StudentTeamMemberResponse:
     """
     Convert TeamUser ORM object to StudentTeamMemberResponse.
     
@@ -37,15 +40,17 @@ def to_student_team_member_response(team_user: "TeamUser") -> StudentTeamMemberR
     
     Args:
         team_user: TeamUser ORM object linking user to team
+        team_leader_id: UUID of team leader to determine is_leader status
     
     Returns:
         StudentTeamMemberResponse with member details
     """
+    is_leader = team_leader_id is not None and team_user.user_id == team_leader_id
     return StudentTeamMemberResponse(
-        user_id=team_user.user_id,
+        id=team_user.user_id,
         name=team_user.user.name,
         email=team_user.user.email,
-        is_leader=team_user.is_leader,
+        is_leader=is_leader,
     )
 
 
@@ -68,24 +73,25 @@ def to_student_team_response(
     Returns:
         StudentTeamResponse with team and member details
     """
-    members = [to_student_team_member_response(tu) for tu in team_members]
+    members = [to_student_team_member_response(tu, team.leader_id) for tu in team_members]
     
     # Find current user's role in team
     current_user_membership = next(
         (tu for tu in team_members if tu.user_id == current_user_id),
         None,
     )
-    is_leader = current_user_membership.is_leader if current_user_membership else False
+    is_leader = team.leader_id == current_user_id if current_user_membership else False
     is_member = current_user_membership is not None
     
     return StudentTeamResponse(
         id=team.id,
         name=team.name,
+        description=team.description,
         created_by=team.created_by,
-        created_at=team.created_at,
-        updated_at=team.updated_at,
+        leader_id=team.leader_id,
+        team_size=len(members),
         members=members,
-        member_count=len(members),
+        created_at=team.created_at,
         is_leader=is_leader,
         is_member=is_member,
     )
