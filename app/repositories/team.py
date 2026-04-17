@@ -15,7 +15,7 @@ from app.repositories.dto import (
     PaginationParams,
     TeamFilters,
 )
-from app.utils.enums import TeamApprovalStatus
+from app.utils.enums import TeamApprovalStatus, TeamStatus
 
 
 class TeamRepository:
@@ -172,9 +172,7 @@ class TeamRepository:
         """
         result = await self.db.execute(
             select(Team)
-            .options(
-                selectinload(Team.team_contests).selectinload(ContestTeam.contest)
-            )
+            .options(selectinload(Team.team_contests).selectinload(ContestTeam.contest))
             .filter(Team.id == team_id)
         )
         team = result.scalars().first()
@@ -625,18 +623,18 @@ class TeamRepository:
         """
         # Import here to avoid circular imports
         from app.models.contest import Contest
-        
+
         # Get contest to retrieve max_team_size
         contest_result = await self.db.execute(
             select(Contest).where(Contest.id == contest_id)
         )
         contest = contest_result.scalar_one_or_none()
-        
+
         if not contest:
             return []
-        
+
         max_team_size = contest.max_team_size
-        
+
         # Eagerly load members and their user details to avoid lazy loading later
         result = await self.db.execute(
             select(Team)
@@ -792,10 +790,10 @@ class TeamRepository:
 
         if contest.team_approval_mode == TeamApprovalMode.AUTO_APPROVE:
             initial_approval_status = TeamApprovalStatus.APPROVED
-            initial_team_status = "CONFIRMED"
+            initial_team_status = TeamStatus.CONFIRMED
         else:  # INSTRUCTOR_REVIEW
-            initial_approval_status = TeamApprovalStatus.PENDING
-            initial_team_status = "PENDING"
+            initial_approval_status = TeamApprovalStatus.WAITING
+            initial_team_status = TeamStatus.DRAFT
 
         # Register team in contest
         contest_team = ContestTeam(
