@@ -22,17 +22,17 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.utils.enums import TeamApprovalStatus, TeamStatus
+from app.utils.enums import TeamApprovalStatus
 
 
 # Request Schemas
 class StudentTeamCreateRequest(BaseModel):
     """
     Schema for creating a new team in a contest.
-    
+
     Student creates a team to participate in a contest.
     Creator becomes team leader and first member.
-    
+
     Attributes:
         name: Name of the team (1-255 characters)
         description: Optional team description (max 1000 characters)
@@ -40,7 +40,9 @@ class StudentTeamCreateRequest(BaseModel):
     """
 
     name: str = Field(..., min_length=1, max_length=255, description="Team name")
-    description: Optional[str] = Field(None, max_length=1000, description="Team description")
+    description: Optional[str] = Field(
+        None, max_length=1000, description="Team description"
+    )
     contest_id: UUID = Field(..., description="Contest UUID to create team for")
 
     model_config = ConfigDict(from_attributes=True)
@@ -49,13 +51,13 @@ class StudentTeamCreateRequest(BaseModel):
 class StudentTeamJoinRequest(BaseModel):
     """
     Schema for joining an existing team in a contest.
-    
+
     Student requests to join an available team.
     Approval depends on contest's team_approval_mode.
-    
+
     Attributes:
         contest_id: ID of the contest the team belongs to
-    
+
     Note:
         team_id comes from URL path
         user_id comes from authentication context
@@ -69,10 +71,10 @@ class StudentTeamJoinRequest(BaseModel):
 class StudentTeamAddMemberRequest(BaseModel):
     """
     Schema for adding members to team (leader only).
-    
+
     Follows the same pattern as TeamMemberAdd from instructor endpoints.
     Only team leader can perform this action.
-    
+
     Attributes:
         member_ids: List of user IDs to add to team (minimum 1)
         leader_id: Optional new team leader (must be one of the members)
@@ -94,10 +96,10 @@ class StudentTeamAddMemberRequest(BaseModel):
 class StudentTeamMemberResponse(BaseModel):
     """
     Schema for a team member from student view.
-    
+
     Represents a user in a team with essential information.
     Does not expose sensitive fields like internal IDs.
-    
+
     Attributes:
         id: User/member unique identifier
         name: Member name
@@ -117,10 +119,10 @@ class StudentTeamMemberResponse(BaseModel):
 class StudentTeamAvailableResponse(BaseModel):
     """
     Schema for available team to join in a contest.
-    
+
     Used in GET /students/contests/{id}/teams/available endpoint.
     Shows teams with slots available for students to join.
-    
+
     Attributes:
         id: Team unique identifier
         name: Team name
@@ -148,10 +150,10 @@ class StudentTeamAvailableResponse(BaseModel):
 class StudentTeamResponse(BaseModel):
     """
     Schema for team details with members.
-    
+
     Used in GET /students/teams/{id} and GET /students/teams/my-teams endpoints.
     Shows complete team information including member list and user's role.
-    
+
     Attributes:
         id: Team unique identifier
         name: Team name
@@ -168,19 +170,21 @@ class StudentTeamResponse(BaseModel):
     id: UUID = Field(..., description="Team unique identifier")
     name: str = Field(..., description="Team name")
     description: Optional[str] = Field(None, description="Team description")
-    created_by: UUID = Field(..., description="User ID who created the team")
-    leader_id: UUID = Field(..., description="Team leader user ID")
+    created_by: Optional[UUID] = Field(
+        None,
+        description="User ID who created the team (may be null if user was deleted)",
+    )
+    leader_id: Optional[UUID] = Field(
+        None,
+        description="Team leader user ID (may be null if user was deleted)",
+    )
     team_size: int = Field(..., description="Number of members in team")
     members: List[StudentTeamMemberResponse] = Field(
         default_factory=list, description="List of team members"
     )
     created_at: datetime = Field(..., description="Team creation time (UTC)")
-    is_leader: bool = Field(
-        ..., description="Whether current user is team leader"
-    )
-    is_member: bool = Field(
-        ..., description="Whether current user is team member"
-    )
+    is_leader: bool = Field(..., description="Whether current user is team leader")
+    is_member: bool = Field(..., description="Whether current user is team member")
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -189,10 +193,10 @@ class StudentTeamResponse(BaseModel):
 class StudentTeamCreateResponse(BaseModel):
     """
     Schema for create team operation response.
-    
+
     Used in POST /students/contests/{id}/teams endpoint.
     Confirms team creation and provides team details.
-    
+
     Attributes:
         team_id: Newly created team ID
         team_name: Team name
@@ -203,7 +207,9 @@ class StudentTeamCreateResponse(BaseModel):
     team_id: UUID = Field(..., description="Newly created team ID")
     team_name: str = Field(..., description="Team name")
     message: str = Field(..., description="Operation status message")
-    status: str = Field(..., description="Create status (success, invalid_name, name_exists)")
+    status: str = Field(
+        ..., description="Create status (success, invalid_name, name_exists)"
+    )
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -211,10 +217,10 @@ class StudentTeamCreateResponse(BaseModel):
 class StudentTeamJoinResponse(BaseModel):
     """
     Schema for join team operation response.
-    
+
     Used in POST /students/contests/{id}/teams/{team_id}/join endpoint.
     Confirms team join with status and approval info.
-    
+
     Attributes:
         message: Join status message
         team_id: Team ID
@@ -240,10 +246,10 @@ class StudentTeamJoinResponse(BaseModel):
 class StudentLeaveTeamResponse(BaseModel):
     """
     Schema for leave team operation response.
-    
+
     Used in DELETE /students/teams/{id}/members/me endpoint.
     Confirms student has left the team.
-    
+
     Attributes:
         message: Leave status message
         team_id: Team ID
@@ -262,10 +268,10 @@ class StudentLeaveTeamResponse(BaseModel):
 class StudentTeamCreateAndJoinResponse(BaseModel):
     """
     Schema for create and join team operation response.
-    
+
     Used in POST /students/teams/create-and-join endpoint (if exists).
     Combines team creation and automatic join in single response.
-    
+
     Attributes:
         message: Operation status message
         team_id: Newly created team ID
@@ -291,10 +297,10 @@ class StudentTeamCreateAndJoinResponse(BaseModel):
 class StudentTeamAddMemberResponse(BaseModel):
     """
     Schema for add members operation response.
-    
+
     Used in POST /students/teams/{id}/members endpoint.
     Confirms members were added and shows updated team member list.
-    
+
     Attributes:
         message: Operation status message
         team_id: Team ID
@@ -321,10 +327,10 @@ class StudentTeamAddMemberResponse(BaseModel):
 class StudentTeamRemoveMemberResponse(BaseModel):
     """
     Schema for remove member operation response.
-    
+
     Used in DELETE /students/teams/{id}/members/{user_id} endpoint.
     Confirms member was removed from team.
-    
+
     Attributes:
         message: Operation status message
         team_id: Team ID
@@ -346,10 +352,10 @@ class StudentTeamRemoveMemberResponse(BaseModel):
 class StudentTeamListResponse(BaseModel):
     """
     Schema for paginated list of teams.
-    
+
     Used in GET /students/teams/my-teams and available teams endpoints.
     Returns list of teams with pagination info.
-    
+
     Attributes:
         teams: List of teams (StudentTeamResponse or summary format)
         total: Total number of teams
@@ -358,11 +364,12 @@ class StudentTeamListResponse(BaseModel):
         has_more: Whether there are more pages (optional for some endpoints)
     """
 
-    teams: List[StudentTeamResponse] = Field(..., description="List of teams user is member of")
+    teams: List[StudentTeamResponse | StudentTeamAvailableResponse] = Field(
+        ..., description="List of teams"
+    )
     total: int = Field(..., description="Total number of teams")
     page: Optional[int] = Field(None, description="Current page number")
     page_size: Optional[int] = Field(None, description="Number of teams per page")
     has_more: Optional[bool] = Field(None, description="Whether there are more pages")
 
     model_config = ConfigDict(from_attributes=True)
-

@@ -23,20 +23,17 @@ Key Responsibilities:
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from app.core.cache.decorators import cache_delete, cache_get, cache_set
+from app.core.cache.decorators import cache_delete, cache_get
+from app.core.logger import logger
 from app.core.permissions import ContestPermission
 from app.exceptions.auth import PermissionDeniedError
 from app.exceptions.student.contests import ContestNotFoundError
-from app.exceptions.student.teams import TeamNotFoundError
 from app.mappers.student.contest_mappers import (
-    to_student_available_contest_response,
     to_student_available_contests_list_response,
     to_student_contest_details_response,
     to_student_contest_problems_list_response,
-    to_student_registered_contest_response,
     to_student_registered_contests_list_response,
 )
-from app.utils.enums import ContestStatus, QuestionDifficulty
 from app.repositories.dto import PaginationParams, StudentContestFilters
 from app.repositories.team import TeamRepository
 from app.schema.student.contests import (
@@ -46,6 +43,7 @@ from app.schema.student.contests import (
     StudentContestRegistrationResponse,
     StudentRegisteredContestListResponse,
 )
+from app.utils.enums import ContestStatus, QuestionDifficulty
 
 if TYPE_CHECKING:
     from app.repositories.contest import ContestRepository
@@ -85,12 +83,19 @@ class StudentContestService:
         - Cache invalidated on registration operations
     """
 
-    def __init__(self, contest_repository: "ContestRepository", team_repository: TeamRepository):
+    def __init__(
+        self, contest_repository: "ContestRepository", team_repository: TeamRepository
+    ):
         self.repository = contest_repository
         self.team_repository = team_repository
 
     @cache_get(
-        key_builder=lambda self, user_id, search_term=None, status=None, skip=0, limit=10: f"student:contests:available:user:{user_id}:search:{search_term}:status:{status}:skip:{skip}:limit:{limit}",
+        key_builder=lambda self,
+        user_id,
+        skip=0,
+        limit=10,
+        search_term=None,
+        status=None: f"student:contests:available:user:{user_id}:search:{search_term}:status:{status}:skip:{skip}:limit:{limit}",
         ttl=300,
     )
     async def get_available_contests(
@@ -132,10 +137,14 @@ class StudentContestService:
             - Cached with user context to avoid showing registered contests
             - TTL: 300 seconds
         """
+        parsed_status: ContestStatus | None = None
+        if status is not None:
+            parsed_status = ContestStatus(status)
+
         filters = StudentContestFilters(
             search_term=search_term,
-            status=status,
-            only_available=True,  # Only show available contests
+            status=parsed_status,
+            only_available=True,
         )
         pagination = PaginationParams(skip=skip, limit=limit)
 
@@ -143,11 +152,16 @@ class StudentContestService:
             filters=filters, pagination=pagination
         )
 
-        logger.info(f"Student {user_id} queried available contests (found: {result.total})")
+        logger.info(
+            f"Student {user_id} queried available contests (found: {result.total})"
+        )
         return to_student_available_contests_list_response(result, skip, limit)
 
     @cache_get(
-        key_builder=lambda self, user_id, skip=0, limit=10: f"student:contests:registered:user:{user_id}:skip:{skip}:limit:{limit}",
+        key_builder=lambda self,
+        user_id,
+        skip=0,
+        limit=10: f"student:contests:registered:user:{user_id}:skip:{skip}:limit:{limit}",
         ttl=300,
     )
     async def get_registered_contests(
@@ -262,7 +276,9 @@ class StudentContestService:
         )
 
     @cache_get(
-        key_builder=lambda self, contest_id, user_id: f"student:contest:{contest_id}:problems:user:{user_id}",
+        key_builder=lambda self,
+        contest_id,
+        user_id: f"student:contest:{contest_id}:problems:user:{user_id}",
         ttl=300,
     )
     async def get_contest_problems(
@@ -366,7 +382,7 @@ class StudentContestService:
             raise ContestNotFoundError(str(contest_id))
 
         # Verify team exists
-        team = await self.team_repository.get_team_or_raise(team_id)
+        await self.team_repository.get_team_or_raise(team_id)
 
         # CRITICAL: Verify user is a member of the team (cannot register other's teams)
         is_team_member = await self.team_repository.is_student_in_team(team_id, user_id)
@@ -376,7 +392,7 @@ class StudentContestService:
             )
 
         # Register team for contest
-        contest_team = await self.repository.register_team_to_contest(
+        await self.repository.register_team_to_contest(
             contest_id=contest_id, team_id=team_id
         )
 
@@ -391,7 +407,11 @@ class StudentContestService:
         )
 
     @cache_get(
-        key_builder=lambda self, user_id, difficulty, skip=0, limit=10: f"student:contests:difficulty:{difficulty}:user:{user_id}:skip:{skip}:limit:{limit}",
+        key_builder=lambda self,
+        user_id,
+        difficulty,
+        skip=0,
+        limit=10: f"student:contests:difficulty:{difficulty}:user:{user_id}:skip:{skip}:limit:{limit}",
         ttl=300,
     )
     async def get_contests_by_difficulty(
@@ -444,7 +464,7 @@ class StudentContestService:
         """
         # Validate difficulty is valid enum value
         try:
-            difficulty_enum = QuestionDifficulty(difficulty)
+            QuestionDifficulty(difficulty)
         except ValueError:
             raise ValueError(
                 f"Invalid difficulty: {difficulty}. Must be one of {[d.value for d in QuestionDifficulty]}"
@@ -456,7 +476,8 @@ class StudentContestService:
 
         # Get contests by difficulty
         result = await self.repository.get_contests_by_difficulty(
-            user_id=user_id, filters=filters, pagination=pagination
+            filters=filters,
+            pagination=pagination,
         )
 
         logger.info(
@@ -466,7 +487,10 @@ class StudentContestService:
         return to_student_available_contests_list_response(result, skip, limit)
 
     @cache_get(
-        key_builder=lambda self, user_id, skip=0, limit=10: f"student:contests:past:user:{user_id}:skip:{skip}:limit:{limit}",
+        key_builder=lambda self,
+        user_id,
+        skip=0,
+        limit=10: f"student:contests:past:user:{user_id}:skip:{skip}:limit:{limit}",
         ttl=300,
     )
     async def get_past_contests(
@@ -474,7 +498,7 @@ class StudentContestService:
         user_id: UUID,
         skip: int = 0,
         limit: int = 10,
-    ) -> StudentContestListResponse:
+    ) -> StudentRegisteredContestListResponse:
         """
         Get past contests (finished) that student participated in.
 
@@ -509,16 +533,15 @@ class StudentContestService:
             - Cache key includes pagination params
         """
         # Create filter for finished contests only
-        filters = StudentContestFilters(status=ContestStatus.FINISHED)
+        StudentContestFilters(status=ContestStatus.FINISHED)
         pagination = PaginationParams(skip=skip, limit=limit)
 
         # Get past contests student participated in
-        result = await self.repository.get_past_contests_for_student(
-            user_id=user_id, filters=filters, pagination=pagination
+        result = await self.repository.get_past_contests(
+            user_id=user_id,
+            pagination=pagination,
         )
 
-        logger.info(
-            f"Student {user_id} viewed past contests (found {result.total})"
-        )
+        logger.info(f"Student {user_id} viewed past contests (found {result.total})")
 
-        return to_student_available_contests_list_response(result, skip, limit)
+        return to_student_registered_contests_list_response(result, skip, limit)

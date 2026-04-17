@@ -29,6 +29,12 @@ from app.exceptions.execution import (
     InvalidSubmissionTokenError,
     NoTestCasesError,
 )
+from app.exceptions.image import (
+    ImageNotFoundError,
+    ImageStorageError,
+    InvalidImageDataError,
+    InvalidImagePathError,
+)
 from app.exceptions.judge0 import Judge0NotInitializedError
 from app.exceptions.question import QuestionNotFoundError, TemplateAlreadyExistsError
 from app.exceptions.team import (
@@ -410,6 +416,50 @@ def setup_exception_handlers(app: FastAPI) -> None:
                 compile_output=exc.compile_output,
                 message=exc.message,
             ).model_dump(),
+        )
+
+    @app.exception_handler(InvalidImagePathError)
+    async def invalid_image_path_handler(request: Request, exc: InvalidImagePathError):
+        logger.warning(f"Invalid image path: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="INVALID_IMAGE_PATH",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(InvalidImageDataError)
+    async def invalid_image_data_handler(request: Request, exc: InvalidImageDataError):
+        logger.warning(f"Invalid image data: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="INVALID_IMAGE_DATA",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(ImageNotFoundError)
+    async def image_not_found_handler(request: Request, exc: ImageNotFoundError):
+        logger.warning(f"Image not found: {exc.detail}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="IMAGE_NOT_FOUND",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(ImageStorageError)
+    async def image_storage_error_handler(request: Request, exc: ImageStorageError):
+        logger.error(f"Image storage error: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="IMAGE_STORAGE_ERROR",
+            details=[exc.detail] if exc.detail else None,
         )
 
     @app.exception_handler(Exception)

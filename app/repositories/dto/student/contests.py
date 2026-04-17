@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
-from app.utils.enums import ContestStatus, QuestionDifficulty
+from app.utils.enums import ContestStatus
 
 
 @dataclass
@@ -20,9 +20,15 @@ class StudentContestFilters:
     search_term: str | None = None
     status: ContestStatus | None = None
     is_public: bool | None = None
-    only_registered: bool = False  # If True, only show contests student is registered in
-    only_available: bool = False   # If True, only show contests available for registration
-    difficulty_level: str | None = None  # Filter by problem difficulty: EASY, MEDIUM, HARD
+    only_registered: bool = (
+        False  # If True, only show contests student is registered in
+    )
+    only_available: bool = (
+        False  # If True, only show contests available for registration
+    )
+    difficulty_level: str | None = (
+        None  # Filter by problem difficulty: EASY, MEDIUM, HARD
+    )
 
 
 @dataclass
@@ -112,7 +118,9 @@ class StudentContestDetailData:
     is_student_registered: bool
     student_team_id: UUID | None
     # Problems (flat list, will be mapped to problem responses)
-    problems: list[dict] = None  # [{id, order, title, difficulty, score, duration}, ...]
+    problems: list[dict] | None = (
+        None  # [{id, order, title, difficulty, score, duration}, ...]
+    )
 
 
 @dataclass

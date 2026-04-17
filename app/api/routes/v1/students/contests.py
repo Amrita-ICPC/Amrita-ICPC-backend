@@ -18,18 +18,20 @@ from app.repositories.contest import ContestRepository
 from app.repositories.team import TeamRepository
 from app.schema.student.contests import (
     StudentContestDetailsResponse,
+    StudentContestListResponse,
+    StudentContestProblemsListResponse,
     StudentContestRegistrationRequest,
     StudentContestRegistrationResponse,
-    StudentContestListResponse,
     StudentRegisteredContestListResponse,
-    StudentContestProblemsListResponse,
 )
 from app.service.student.contests import StudentContestService
 
 router = APIRouter(prefix="/students/contests", tags=["Student - Contests"])
 
 
-def get_student_contest_service(db: AsyncSession = Depends(get_db)) -> StudentContestService:
+def get_student_contest_service(
+    db: AsyncSession = Depends(get_db),
+) -> StudentContestService:
     """Provide StudentContestService instance."""
     contest_repo = ContestRepository(db)
     team_repo = TeamRepository(db)
@@ -46,22 +48,24 @@ def get_student_contest_service(db: AsyncSession = Depends(get_db)) -> StudentCo
 async def get_available_contests(
     user_id: UUID = Depends(get_current_user_id),
     service: StudentContestService = Depends(get_student_contest_service),
-    difficulty: str | None = Query(None, description="Filter by difficulty: EASY, MEDIUM, HARD"),
+    difficulty: str | None = Query(
+        None, description="Filter by difficulty: EASY, MEDIUM, HARD"
+    ),
     limit: int = Query(10, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ) -> StudentContestListResponse:
     """
     Get all available public contests.
-    
+
     Optionally filter by difficulty level.
-    
+
     Args:
         user_id: Current authenticated user
         service: StudentContestService instance
         difficulty: Optional difficulty filter
         limit: Pagination limit (1-100)
         offset: Pagination offset
-        
+
     Returns:
         List of available contests with pagination
     """
@@ -78,7 +82,7 @@ async def get_available_contests(
             skip=offset,
             limit=limit,
         )
-    
+
     logger.info(f"User {user_id} retrieved available contests")
     return result
 
@@ -98,13 +102,13 @@ async def get_registered_contests(
 ) -> StudentRegisteredContestListResponse:
     """
     Get contests student is registered in.
-    
+
     Args:
         user_id: Current authenticated user
         service: StudentContestService instance
         limit: Pagination limit
         offset: Pagination offset
-        
+
     Returns:
         List of registered contests
     """
@@ -131,13 +135,13 @@ async def get_past_contests(
 ) -> StudentRegisteredContestListResponse:
     """
     Get contests that student participated in (finished).
-    
+
     Args:
         user_id: Current authenticated user
         service: StudentContestService instance
         limit: Pagination limit
         offset: Pagination offset
-        
+
     Returns:
         List of past contests
     """
@@ -163,12 +167,12 @@ async def get_contest_details(
 ) -> StudentContestDetailsResponse:
     """
     Get full details of a contest.
-    
+
     Args:
         contest_id: Contest UUID
         user_id: Current authenticated user
         service: StudentContestService instance
-        
+
     Returns:
         Full contest details
     """
@@ -193,12 +197,12 @@ async def get_contest_problems(
 ):
     """
     Get list of problems in a contest.
-    
+
     Args:
         contest_id: Contest UUID
         user_id: Current authenticated user
         service: StudentContestService instance
-        
+
     Returns:
         List of problems with metadata
     """
@@ -224,15 +228,15 @@ async def register_for_contest(
 ) -> StudentContestRegistrationResponse:
     """
     Register a team for a contest.
-    
+
     Student must be a member of the team.
-    
+
     Args:
         contest_id: Contest UUID
         request: Registration request with team_id
         user_id: Current authenticated user
         service: StudentContestService instance
-        
+
     Returns:
         Registration confirmation
     """
@@ -241,5 +245,7 @@ async def register_for_contest(
         team_id=request.team_id,
         user_id=user_id,
     )
-    logger.info(f"User {user_id} registered team {request.team_id} for contest {contest_id}")
+    logger.info(
+        f"User {user_id} registered team {request.team_id} for contest {contest_id}"
+    )
     return result
