@@ -4,7 +4,7 @@ This service duplicates ContestService patterns for student-specific operations.
 Follows exact architecture of ContestService but with student-only read semantics.
 
 Architecture:
-    - Repository Pattern: All database operations delegated to ContestRepository  
+    - Repository Pattern: All database operations delegated to ContestRepository
     - No Guard/Validator: Students have inherent read access
     - Cache Strategy: Results cached with appropriate TTLs and user context
     - Mapper Pattern: All ORM → DTO/Schema transformations via dedicated mappers
@@ -13,7 +13,7 @@ Key Responsibilities:
     - Query available contests (public, in registration window)
     - Query registered contests (student's teams enrolled in)
     - Get contest details with full problem list
-    - Get contest problems  
+    - Get contest problems
     - Register team for contest
     - Filter contests by problem difficulty
     - Get past contests student participated in
@@ -22,7 +22,7 @@ Key Responsibilities:
 Cache Strategy:
     - Available contests cached per user per filter/pagination
     - Registered contests cached per user per pagination
-    - Contest details cached per user per contest  
+    - Contest details cached per user per contest
     - Cache invalidated on registration operations
 """
 
@@ -36,9 +36,9 @@ from app.exceptions.auth import PermissionDeniedError
 from app.exceptions.student.contests import ContestNotFoundError
 from app.mappers.student.contest_mappers import (
     to_student_available_contests_list_response,
-    to_student_registered_contests_list_response,
     to_student_contest_details_response,
     to_student_contest_problems_list_response,
+    to_student_registered_contests_list_response,
 )
 from app.repositories.dto import PaginationParams, StudentContestFilters
 from app.schema.student.contests import (
@@ -46,8 +46,9 @@ from app.schema.student.contests import (
     StudentContestListResponse,
     StudentContestProblemsListResponse,
     StudentContestRegistrationResponse,
+    StudentRegisteredContestListResponse,
 )
-from app.utils.enums import ContestStatus, QuestionDifficulty
+from app.utils.enums import QuestionDifficulty
 
 if TYPE_CHECKING:
     from app.repositories.contest import ContestRepository
@@ -153,7 +154,7 @@ class StudentContestService:
         user_id: UUID,
         skip: int = 0,
         limit: int = 10,
-    ) -> StudentContestListResponse:
+    ) -> StudentRegisteredContestListResponse:
         """
         Get all contests student is registered for (via team membership).
 
@@ -357,7 +358,7 @@ class StudentContestService:
             raise ContestNotFoundError(str(contest_id))
 
         # Step 2: Verify team exists
-        team = await self.team_repository.get_team_or_raise(team_id)
+        await self.team_repository.get_team_or_raise(team_id)
 
         # Step 3: CRITICAL - Verify user is team member
         is_team_member = await self.team_repository.is_student_in_team(team_id, user_id)
@@ -378,12 +379,11 @@ class StudentContestService:
         return StudentContestRegistrationResponse(
             message="Successfully registered for contest",
             contest_id=contest_id,
-            team_id=team_id,
             status="success",
         )
 
     @cache_get(
-        key_builder=lambda self, user_id, difficulty=None, skip=0, limit=10: (
+        key_builder=lambda self, user_id, difficulty, skip=0, limit=10: (
             f"student:contests:difficulty:{difficulty}:user:{user_id}:skip:{skip}:limit:{limit}"
         ),
         ttl=300,
@@ -451,7 +451,7 @@ class StudentContestService:
         user_id: UUID,
         skip: int = 0,
         limit: int = 10,
-    ) -> StudentContestListResponse:
+    ) -> StudentRegisteredContestListResponse:
         """
         Get finished contests student participated in.
 
@@ -476,11 +476,11 @@ class StudentContestService:
             - Cached per user including pagination
             - TTL: 300 seconds
         """
-        filters = StudentContestFilters(status=ContestStatus.FINISHED)
         pagination = PaginationParams(skip=skip, limit=limit)
 
-        result = await self.contest_repository.get_past_contests_for_student(
-            user_id=user_id, filters=filters, pagination=pagination
+        result = await self.contest_repository.get_past_contests(
+            user_id=user_id,
+            pagination=pagination,
         )
 
         logger.info(f"Student {user_id} viewed past contests (found {result.total})")

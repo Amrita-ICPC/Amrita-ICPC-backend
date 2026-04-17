@@ -41,12 +41,10 @@ from app.schema.student.teams import (
     StudentTeamRemoveMemberResponse,
     StudentTeamResponse,
 )
-from app.utils.enums import UserRole
+from app.utils.enums import TeamApprovalStatus
 
 if TYPE_CHECKING:
-    from app.models.contest import ContestTeam
     from app.models.team import Team, TeamUser
-    from app.models.user import User
     from app.repositories.dto import PaginatedResult
 
 
@@ -59,22 +57,22 @@ def to_student_team_member_response(
 ) -> StudentTeamMemberResponse:
     """
     Map TeamUser ORM to student team member response.
-    
+
     Transforms team membership relationship to member summary.
     Shows member identity and leadership status.
-    
+
     Includes:
         - User identity (id, name, email)
         - Leadership status in team
-    
+
     Excludes:
         - Role information (hidden from student view)
         - Internal user_id or other sensitive fields
-    
+
     Args:
         team_user: TeamUser ORM linking user to team
         team_leader_id: UUID of team leader (determines is_leader flag)
-    
+
     Returns:
         StudentTeamMemberResponse with member details
     """
@@ -94,30 +92,32 @@ def to_student_team_response(
 ) -> StudentTeamResponse:
     """
     Map Team ORM and members to detailed team response.
-    
+
     Used in GET /students/teams/{id} and team list endpoints.
-    
+
     Transformation Process:
         1. Convert all team members to member responses
         2. Determine current user's role in team
         3. Calculate team size from member count
         4. Map team metadata to response
-    
+
     Includes:
         - Team identity and metadata
         - Complete member list with roles
         - Current user's relationship to team (is_member, is_leader)
-    
+
     Args:
         team: Team ORM object from database
         team_members: List of TeamUser objects in this team
         current_user_id: UUID of requesting user
-    
+
     Returns:
         StudentTeamResponse with team details and full member list
     """
-    members = [to_student_team_member_response(tu, team.leader_id) for tu in team_members]
-    
+    members = [
+        to_student_team_member_response(tu, team.leader_id) for tu in team_members
+    ]
+
     # Determine current user's role in team
     current_user_membership = next(
         (tu for tu in team_members if tu.user_id == current_user_id),
@@ -125,7 +125,7 @@ def to_student_team_response(
     )
     is_leader = team.leader_id == current_user_id if current_user_membership else False
     is_member = current_user_membership is not None
-    
+
     return StudentTeamResponse(
         id=team.id,
         name=team.name,
@@ -148,32 +148,32 @@ def to_student_teams_list_response(
 ) -> StudentTeamListResponse:
     """
     Map paginated Team results to paginated list response.
-    
+
     Used in GET /students/teams/my-teams endpoint with pagination.
-    
+
     Transformation Process:
         1. Extract Team objects from PaginatedResult
         2. Map each team with eager-loaded members to detail response
         3. Calculate pagination metadata
-    
+
     Args:
         paginated_result: PaginatedResult containing Team ORM objects
         skip: Number of items skipped (0-based offset)
         limit: Number of items per page
         current_user_id: UUID of requesting user
-    
+
     Returns:
         StudentTeamListResponse with paginated team list
     """
-    teams = [
+    teams: list[StudentTeamResponse | StudentTeamAvailableResponse] = [
         to_student_team_response(team, team.members, current_user_id)
         for team in paginated_result.items
     ]
-    
+
     total = paginated_result.total
     has_more = (skip + limit) < total
     current_page = (skip // limit) + 1 if limit > 0 else 1
-    
+
     return StudentTeamListResponse(
         teams=teams,
         total=total,
@@ -191,36 +191,36 @@ def to_student_available_team_response(
 ) -> StudentTeamAvailableResponse:
     """
     Map Team ORM to available team response for joining.
-    
+
     Transforms team into summary for available teams list.
     Shows team details, availability slots, and joinability.
-    
+
     Used in GET /students/contests/{id}/teams/available endpoint.
-    
+
     Includes:
         - Team identity (id, name, description)
         - Leader information
         - Membership status (current size, max size)
         - Availability calculation
-    
+
     Args:
         team: Team ORM object from database
         team_members: List of TeamUser objects in this team
         current_user_id: UUID of requesting user
         max_team_size: Maximum allowed team size in contest
-    
+
     Returns:
         StudentTeamAvailableResponse with availability info
     """
     current_member_count = len(team_members)
     available_slots = max(0, max_team_size - current_member_count)
-    
+
     # Get team leader name
     leader_user = next(
         (tu.user for tu in team_members if tu.user_id == team.leader_id),
         None,
     )
-    
+
     return StudentTeamAvailableResponse(
         id=team.id,
         name=team.name,
@@ -240,23 +240,23 @@ def to_student_available_teams_list_response(
 ) -> StudentTeamListResponse:
     """
     Map Team ORM list to available teams list response.
-    
+
     Used in GET /students/contests/{id}/teams/available endpoint.
-    
+
     Transformation Process:
         1. Convert each team to available team response
         2. Include availability calculations
         3. Return list without pagination metadata
-    
+
     Args:
         teams: List of Team ORM objects with available slots
         max_team_size: Maximum team size in contest
         current_user_id: UUID of requesting user
-    
+
     Returns:
         StudentTeamListResponse with available teams (simplified pagination)
     """
-    team_responses = [
+    team_responses: list[StudentTeamResponse | StudentTeamAvailableResponse] = [
         to_student_available_team_response(
             team,
             team.members,
@@ -265,7 +265,7 @@ def to_student_available_teams_list_response(
         )
         for team in teams
     ]
-    
+
     return StudentTeamListResponse(
         teams=team_responses,
         total=len(teams),
@@ -284,14 +284,14 @@ def to_student_team_create_response(
 ) -> StudentTeamCreateResponse:
     """
     Map team creation data to create response.
-    
+
     Used in POST /students/contests/{id}/teams endpoint.
     Confirms team creation with team details.
-    
+
     Args:
         team_id: UUID of newly created team
         team_name: Name of created team
-    
+
     Returns:
         StudentTeamCreateResponse confirming creation
     """
@@ -310,15 +310,15 @@ def to_student_team_join_response(
 ) -> StudentTeamJoinResponse:
     """
     Map team join data to join response.
-    
+
     Used in POST /students/contests/{id}/teams/{team_id}/join endpoint.
     Confirms team join with team and contest details.
-    
+
     Args:
         team_id: UUID of joined team
         team_name: Name of joined team
         contest_id: UUID of contest team belongs to
-    
+
     Returns:
         StudentTeamJoinResponse confirming join
     """
@@ -336,13 +336,13 @@ def to_student_team_leave_response(
 ) -> StudentLeaveTeamResponse:
     """
     Map team leave data to leave response.
-    
+
     Used in DELETE /students/teams/{id}/members/me endpoint.
     Confirms student has left the team.
-    
+
     Args:
         team_id: UUID of team being left
-    
+
     Returns:
         StudentLeaveTeamResponse confirming departure
     """
@@ -361,16 +361,16 @@ def to_student_team_add_member_response(
 ) -> StudentTeamAddMemberResponse:
     """
     Map member addition data to add member response.
-    
+
     Used in POST /students/teams/{id}/members endpoint.
     Confirms members added and returns updated member list.
-    
+
     Args:
         team_id: UUID of team
         added_count: Number of members added in operation
         total_count: Total members in team after addition
         members: Updated full member list
-    
+
     Returns:
         StudentTeamAddMemberResponse with updated team member list
     """
@@ -390,14 +390,14 @@ def to_student_team_remove_member_response(
 ) -> StudentTeamRemoveMemberResponse:
     """
     Map member removal data to remove member response.
-    
+
     Used in DELETE /students/teams/{id}/members/{user_id} endpoint.
     Confirms member was removed from team.
-    
+
     Args:
         team_id: UUID of team
         removed_user_id: UUID of removed user
-    
+
     Returns:
         StudentTeamRemoveMemberResponse confirming removal
     """
@@ -413,18 +413,19 @@ def to_student_team_create_and_join_response(
     team_id: UUID,
     team_name: str,
     contest_id: UUID,
+    approval_status: TeamApprovalStatus,
 ) -> StudentTeamCreateAndJoinResponse:
     """
     Map team creation and join data to combined response.
-    
+
     Used in POST /students/teams/create-and-join endpoint (if exists).
     Combines team creation and automatic membership in single response.
-    
+
     Args:
         team_id: UUID of newly created team
         team_name: Name of created team
         contest_id: UUID of contest team created for
-    
+
     Returns:
         StudentTeamCreateAndJoinResponse confirming both operations
     """
@@ -433,92 +434,6 @@ def to_student_team_create_and_join_response(
         team_id=team_id,
         contest_id=contest_id,
         team_name=team_name,
-        approval_status=None,  # Set by service based on contest mode
+        approval_status=approval_status,
         you_are_leader=True,
-    )
-
-
-# END OF FILE - All mapper functions completed above
-
-
-def to_student_team_join_response(
-    team: "Team",
-    user_id: UUID,
-    joined_at=None,
-) -> StudentTeamJoinResponse:
-    """
-    Convert Team and join info to StudentTeamJoinResponse.
-    
-    Response confirming successful team join operation.
-    
-    Args:
-        team: Team ORM object user joined
-        user_id: UUID of joined user
-        joined_at: Timestamp of join (optional)
-    
-    Returns:
-        StudentTeamJoinResponse with join confirmation
-    """
-    return StudentTeamJoinResponse(
-        team_id=team.id,
-        team_name=team.name,
-        user_id=user_id,
-        status="joined",
-        message=f"Successfully joined team '{team.name}'",
-    )
-
-
-def to_student_team_create_and_join_response(
-    team: "Team",
-    contest_team: "ContestTeam",
-    user_id: UUID,
-) -> StudentTeamCreateAndJoinResponse:
-    """
-    Convert Team and ContestTeam info to StudentTeamCreateAndJoinResponse.
-    
-    Response confirming successful team creation and self-join.
-    Acts as team leader after creation.
-    
-    Args:
-        team: Newly created Team ORM object
-        contest_team: ContestTeam record created for registration
-        user_id: UUID of creating user (team leader)
-    
-    Returns:
-        StudentTeamCreateAndJoinResponse with creation and join confirmation
-    """
-    return StudentTeamCreateAndJoinResponse(
-        team_id=team.id,
-        contest_id=contest_team.contest_id,
-        team_name=team.name,
-        approval_status=contest_team.approval_status,
-        you_are_leader=True,
-        message=f"Team '{team.name}' created and you are now the leader",
-    )
-
-
-def to_student_leave_team_response(
-    team_id: UUID,
-    team_name: str,
-    user_id: UUID,
-) -> StudentLeaveTeamResponse:
-    """
-    Convert leave operation data to StudentLeaveTeamResponse.
-    
-    Response confirming successful team leave operation.
-    
-    Args:
-        team_id: UUID of team left
-        team_name: Name of team left
-        user_id: UUID of user who left
-    
-    Returns:
-        StudentLeaveTeamResponse with leave confirmation
-    """
-    return StudentLeaveTeamResponse(
-        team_id=team_id,
-        team_name=team_name,
-        user_id=user_id,
-        status="left",
-        message=f"Successfully left team '{team_name}'",
     )

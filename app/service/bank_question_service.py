@@ -369,9 +369,10 @@ class BankQuestionService:
         return await self._hydrate_question_template_codes(response)
 
     @cache_delete(
-        key_builder=lambda self, question_id, *args, **kwargs: [
+        key_builder=lambda self, bank_id, question_id, payload, user_id: [
             f"question:{question_id}",
             f"question:{question_id}:*",
+            f"bank:question:{bank_id}:{question_id}:user:{user_id}",
             f"bank:question:*:{question_id}:*",
             "banks:questions:*",
         ]

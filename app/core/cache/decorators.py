@@ -1,6 +1,6 @@
 # app/core/cache/decorators.py
 from functools import wraps
-from typing import Callable, Optional
+from typing import Any, Awaitable, Callable, Optional, ParamSpec, TypeVar, cast
 
 from pydantic import TypeAdapter
 
@@ -9,8 +9,11 @@ from app.core.clients import redis
 from app.core.config import config
 from app.core.logger import logger
 
+P = ParamSpec("P")
+R = TypeVar("R")
 
-def get_type_adapter(func: Callable) -> Optional[TypeAdapter]:
+
+def get_type_adapter(func: Callable[..., Any]) -> Optional[TypeAdapter[Any]]:
     """
     Helper to create a Pydantic TypeAdapter from function return annotation.
     Returns None if no return annotation or return is None.
@@ -27,19 +30,19 @@ def get_type_adapter(func: Callable) -> Optional[TypeAdapter]:
 
 def cache_get(
     *,
-    key_builder: Callable[..., str],
+    key_builder: Callable[P, str],
     ttl: int = 300,
-):
+) -> Callable[[Callable[P, Awaitable[R]]], Callable[P, Awaitable[R]]]:
     """
     Decorator to cache the result of a function.
     Automatically handles serialization/deserialization based on return type hints.
     """
 
-    def decorator(func):
+    def decorator(func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
         adapter = get_type_adapter(func)
 
         @wraps(func)
-        async def wrapper(*args, **kwargs):
+        async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             if not config.CACHE_ENABLED:
                 logger.debug("Cache disabled, bypassing cache get")
                 return await func(*args, **kwargs)
@@ -56,8 +59,13 @@ def cache_get(
                     logger.info(f"Cache hit for key: {key}")
                     try:
                         if adapter:
-                            return adapter.validate_json(cached)
-                        return deserialize(cached)
+                            return cast(R, adapter.validate_json(cached))
+                        cached_text = (
+                            cached.decode("utf-8")
+                            if isinstance(cached, (bytes, bytearray))
+                            else cached
+                        )
+                        return cast(R, deserialize(cached_text))
                     except Exception as e:
                         logger.error(f"Error deserializing cache for key {key}: {e}")
             except Exception as e:
@@ -70,9 +78,9 @@ def cache_get(
                 try:
                     if adapter:
                         # dump_json returns bytes
-                        serialized_data = adapter.dump_json(result)
+                        serialized_data: bytes = adapter.dump_json(result)
                     else:
-                        serialized_data = serialize(result)
+                        serialized_data = serialize(result).encode("utf-8")
 
                     await redis.redis_client.set(key, serialized_data, ex=ttl)
                 except Exception as e:
@@ -86,16 +94,16 @@ def cache_get(
 
 def cache_delete(
     *,
-    key_builder: Callable[..., str | list[str]],
-):
+    key_builder: Callable[P, str | list[str]],
+) -> Callable[[Callable[P, Awaitable[R]]], Callable[P, Awaitable[R]]]:
     """
     Decorator to delete cache entries after function execution.
     Supports single keys, list of keys, and wildcard patterns (e.g., "users:*").
     """
 
-    def decorator(func):
+    def decorator(func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
         @wraps(func)
-        async def wrapper(*args, **kwargs):
+        async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             result = await func(*args, **kwargs)
             if config.CACHE_ENABLED and redis.redis_client:
                 keys_or_key = key_builder(*args, **kwargs)
@@ -141,17 +149,17 @@ def cache_set(
     key_builder: Callable[..., str],
     ttl: int = 300,
     from_result: bool = False,
-):
+) -> Callable[[Callable[P, Awaitable[R]]], Callable[P, Awaitable[R]]]:
     """
     Decorator to update a cache entry after function execution.
     Automatically handles serialization based on return type hints.
     """
 
-    def decorator(func):
+    def decorator(func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
         adapter = get_type_adapter(func)
 
         @wraps(func)
-        async def wrapper(*args, **kwargs):
+        async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             result = await func(*args, **kwargs)
 
             if config.CACHE_ENABLED and redis.redis_client:
@@ -162,9 +170,9 @@ def cache_set(
 
                 try:
                     if adapter:
-                        serialized_data = adapter.dump_json(result)
+                        serialized_data: bytes = adapter.dump_json(result)
                     else:
-                        serialized_data = serialize(result)
+                        serialized_data = serialize(result).encode("utf-8")
 
                     await redis.redis_client.set(key, serialized_data, ex=ttl)
                     logger.info(f"Cache updated for key: {key}")

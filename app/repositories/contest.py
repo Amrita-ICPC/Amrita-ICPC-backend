@@ -2,10 +2,11 @@ import re
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.exceptions.contest import (
     ContestNotFoundError,
@@ -21,7 +22,7 @@ from app.models.contest import (
     ContestTeam,
     ContestTeamProgress,
 )
-from app.models.question import Question
+from app.models.question import Question, QuestionLanguage
 from app.models.team import Team, TeamUser
 from app.models.user import User
 from app.repositories.dto import (
@@ -31,6 +32,7 @@ from app.repositories.dto import (
     PaginationParams,
     StudentContestFilters,
 )
+from app.repositories.dto.contest_question import AddContestQuestionData
 from app.utils.enums import ContestStatus, TeamApprovalStatus
 
 
@@ -546,12 +548,12 @@ class ContestRepository:
         )
 
         # Apply filters
-        filter_conditions = []
-        
+        filter_conditions: list[ColumnElement[bool]] = []
+
         # Search term filter
         if filters.search_term:
             filter_conditions.append(
-                Question.title.ilike(f"%{filters.search_term}%")
+                Question.question_text.ilike(f"%{filters.search_term}%")
             )
 
         # Difficulty filter
@@ -560,7 +562,12 @@ class ContestRepository:
 
         # Language filter
         if filters.language_id:
-            filter_conditions.append(Question.language_id == filters.language_id)
+            base_query = base_query.join(
+                QuestionLanguage, QuestionLanguage.question_id == Question.id
+            )
+            filter_conditions.append(
+                QuestionLanguage.language_id == filters.language_id
+            )
 
         # Tag filter
         if filters.tag_id:
@@ -587,6 +594,10 @@ class ContestRepository:
             .join(ContestQuestion, ContestQuestion.question_id == Question.id)
             .filter(ContestQuestion.contest_id == contest_id)
         )
+        if filters.language_id:
+            count_query = count_query.join(
+                QuestionLanguage, QuestionLanguage.question_id == Question.id
+            )
         if filter_conditions:
             count_query = count_query.where(and_(*filter_conditions))
 
@@ -622,9 +633,7 @@ class ContestRepository:
         )
         return list(result.scalars().all())
 
-    async def is_question_in_contest(
-        self, contest_id: UUID, question_id: UUID
-    ) -> bool:
+    async def is_question_in_contest(self, contest_id: UUID, question_id: UUID) -> bool:
         """
         Check if a question exists in a contest.
 
@@ -642,6 +651,74 @@ class ContestRepository:
             )
         )
         return result.scalars().first() is not None
+
+    async def add_questions_to_contest(
+        self,
+        questions: list[AddContestQuestionData],
+    ) -> list[ContestQuestion]:
+        """Batch add questions to a contest.
+
+        Args:
+            questions: List of repository DTOs describing the contest-question linkage.
+
+        Returns:
+            List of created ContestQuestion ORM objects.
+
+        Raises:
+            DuplicateQuestionOrderError: If an order value violates uniqueness.
+            QuestionAlreadyInContestError: If a question is already linked.
+        """
+        if not questions:
+            return []
+
+        entities = [
+            ContestQuestion(
+                contest_id=item.contest_id,
+                question_id=item.question_id,
+                order=item.order,
+                duration=item.duration,
+                score=item.score,
+                created_by=item.created_by,
+            )
+            for item in questions
+        ]
+
+        try:
+            self.db.add_all(entities)
+            await self.db.flush()
+        except IntegrityError as exc:
+            first = questions[0]
+            self._translate_contest_question_integrity_error(
+                exc,
+                contest_id=first.contest_id,
+                question_id=first.question_id,
+                order=first.order,
+            )
+            raise
+
+        return entities
+
+    async def remove_questions_from_contest(
+        self,
+        contest_id: UUID,
+        question_ids: list[UUID],
+    ) -> None:
+        """Remove multiple questions from a contest.
+
+        Args:
+            contest_id: Contest ID.
+            question_ids: Question IDs to remove.
+        """
+        if not question_ids:
+            return
+
+        await self.db.execute(
+            delete(ContestQuestion).filter(
+                ContestQuestion.contest_id == contest_id,
+                ContestQuestion.question_id.in_(question_ids),
+            )
+        )
+        await self.db.flush()
 
     # ============ STUDENT-SPECIFIC METHODS ============
 
@@ -666,12 +743,14 @@ class ContestRepository:
         Returns:
             PaginatedResult with available contests
         """
-        base_query = select(Contest).options(
-            selectinload(Contest.questions)
-        ).filter(
-            Contest.is_public.is_(True),
-            Contest.is_deleted.is_(False),
-            Contest.status.in_([ContestStatus.SCHEDULED, ContestStatus.RUNNING]),
+        base_query = (
+            select(Contest)
+            .options(selectinload(Contest.questions))
+            .filter(
+                Contest.is_public.is_(True),
+                Contest.is_deleted.is_(False),
+                Contest.status.in_([ContestStatus.SCHEDULED, ContestStatus.RUNNING]),
+            )
         )
 
         # Apply search filter

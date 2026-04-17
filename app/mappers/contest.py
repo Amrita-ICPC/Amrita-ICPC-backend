@@ -8,6 +8,7 @@ from app.schema.contest import (
     ContestSummaryResponse,
     ContestUpdate,
 )
+from app.utils.image import image_object_key_to_url
 
 
 def build_create_contest_dto(
@@ -72,12 +73,16 @@ def build_update_contest_dto(contest_data: ContestUpdate) -> UpdateContestData:
 
 def to_contest_response(contest: Contest) -> ContestResponse:
     """Map contest ORM object to detail response schema."""
-    return ContestResponse.model_validate(contest)
+    response = ContestResponse.model_validate(contest)
+    response.image = image_object_key_to_url(contest.image)
+    return response
 
 
 def to_contest_summary_response(contest: Contest) -> ContestSummaryResponse:
     """Map contest ORM object to summary response schema."""
-    return ContestSummaryResponse.model_validate(contest)
+    response = ContestSummaryResponse.model_validate(contest)
+    response.image = image_object_key_to_url(contest.image)
+    return response
 
 
 def build_contest_entity(contest_data: CreateContestData) -> Contest:

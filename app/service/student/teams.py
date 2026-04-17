@@ -5,7 +5,7 @@ Follows exact architecture of TeamService but with student-only semantics.
 
 Architecture:
     - Repository Pattern: All database operations delegated to TeamRepository
-    - Guard Pattern: Centralized permission checks via TeamOperationGuard  
+    - Guard Pattern: Centralized permission checks via TeamOperationGuard
     - Validator Pattern: Business rule validation via TeamValidator
     - Mapper Pattern: All ORM → DTO/Schema transformations via dedicated mappers
     - Cache Strategy: Results cached with appropriate TTLs and user context
@@ -28,7 +28,7 @@ Cache Strategy:
     - Cache invalidated on team mutations
 """
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, List
 from uuid import UUID
 
 from app.core.cache.decorators import cache_delete, cache_get
@@ -36,25 +36,21 @@ from app.core.guards.team import TeamOperationGuard
 from app.core.logger import logger
 from app.exceptions.auth import PermissionDeniedError
 from app.exceptions.student.teams import (
-    TeamNotFoundError,
-    MemberAlreadyInTeamError,
     InvalidTeamSizeError,
+    MemberAlreadyInTeamError,
 )
 from app.mappers.student.team_mappers import (
-    to_student_team_member_response,
     to_student_team_response,
     to_student_teams_list_response,
 )
 from app.repositories.dto import PaginationParams
 from app.schema.student.teams import (
-    StudentTeamAddMemberRequest,
+    StudentLeaveTeamResponse,
     StudentTeamAddMemberResponse,
+    StudentTeamAvailableResponse,
     StudentTeamCreateAndJoinResponse,
     StudentTeamCreateRequest,
-    StudentTeamCreateResponse,
-    StudentTeamJoinRequest,
     StudentTeamJoinResponse,
-    StudentLeaveTeamResponse,
     StudentTeamListResponse,
     StudentTeamMemberResponse,
     StudentTeamRemoveMemberResponse,
@@ -85,7 +81,7 @@ class StudentTeamService:
 
     Dependencies:
         - TeamRepository: Team data access
-        - TeamOperationGuard: Permission validation  
+        - TeamOperationGuard: Permission validation
         - TeamValidator: Business rule validation
 
     Cache Strategy:
@@ -149,12 +145,12 @@ class StudentTeamService:
         return to_student_teams_list_response(result, skip, limit, user_id)
 
     @cache_get(
-        key_builder=lambda self, team_id, user_id: get_student_team_key(team_id, user_id),
+        key_builder=lambda self, team_id, user_id: get_student_team_key(
+            team_id, user_id
+        ),
         ttl=300,
     )
-    async def get_team_by_id(
-        self, team_id: UUID, user_id: UUID
-    ) -> StudentTeamResponse:
+    async def get_team_by_id(self, team_id: UUID, user_id: UUID) -> StudentTeamResponse:
         """
         Get complete team details with all members.
 
@@ -166,7 +162,7 @@ class StudentTeamService:
 
         Implementation:
         - Fetches team via repository
-        - Fetches all team members with user details  
+        - Fetches all team members with user details
         - Determines user's role in team
         - Transforms to detailed response
 
@@ -198,9 +194,9 @@ class StudentTeamService:
         ]
     )
     async def create_and_join_team(
-        self, 
-        contest_id: UUID, 
-        team_data: StudentTeamCreateRequest, 
+        self,
+        contest_id: UUID,
+        team_data: StudentTeamCreateRequest,
         created_by: UUID,
     ) -> StudentTeamCreateAndJoinResponse:
         """
@@ -210,7 +206,7 @@ class StudentTeamService:
         Student becomes initial member and automatic owner.
 
         Validation Flow:
-        1. Verify contest exists  
+        1. Verify contest exists
         2. Verify user has permission to create team in contest
         3. Verify team name is unique within contest
         4. Verify user exists in database
@@ -242,62 +238,48 @@ class StudentTeamService:
             - Invalidates user's team list
             - Invalidates contest's available teams
         """
-        # Delegate most of this to repository since it handles the entity creation
-        from app.models.team import Team, TeamUser
-        from app.models.contest import ContestTeam
-        from app.utils.enums import TeamApprovalMode
-
         # Verify contest exists
         contest = await self.repository.get_contest_or_raise(contest_id)
 
         # Check permissions - validate student eligibility for self-service creation
         await self.guard.check_create_team_for_student(
-            user_id=created_by,
-            contest=contest,
-            member_ids=[created_by]
+            user_id=created_by, contest=contest, member_ids=[created_by]
         )
 
-        # Create team
-        team = Team(
-            name=team_data.name,
-            description=team_data.description,
+        (
+            team,
+            contest_team,
+            _progress,
+            _team_user,
+        ) = await self.repository.create_student_team_for_contest(
+            team_name=team_data.name,
+            team_description=team_data.description,
+            contest_id=contest_id,
             created_by=created_by,
-            leader_id=created_by,
         )
 
-        # Create team user relationship (creator as member)
-        team_user = TeamUser(user_id=created_by)
-
-        # Create contest team relationship
-        contest_team = ContestTeam(contest_id=contest_id)
-
-        await self.repository.create_team(
-            team=team,
-            contest_team=contest_team,
-            progress=None,
-            team_users=[team_user],
+        logger.info(
+            f"Student {created_by} created team {team.id} for contest {contest_id}"
         )
-
-        logger.info(f"Student {created_by} created team {team.id} for contest {contest_id}")
 
         return StudentTeamCreateAndJoinResponse(
             team_id=team.id,
             team_name=team.name,
             contest_id=contest_id,
             message="Team created successfully",
-            approval_status=contest.team_approval_mode,
+            approval_status=contest_team.approval_status,
             you_are_leader=True,
         )
 
     @cache_delete(
-        key_builder=lambda self, contest_id, team_id, user_id: [
+        key_builder=lambda self, team_id, contest_id, user_id: [
             f"student:teams:user:{user_id}:*",
             get_student_team_key(team_id, user_id),
             f"student:contests:{contest_id}:teams:available:*",
         ]
     )
     async def join_team(
-        self, 
+        self,
         team_id: UUID,
         contest_id: UUID,
         user_id: UUID,
@@ -339,7 +321,7 @@ class StudentTeamService:
         # Fetch team with members eagerly loaded
         team = await self.repository.get_team_or_raise(team_id)
         team_members_detailed = await self.repository.get_team_members_detailed(team_id)
-        
+
         # Check if user is already a member
         existing_member_ids = {tu.user_id for tu in team_members_detailed}
         if user_id in existing_member_ids:
@@ -356,7 +338,7 @@ class StudentTeamService:
 
         # Determine approval status based on contest's team_approval_mode
         from app.utils.enums import TeamApprovalMode, TeamApprovalStatus
-        
+
         if contest.team_approval_mode == TeamApprovalMode.AUTO_APPROVE:
             status = "success"
             approval_status = TeamApprovalStatus.APPROVED
@@ -367,15 +349,17 @@ class StudentTeamService:
         return StudentTeamJoinResponse(
             team_id=team_id,
             contest_id=contest_id,
-            message="Successfully joined team" if status == "success" else "Join request pending instructor approval",
+            message="Successfully joined team"
+            if status == "success"
+            else "Join request pending instructor approval",
             status=status,
             approval_status=approval_status,
         )
 
     @cache_delete(
-        key_builder=lambda self, team_id, request, user_id: [
-            f"student:teams:user:{user_id}:*",
-            get_student_team_key(team_id, user_id),
+        key_builder=lambda self, team_id, leader_user_id, member_ids: [
+            f"student:teams:user:{leader_user_id}:*",
+            get_student_team_key(team_id, leader_user_id),
             f"student:team:{team_id}:members:*",
         ]
     )
@@ -436,7 +420,9 @@ class StudentTeamService:
 
         # Get the contest from the team's relationship (now eagerly loaded)
         if not team.team_contests:
-            raise ValueError("Team is not registered in any contest")  # This shouldn't happen in normal flow
+            raise ValueError(
+                "Team is not registered in any contest"
+            )  # This shouldn't happen in normal flow
 
         contest_team = team.team_contests[0]
         contest = contest_team.contest
@@ -550,9 +536,7 @@ class StudentTeamService:
             member_ids=[member_id],
         )
 
-        logger.info(
-            f"User {user_id} removed member {member_id} from team {team_id}"
-        )
+        logger.info(f"User {user_id} removed member {member_id} from team {team_id}")
 
         return StudentTeamRemoveMemberResponse(
             message="Member removed from team",
@@ -568,8 +552,8 @@ class StudentTeamService:
         ]
     )
     async def leave_team(
-        self, 
-        team_id: UUID, 
+        self,
+        team_id: UUID,
         user_id: UUID,
     ) -> StudentLeaveTeamResponse:
         """
@@ -593,7 +577,7 @@ class StudentTeamService:
             - Invalidates user's team list
             - Invalidates team details
         """
-        team = await self.repository.get_team_or_raise(team_id)
+        await self.repository.get_team_or_raise(team_id)
 
         # Remove student from team
         await self.repository.remove_team_members(
@@ -658,13 +642,12 @@ class StudentTeamService:
         )
 
         # Build response without pagination object
-        team_responses = [
-            to_student_team_response(team, team.members, user_id)
-            for team in teams
+        team_responses: List[StudentTeamResponse | StudentTeamAvailableResponse] = [
+            to_student_team_response(team, team.members, user_id) for team in teams
         ]
-        
+
         current_page = (skip // limit) + 1 if limit > 0 else 1
-        
+
         return StudentTeamListResponse(
             teams=team_responses,
             total=len(teams),

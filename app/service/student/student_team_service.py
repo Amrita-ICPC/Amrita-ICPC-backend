@@ -26,7 +26,7 @@ Key Responsibilities:
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from app.core.cache.decorators import cache_delete, cache_get, cache_set
+from app.core.cache.decorators import cache_delete, cache_get
 from app.core.logger import logger
 from app.exceptions.auth import PermissionDeniedError
 from app.exceptions.student.teams import TeamNotFoundError
@@ -40,7 +40,6 @@ from app.mappers.student.team_mappers import (
 from app.repositories.dto import PaginationParams
 from app.schema.student.teams import (
     StudentLeaveTeamResponse,
-    StudentTeamAddMemberRequest,
     StudentTeamAddMemberResponse,
     StudentTeamCreateAndJoinResponse,
     StudentTeamCreateRequest,
@@ -90,7 +89,10 @@ class StudentTeamService:
         self.repository = team_repository
 
     @cache_get(
-        key_builder=lambda self, user_id, skip=0, limit=10: f"student:teams:user:{user_id}:skip:{skip}:limit:{limit}",
+        key_builder=lambda self,
+        user_id,
+        skip=0,
+        limit=10: f"student:teams:user:{user_id}:skip:{skip}:limit:{limit}",
         ttl=300,
     )
     async def get_my_teams(
@@ -130,12 +132,12 @@ class StudentTeamService:
         return to_student_teams_list_response(result, skip, limit, user_id)
 
     @cache_get(
-        key_builder=lambda self, team_id, user_id: get_student_team_key(team_id, user_id),
+        key_builder=lambda self, team_id, user_id: get_student_team_key(
+            team_id, user_id
+        ),
         ttl=300,
     )
-    async def get_team_by_id(
-        self, team_id: UUID, user_id: UUID
-    ) -> StudentTeamResponse:
+    async def get_team_by_id(self, team_id: UUID, user_id: UUID) -> StudentTeamResponse:
         """
         Get complete team details with all members.
 
@@ -174,7 +176,11 @@ class StudentTeamService:
         return to_student_team_response(team, members, user_id)
 
     @cache_get(
-        key_builder=lambda self, contest_id, user_id, skip=0, limit=10: f"student:contest:{contest_id}:teams:available:user:{user_id}:skip:{skip}:limit:{limit}",
+        key_builder=lambda self,
+        contest_id,
+        user_id,
+        skip=0,
+        limit=10: f"student:contest:{contest_id}:teams:available:user:{user_id}:skip:{skip}:limit:{limit}",
         ttl=300,
     )
     async def get_available_teams_in_contest(
@@ -183,7 +189,7 @@ class StudentTeamService:
         user_id: UUID,
         skip: int = 0,
         limit: int = 10,
-    ) -> list["StudentTeamResponse"]:
+    ) -> "StudentTeamListResponse":
         """
         Get teams available to join in a specific contest.
 
@@ -206,7 +212,7 @@ class StudentTeamService:
             limit: Maximum teams to return (default: 10)
 
         Returns:
-            List of StudentTeamAvailableResponse objects
+            Paginated list response of available teams
 
         Raises:
             ContestNotFoundError: If contest not found
@@ -219,7 +225,6 @@ class StudentTeamService:
 
         result = await self.repository.get_available_teams_in_contest(
             contest_id=contest_id,
-            max_size=contest.max_team_size,
             skip=skip,
             limit=limit,
         )
@@ -228,9 +233,7 @@ class StudentTeamService:
             f"Student {user_id} queried available teams in contest {contest_id} (found: {len(result)})"
         )
         return to_student_available_teams_list_response(
-            result, 
-            max_team_size=contest.max_team_size,
-            current_user_id=user_id
+            result, max_team_size=contest.max_team_size, current_user_id=user_id
         )
 
     @cache_delete(
@@ -305,7 +308,12 @@ class StudentTeamService:
             )
 
         # Create team and register in contest
-        team, contest_team, progress, team_user = await self.repository.create_student_team_for_contest(
+        (
+            team,
+            contest_team,
+            progress,
+            team_user,
+        ) = await self.repository.create_student_team_for_contest(
             team_name=team_data.name,
             team_description=team_data.description,
             contest_id=contest_id,
@@ -317,11 +325,14 @@ class StudentTeamService:
         )
 
         return to_student_team_create_and_join_response(
-            team, contest_team, created_by
+            team_id=team.id,
+            team_name=team.name,
+            contest_id=contest_id,
+            approval_status=contest_team.approval_status,
         )
 
     @cache_delete(
-        key_builder=lambda self, team_id, user_id: [
+        key_builder=lambda self, team_id, contest_id, user_id: [
             f"student:team:{team_id}:user:{user_id}",
             f"student:teams:user:{user_id}:*",
         ]
@@ -378,16 +389,18 @@ class StudentTeamService:
         """
         team = await self.repository.get_team_or_raise(team_id, contest_id)
 
-        contest = await self.repository.get_contest_or_raise(contest_id)
+        await self.repository.get_contest_or_raise(contest_id)
 
         # Add student to team (validates size and membership)
-        team_user = await self.repository.add_student_to_team(
-            team_id=team_id, user_id=user_id
-        )
+        await self.repository.add_student_to_team(team_id=team_id, user_id=user_id)
 
         logger.info(f"Student {user_id} joined team {team_id} in contest {contest_id}")
 
-        return to_student_team_join_response(team, user_id, joined_at=team.created_at)
+        return to_student_team_join_response(
+            team_id=team.id,
+            team_name=team.name,
+            contest_id=contest_id,
+        )
 
     @cache_delete(
         key_builder=lambda self, team_id, user_id: [
@@ -440,7 +453,9 @@ class StudentTeamService:
         team = await self.repository.get_team_or_raise(team_id)
 
         # Validate student is member
-        team_user = await self.repository.get_team_user_or_raise(team_id, user_id)
+        is_member = await self.repository.is_student_in_team(team_id, user_id)
+        if not is_member:
+            raise PermissionDeniedError("You are not a member of this team")
 
         # Check student is not leader
         if team.leader_id == user_id:
@@ -505,11 +520,12 @@ class StudentTeamService:
             ValueError: If duplicate members or already in team
         """
         from sqlalchemy import select
+
         from app.models.contest import Contest, ContestTeam
-        
+
         # Step 1: Get team and verify requester is leader
         team = await self.repository.get_team_or_raise(team_id)
-        
+
         if team.leader_id != leader_user_id:
             raise PermissionDeniedError("Only team leader can add members")
 
@@ -521,9 +537,9 @@ class StudentTeamService:
         # Step 3: Get contest for this team via direct query
         # Query: Contest <- ContestTeam where team_id = ?
         contest = await self.repository.db.execute(
-            select(Contest).join(
-                ContestTeam, Contest.id == ContestTeam.contest_id
-            ).filter(ContestTeam.team_id == team_id)
+            select(Contest)
+            .join(ContestTeam, Contest.id == ContestTeam.contest_id)
+            .filter(ContestTeam.team_id == team_id)
         )
         contest_record = contest.scalars().first()
         if not contest_record:
@@ -551,7 +567,9 @@ class StudentTeamService:
             leader_id=None,  # Don't change leader when adding members
         )
 
-        logger.info(f"User {leader_user_id} added {len(member_ids)} members to team {team_id}")
+        logger.info(
+            f"User {leader_user_id} added {len(member_ids)} members to team {team_id}"
+        )
 
         # Step 8: Fetch and return updated member list
         updated_members = await self.repository.get_team_members_detailed(team_id)
@@ -625,35 +643,39 @@ class StudentTeamService:
 
         # CRITICAL: Only team leader can remove members
         if team.leader_id != leader_user_id:
-            raise PermissionDeniedError(
-                "Only team leader can remove members"
-            )
+            raise PermissionDeniedError("Only team leader can remove members")
 
         # Get member to remove
-        team_user = await self.repository.get_team_user_or_raise(team_id, member_user_id)
+        members = await self.repository.get_team_members_detailed(team_id)
+        team_user = next(
+            (tu for tu in members if tu.user_id == member_user_id),
+            None,
+        )
+        if team_user is None:
+            raise PermissionDeniedError("User is not a member of this team")
 
         # Cannot remove team leader
         if team.leader_id == member_user_id:
             return StudentTeamRemoveMemberResponse(
                 message="Cannot remove team leader. Reassign leadership first.",
                 team_id=team_id,
-                removed_user_email=team_user.user.email,
-                new_member_count=0,  # Placeholder
+                removed_user_id=member_user_id,
                 status="cannot_remove_leader",
             )
 
         # Remove member from team
         await self.repository.remove_student_from_team(team_id, member_user_id)
 
-        # Get updated member count
-        remaining_users = await self.repository.get_team_users(team_id)
+        # Get updated member count (for logging only)
+        await self.repository.get_all_team_members(team_id)
 
-        logger.info(f"User {leader_user_id} removed {member_user_id} from team {team_id}")
+        logger.info(
+            f"User {leader_user_id} removed {member_user_id} from team {team_id}"
+        )
 
         return StudentTeamRemoveMemberResponse(
-            message=f"Successfully removed {team_user.user.email} from team",
+            message="Successfully removed member from team",
             team_id=team_id,
-            removed_user_email=team_user.user.email,
-            new_member_count=len(remaining_users),
+            removed_user_id=member_user_id,
             status="success",
         )

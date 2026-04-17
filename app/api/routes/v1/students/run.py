@@ -16,6 +16,7 @@ from app.repositories.dto.student.run import StudentCodeRunRequestDTO
 from app.schema.student.run import (
     StudentCodeRunRequest,
     StudentCodeRunResponse,
+    StudentTestCaseRunResultResponse,
 )
 from app.service.student.student_run_service import StudentRunService
 
@@ -50,27 +51,27 @@ async def run_student_code(
 ) -> StudentCodeRunResponse:
     """
     Test run code against a single test case.
-    
+
     Student submits code to quickly test against one test case before official submission.
     Result is NOT stored in database - only ephemeral feedback for testing.
-    
+
     Flow:
     1. Verify student is in contest (via team registration)
     2. Verify question exists in contest
     3. Get test case (use first if not specified)
     4. Execute code via Judge0
     5. Return detailed result with verdict
-    
+
     Args:
         contest_id: Contest UUID from URL path
         question_id: Question UUID from URL path
         code_request: StudentCodeRunRequest with code, language_id, optional testcase_id
         user_id: Current authenticated user UUID
         service: StudentRunService instance
-        
+
     Returns:
         StudentCodeRunResponse: Execution result with verdict and output
-        
+
     Raises:
         PermissionDeniedError: If student not in contest
         ContestNotFoundError: If contest not found
@@ -85,13 +86,28 @@ async def run_student_code(
         language_id=code_request.language_id,
         testcase_id=code_request.testcase_id,
     )
-    
+
     # Execute code
     result = await service.run_code(run_request)
-    
+
     logger.info(
         f"Code run for user {user_id} on question {question_id} in contest {contest_id}: "
         f"verdict={result.result.status_description}"
     )
-    
-    return result
+
+    return StudentCodeRunResponse(
+        passed=result.passed,
+        message=result.message,
+        question_id=result.question_id,
+        result=StudentTestCaseRunResultResponse(
+            testcase_id=result.result.testcase_id,
+            passed=result.result.passed,
+            status_description=result.result.status_description,
+            time=result.result.time,
+            memory=result.result.memory,
+            stdout=result.result.stdout,
+            stderr=result.result.stderr,
+            compile_output=result.result.compile_output,
+            expected_output=result.result.expected_output,
+        ),
+    )
