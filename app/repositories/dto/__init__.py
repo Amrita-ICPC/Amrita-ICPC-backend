@@ -1,6 +1,7 @@
 from app.repositories.dto.bank import BankFilters
 from app.repositories.dto.contest import (
     ContestFilters,
+    ContestQuestionFilters,
     CreateContestData,
     UpdateContestData,
 )
@@ -31,6 +32,7 @@ __all__ = [
     "UpdateTeamData",
     "TeamFilters",
     "ContestFilters",
+    "ContestQuestionFilters",
     "CreateContestData",
     "UpdateContestData",
     "BankFilters",
