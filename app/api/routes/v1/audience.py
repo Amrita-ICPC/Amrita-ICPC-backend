@@ -21,6 +21,7 @@ from app.schema.audience import (
 )
 from app.schema.base import APIResponse
 from app.service.audience_service import AudienceService
+from app.utils.enums import UserRole
 from app.utils.pagination import get_pagination
 
 router = APIRouter()
@@ -251,6 +252,7 @@ async def list_audience_users(
     audience_id: UUID,
     page: int = Query(1, ge=1, description="Page number (starts from 1)"),
     page_size: int = Query(10, ge=1, le=100, description="Number of items per page"),
+    role: UserRole | None = Query(None, description="Optional role filter"),
     actor_id: UUID = Depends(get_current_user_id),
     current_user: Dict[str, Any] = Depends(get_current_user),
     service: AudienceService = Depends(get_audience_service),
@@ -278,6 +280,7 @@ async def list_audience_users(
         skip=skip,
         limit=page_size,
         actor_id=actor_id,
+        role=role,
     )
     pagination = get_pagination(total=total, page=page, page_size=page_size)
     return create_api_response(
