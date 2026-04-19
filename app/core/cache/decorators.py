@@ -1,6 +1,15 @@
 # app/core/cache/decorators.py
 from functools import wraps
-from typing import Any, Awaitable, Callable, Optional, ParamSpec, TypeVar, cast
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Optional,
+    ParamSpec,
+    TypeVar,
+    cast,
+    get_type_hints,
+)
 
 from pydantic import TypeAdapter
 
@@ -18,10 +27,22 @@ def get_type_adapter(func: Callable[..., Any]) -> Optional[TypeAdapter[Any]]:
     Helper to create a Pydantic TypeAdapter from function return annotation.
     Returns None if no return annotation or return is None.
     """
-    return_type = func.__annotations__.get("return")
+    try:
+        # Resolve postponed annotations and forward refs.
+        hints = get_type_hints(func, globalns=getattr(func, "__globals__", {}))
+        return_type = hints.get("return")
+    except Exception:
+        return_type = func.__annotations__.get("return")
+
     if return_type and return_type is not type(None):
         try:
-            return TypeAdapter(return_type)
+            adapter = TypeAdapter(return_type)
+            try:
+                # Ensure internal schemas are built for complex / forward-ref types.
+                adapter.rebuild()
+            except Exception:
+                pass
+            return adapter
         except Exception:
             # Fallback if TypeAdapter cannot be created (e.g. some complex types)
             return None
@@ -59,7 +80,12 @@ def cache_get(
                     logger.info(f"Cache hit for key: {key}")
                     try:
                         if adapter:
-                            return cast(R, adapter.validate_json(cached))
+                            try:
+                                return cast(R, adapter.validate_json(cached))
+                            except Exception as e:
+                                logger.error(
+                                    f"Error deserializing cache for key {key} via TypeAdapter: {e}"
+                                )
                         cached_text = (
                             cached.decode("utf-8")
                             if isinstance(cached, (bytes, bytearray))
@@ -78,7 +104,13 @@ def cache_get(
                 try:
                     if adapter:
                         # dump_json returns bytes
-                        serialized_data: bytes = adapter.dump_json(result)
+                        try:
+                            serialized_data: bytes = adapter.dump_json(result)
+                        except Exception as e:
+                            logger.error(
+                                f"TypeAdapter dump_json failed for key {key}: {e}"
+                            )
+                            serialized_data = serialize(result).encode("utf-8")
                     else:
                         serialized_data = serialize(result).encode("utf-8")
 
@@ -170,7 +202,13 @@ def cache_set(
 
                 try:
                     if adapter:
-                        serialized_data: bytes = adapter.dump_json(result)
+                        try:
+                            serialized_data: bytes = adapter.dump_json(result)
+                        except Exception as e:
+                            logger.error(
+                                f"TypeAdapter dump_json failed for key {key}: {e}"
+                            )
+                            serialized_data = serialize(result).encode("utf-8")
                     else:
                         serialized_data = serialize(result).encode("utf-8")
 

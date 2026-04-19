@@ -24,6 +24,7 @@ from app.schema.audience import (
     AudienceUsersResponse,
 )
 from app.schema.user import UserResponse
+from app.utils.enums import UserRole
 
 
 class AudienceService:
@@ -259,8 +260,8 @@ class AudienceService:
         return await self.repository.remove_users_from_audience(audience_id, normalized)
 
     @cache_get(
-        key_builder=lambda self, audience_id, *, skip, limit, actor_id: (
-            f"audience_users:user:{actor_id}:{audience_id}:skip:{skip}:limit:{limit}"
+        key_builder=lambda self, audience_id, *, skip, limit, actor_id, role=None: (
+            f"audience_users:user:{actor_id}:{audience_id}:skip:{skip}:limit:{limit}:role:{role or ''}"
         ),
         ttl=60,
     )
@@ -271,6 +272,7 @@ class AudienceService:
         skip: int,
         limit: int,
         actor_id: UUID,
+        role: UserRole | None = None,
     ) -> tuple[int, AudienceUsersResponse]:
         """List users in an audience.
 
@@ -279,6 +281,7 @@ class AudienceService:
             skip: Offset for pagination.
             limit: Page size.
             actor_id: Admin user ID performing the operation.
+            role: Optional role filter for returned users.
 
         Returns:
             Tuple of (total_users, AudienceUsersResponse).
@@ -289,9 +292,12 @@ class AudienceService:
         audience_with_counts = await self.repository.get_audience_with_counts(
             audience_id
         )
+
+        total = await self.repository.count_audience_users(audience_id, role=role)
         page_users = await self.repository.list_audience_users_page(
             audience_id,
             PaginationParams(skip=skip, limit=limit),
+            role=role,
         )
         users = [UserResponse.model_validate(user) for user in page_users]
         counts = audience_with_counts.counts
@@ -301,4 +307,4 @@ class AudienceService:
             instructor_count=counts.instructor_count,
             student_count=counts.student_count,
         )
-        return counts.total_users, response
+        return total, response
