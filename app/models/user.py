@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import uuid
 from datetime import date, datetime, timezone
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, Enum, String
 from sqlalchemy.dialects.postgresql import UUID
@@ -7,6 +10,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
 from app.utils.enums import UserRole
+
+if TYPE_CHECKING:
+    from app.models.audience import UserAudience
 
 
 class User(Base):
@@ -41,4 +47,10 @@ class User(Base):
     )
     deleted_banks = relationship(
         "Bank", back_populates="deleter", foreign_keys="[Bank.deleted_by]"
+    )
+
+    audience_links: Mapped[list["UserAudience"]] = relationship(
+        "UserAudience",
+        back_populates="user",
+        cascade="all, delete-orphan",
     )

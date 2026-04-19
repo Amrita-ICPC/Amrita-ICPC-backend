@@ -1,3 +1,10 @@
+from app.repositories.dto.audience import (
+    AudienceRoleCounts,
+    AudienceUserBulkData,
+    AudienceWithCounts,
+    CreateAudienceData,
+    UpdateAudienceData,
+)
 from app.repositories.dto.bank import BankFilters
 from app.repositories.dto.contest import (
     ContestFilters,
@@ -28,6 +35,11 @@ from app.repositories.dto.team import CreateTeamData, TeamFilters, UpdateTeamDat
 __all__ = [
     "PaginationParams",
     "PaginatedResult",
+    "CreateAudienceData",
+    "UpdateAudienceData",
+    "AudienceUserBulkData",
+    "AudienceRoleCounts",
+    "AudienceWithCounts",
     "CreateTeamData",
     "UpdateTeamData",
     "TeamFilters",

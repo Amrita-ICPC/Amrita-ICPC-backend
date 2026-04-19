@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import uuid
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Boolean,
@@ -26,6 +29,9 @@ from app.utils.enums import (
     ViolationSeverity,
     ViolationType,
 )
+
+if TYPE_CHECKING:
+    from app.models.audience import ContestAudience
 
 
 class Contest(Base):
@@ -123,6 +129,12 @@ class Contest(Base):
 
     team_violations = relationship(
         "ContestTeamViolation", back_populates="contest", cascade="all, delete-orphan"
+    )
+
+    audience_links: Mapped[list["ContestAudience"]] = relationship(
+        "ContestAudience",
+        back_populates="contest",
+        cascade="all, delete-orphan",
     )
 
 
