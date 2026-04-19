@@ -1,3 +1,4 @@
+from app.models.audience import Audience, ContestAudience, UserAudience
 from app.models.bank import Bank, BankQuestion
 from app.models.contest import (
     Contest,
@@ -14,6 +15,9 @@ from app.models.team import Team, TeamUser
 from app.models.user import User
 
 __all__ = [
+    "Audience",
+    "UserAudience",
+    "ContestAudience",
     "Bank",
     "BankQuestion",
     "Contest",
