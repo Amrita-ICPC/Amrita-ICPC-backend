@@ -5,11 +5,13 @@ from keycloak import KeycloakAdmin
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.cache.decorators import cache_get
+from app.core.cache.decorators import cache_delete, cache_get
 from app.core.config import config
 from app.core.logger import logger
 from app.exceptions.user import KeycloakSyncError, UserNotFoundError
 from app.models.user import User
+from app.repositories.dto.user import UserListFilters
+from app.repositories.user import UserRepository
 from app.schema.user import UserResponse
 from app.utils.enums import UserRole
 
@@ -70,6 +72,34 @@ class UserService:
         return UserResponse.model_validate(user)
 
     @staticmethod
+    @cache_get(
+        key_builder=lambda db,
+        filters: f"user:list:{filters.role}:{filters.query}:{filters.skip}:{filters.limit}",
+        ttl=300,
+    )
+    async def list_users(
+        db: AsyncSession, filters: UserListFilters
+    ) -> tuple[int, list[UserResponse]]:
+        """List users with filtering and pagination.
+
+        Args:
+            db: Database session.
+            filters: Filtering and pagination parameters.
+
+        Returns:
+            A tuple containing the total count and a list of user responses.
+        """
+        user_repo = UserRepository(db)
+        result = await user_repo.list_users(filters)
+        users = [UserResponse.model_validate(user) for user in result.items]
+        return result.total, users
+
+    @staticmethod
+    @cache_delete(
+        key_builder=lambda db: [
+            "user:list:*",
+        ]
+    )
     async def sync_keycloak_users(db: AsyncSession) -> Dict[str, Any]:
         """
         Synchronize Keycloak users with the local database.

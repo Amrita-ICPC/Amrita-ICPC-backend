@@ -1,10 +1,12 @@
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions.user import UserNotFoundError
 from app.models.user import User
+from app.repositories.dto.pagination import PaginatedResult
+from app.repositories.dto.user import UserListFilters
 
 
 class UserRepository:
@@ -30,6 +32,7 @@ class UserRepository:
         - get_user_or_raise: Retrieve single user by ID
         - get_users_or_raise: Retrieve multiple users by IDs
         - get_user_by_id: Retrieve user without raising exception
+        - list_users: List users with filtering and pagination
 
     Exception Strategy:
         - Raises UserNotFoundError when user(s) not found
@@ -90,3 +93,33 @@ class UserRepository:
         """
         result = await self.db.execute(select(User).filter(User.id == user_id))
         return result.scalars().first()
+
+    def apply_filters(self, stmt, filters: UserListFilters):
+        if filters.role:
+            stmt = stmt.where(User.role == filters.role)
+
+        if filters.query:
+            like_query = f"%{filters.query}%"
+            stmt = stmt.where(
+                or_(
+                    User.name.ilike(like_query),
+                    User.email.ilike(like_query),
+                    User.phone_no.ilike(like_query),
+                )
+            )
+        return stmt
+
+    async def list_users(self, filters: UserListFilters) -> PaginatedResult:
+        stmt = self.apply_filters(select(User), filters)
+        count_stmt = self.apply_filters(select(func.count(User.id)), filters)
+
+        total = int((await self.db.execute(count_stmt)).scalar() or 0)
+
+        result = await self.db.execute(
+            stmt.order_by(User.name.asc(), User.id.asc())  # stable ordering
+            .offset(filters.skip)
+            .limit(filters.limit)
+        )
+
+        users = list(result.scalars().all())
+        return PaginatedResult(total=total, items=users)
