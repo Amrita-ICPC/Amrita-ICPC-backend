@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.routes.v1 import (
+    audience,
     bank,
     bank_questions,
     contest,
@@ -22,6 +23,7 @@ api_v1_router.include_router(
     bank_questions.router, prefix="/banks", tags=["Bank Questions"]
 )
 api_v1_router.include_router(team.router, tags=["Teams"])
+api_v1_router.include_router(audience.router, prefix="/audiences", tags=["Audiences"])
 api_v1_router.include_router(students_router, tags=["Students"])
 api_v1_router.include_router(execution.router)
 api_v1_router.include_router(image.router, tags=["Images"])
