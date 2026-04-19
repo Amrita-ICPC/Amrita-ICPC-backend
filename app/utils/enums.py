@@ -224,3 +224,23 @@ class SubmissionStatus(str, enum.Enum):
     TLE = "TLE"
     RE = "RE"
     CE = "CE"
+
+
+class AudienceType(str, enum.Enum):
+    """
+    Enumeration of audience scopes for content visibility.
+
+    Defines the organizational level used to target content or access rules
+    within the system.
+
+    Attributes:
+        CLASS: Audience is limited to a specific class.
+        DEPARTMENT: Audience is limited to a specific department.
+        BATCH: Audience is limited to a specific batch.
+        CAMPUS: Audience is limited to the campus level.
+    """
+
+    CLASS = "class"
+    DEPARTMENT = "department"
+    BATCH = "batch"
+    CAMPUS = "campus"
