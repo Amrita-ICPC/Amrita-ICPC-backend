@@ -8,6 +8,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schema.user import UserResponse
 from app.utils.enums import AudienceType
 
 
@@ -61,3 +62,13 @@ class AudienceUsersBulkRequest(BaseModel):
     user_ids: list[UUID] = Field(
         ..., min_length=1, description="User IDs to add/remove in bulk"
     )
+
+
+class AudienceUsersResponse(BaseModel):
+    """Response payload for listing users in an audience along with role counts."""
+
+    users: list[UserResponse] = Field(..., description="Users in the requested page")
+
+    manager_count: int = Field(0, ge=0, description="Number of managers")
+    instructor_count: int = Field(0, ge=0, description="Number of instructors")
+    student_count: int = Field(0, ge=0, description="Number of students")

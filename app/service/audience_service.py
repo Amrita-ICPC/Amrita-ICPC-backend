@@ -15,7 +15,12 @@ from app.mappers.audience import (
 from app.repositories.audience import AudienceRepository
 from app.repositories.dto.pagination import PaginationParams
 from app.repositories.user import UserRepository
-from app.schema.audience import AudienceCreate, AudienceResponse, AudienceUpdate
+from app.schema.audience import (
+    AudienceCreate,
+    AudienceResponse,
+    AudienceUpdate,
+    AudienceUsersResponse,
+)
 from app.schema.user import UserResponse
 
 
@@ -252,7 +257,7 @@ class AudienceService:
         skip: int,
         limit: int,
         actor_id: UUID,
-    ) -> tuple[int, list[UserResponse]]:
+    ) -> tuple[int, AudienceUsersResponse]:
         """List users in an audience.
 
         Args:
@@ -262,14 +267,24 @@ class AudienceService:
             actor_id: Admin user ID performing the operation.
 
         Returns:
-            Tuple of total count and user list.
+            Tuple of (total_users, AudienceUsersResponse).
 
         Raises:
             AudienceNotFoundError: If the audience does not exist.
         """
-        await self.repository.get_audience_or_raise(audience_id)
-        result = await self.repository.list_audience_users(
-            audience_id, PaginationParams(skip=skip, limit=limit)
+        audience_with_counts = await self.repository.get_audience_with_counts(
+            audience_id
         )
-        users = [UserResponse.model_validate(user) for user in result.items]
-        return result.total, users
+        page_users = await self.repository.list_audience_users_page(
+            audience_id,
+            PaginationParams(skip=skip, limit=limit),
+        )
+        users = [UserResponse.model_validate(user) for user in page_users]
+        counts = audience_with_counts.counts
+        response = AudienceUsersResponse(
+            users=users,
+            manager_count=counts.manager_count,
+            instructor_count=counts.instructor_count,
+            student_count=counts.student_count,
+        )
+        return counts.total_users, response

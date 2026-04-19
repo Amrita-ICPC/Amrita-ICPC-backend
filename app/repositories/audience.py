@@ -326,3 +326,28 @@ class AudienceRepository:
         result = await self.db.execute(stmt)
         users = list(result.scalars().all())
         return PaginatedResult(total=total, items=users)
+
+    async def list_audience_users_page(
+        self, audience_id: UUID, pagination: PaginationParams
+    ) -> list[User]:
+        """List a single page of users in an audience.
+
+        This method intentionally does not compute total count.
+
+        Args:
+            audience_id: Audience identifier.
+            pagination: Pagination configuration.
+
+        Returns:
+            List of User entities in the requested page.
+        """
+        stmt = (
+            select(User)
+            .join(UserAudience, UserAudience.user_id == User.id)
+            .where(UserAudience.audience_id == audience_id)
+            .order_by(User.name.asc())
+            .offset(pagination.skip)
+            .limit(pagination.limit)
+        )
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
