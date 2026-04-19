@@ -31,6 +31,7 @@ from app.repositories.dto.student import (
     StudentTestCaseRunResultDTO,
 )
 from app.repositories.dto.team import CreateTeamData, TeamFilters, UpdateTeamData
+from app.repositories.dto.user import UserListFilters
 
 __all__ = [
     "PaginationParams",
@@ -64,4 +65,6 @@ __all__ = [
     "StudentTeamRegistrationData",
     "StudentCreateTeamData",
     "StudentTeamJoinData",
+    # User DTOs
+    "UserListFilters",
 ]
