@@ -114,7 +114,17 @@ class AudienceRepository:
                 func.count(func.distinct(UserAudience.user_id))
                 .filter(User.role == UserRole.student)
                 .label("student_count"),
-                func.count(func.distinct(UserAudience.user_id)).label("total_users"),
+                func.count(func.distinct(UserAudience.user_id))
+                .filter(
+                    User.role.in_(
+                        [
+                            UserRole.manager,
+                            UserRole.instructor,
+                            UserRole.student,
+                        ]
+                    )
+                )
+                .label("total_users"),
             )
             .select_from(UserAudience)
             .join(User, User.id == UserAudience.user_id)
@@ -185,7 +195,17 @@ class AudienceRepository:
                 func.count(func.distinct(UserAudience.user_id))
                 .filter(User.role == UserRole.student)
                 .label("student_count"),
-                func.count(func.distinct(UserAudience.user_id)).label("total_users"),
+                func.count(func.distinct(UserAudience.user_id))
+                .filter(
+                    User.role.in_(
+                        [
+                            UserRole.manager,
+                            UserRole.instructor,
+                            UserRole.student,
+                        ]
+                    )
+                )
+                .label("total_users"),
             )
             .select_from(UserAudience)
             .join(User, User.id == UserAudience.user_id)
@@ -294,38 +314,6 @@ class AudienceRepository:
         if not isinstance(cursor_result, CursorResult):
             return 0
         return int(cursor_result.rowcount or 0)
-
-    async def list_audience_users(
-        self, audience_id: UUID, pagination: PaginationParams
-    ) -> PaginatedResult:
-        """List users in an audience.
-
-        Args:
-            audience_id: Audience identifier.
-            pagination: Pagination configuration.
-
-        Returns:
-            PaginatedResult with total count and a list of User entities.
-        """
-        count_stmt = (
-            select(func.count(User.id))
-            .select_from(User)
-            .join(UserAudience, UserAudience.user_id == User.id)
-            .where(UserAudience.audience_id == audience_id)
-        )
-        total = int((await self.db.execute(count_stmt)).scalar() or 0)
-
-        stmt = (
-            select(User)
-            .join(UserAudience, UserAudience.user_id == User.id)
-            .where(UserAudience.audience_id == audience_id)
-            .order_by(User.name.asc())
-            .offset(pagination.skip)
-            .limit(pagination.limit)
-        )
-        result = await self.db.execute(stmt)
-        users = list(result.scalars().all())
-        return PaginatedResult(total=total, items=users)
 
     async def list_audience_users_page(
         self, audience_id: UUID, pagination: PaginationParams
