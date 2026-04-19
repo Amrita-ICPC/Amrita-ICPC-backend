@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from sqlalchemy.exc import IntegrityError
+
 from app.core.cache.decorators import cache_delete, cache_get, cache_set
 from app.exceptions.audience import AudienceAlreadyExistsError
 from app.mappers.audience import (
@@ -75,7 +77,10 @@ class AudienceService:
 
         dto = build_create_audience_dto(payload)
         entity = build_audience_entity(dto)
-        created = await self.repository.create_audience(entity)
+        try:
+            created = await self.repository.create_audience(entity)
+        except IntegrityError as e:
+            raise AudienceAlreadyExistsError(payload.name) from e
         return to_audience_response(created)
 
     @cache_get(
@@ -137,7 +142,6 @@ class AudienceService:
     @cache_delete(
         key_builder=lambda self, audience_id, payload: [
             "audiences:user:*",
-            f"audience:{audience_id}",
         ],
     )
     @cache_set(
@@ -166,13 +170,23 @@ class AudienceService:
         audience = audience_with_counts.audience
         dto = build_update_audience_dto(payload)
 
+        rename_to = (
+            dto.name if dto.name is not None and dto.name != audience.name else None
+        )
+
         if dto.name is not None and dto.name != audience.name:
             existing = await self.repository.get_audience_by_name(dto.name)
             if existing is not None and existing.id != audience_id:
                 raise AudienceAlreadyExistsError(dto.name)
 
         apply_audience_update(audience, dto)
-        updated = await self.repository.update_audience(audience)
+
+        try:
+            updated = await self.repository.update_audience(audience)
+        except IntegrityError as e:
+            if rename_to is not None:
+                raise AudienceAlreadyExistsError(rename_to) from e
+            raise
         return to_audience_response(updated, counts=audience_with_counts.counts)
 
     @cache_delete(
