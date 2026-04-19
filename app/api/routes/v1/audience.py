@@ -17,9 +17,9 @@ from app.schema.audience import (
     AudienceResponse,
     AudienceUpdate,
     AudienceUsersBulkRequest,
+    AudienceUsersResponse,
 )
 from app.schema.base import APIResponse
-from app.schema.user import UserResponse
 from app.service.audience_service import AudienceService
 from app.utils.pagination import get_pagination
 
@@ -242,7 +242,7 @@ async def delete_audience(
 
 @router.get(
     "/{audience_id}/users",
-    response_model=APIResponse[list[UserResponse]],
+    response_model=APIResponse[AudienceUsersResponse],
     summary="List users in an audience",
     dependencies=[Depends(require_admin)],
 )
@@ -273,7 +273,7 @@ async def list_audience_users(
         PermissionDeniedError: If the caller is not an admin.
     """
     skip = (page - 1) * page_size
-    total, users = await service.list_audience_users(
+    total, response = await service.list_audience_users(
         audience_id,
         skip=skip,
         limit=page_size,
@@ -282,7 +282,7 @@ async def list_audience_users(
     pagination = get_pagination(total=total, page=page, page_size=page_size)
     return create_api_response(
         request,
-        data=users,
+        data=response,
         message="Audience users fetched successfully",
         pagination=pagination,
     )
