@@ -316,7 +316,11 @@ class AudienceRepository:
         return int(cursor_result.rowcount or 0)
 
     async def list_audience_users_page(
-        self, audience_id: UUID, pagination: PaginationParams
+        self,
+        audience_id: UUID,
+        pagination: PaginationParams,
+        *,
+        role: UserRole | None = None,
     ) -> list[User]:
         """List a single page of users in an audience.
 
@@ -337,5 +341,32 @@ class AudienceRepository:
             .offset(pagination.skip)
             .limit(pagination.limit)
         )
+        if role is not None:
+            stmt = stmt.where(User.role == role)
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
+
+    async def count_audience_users(
+        self,
+        audience_id: UUID,
+        *,
+        role: UserRole | None = None,
+    ) -> int:
+        """Count users in an audience, optionally filtered by role.
+
+        Args:
+            audience_id: Audience identifier.
+            role: Optional role filter.
+
+        Returns:
+            Total number of matching users.
+        """
+        stmt = (
+            select(func.count(User.id))
+            .select_from(User)
+            .join(UserAudience, UserAudience.user_id == User.id)
+            .where(UserAudience.audience_id == audience_id)
+        )
+        if role is not None:
+            stmt = stmt.where(User.role == role)
+        return int((await self.db.execute(stmt)).scalar() or 0)
