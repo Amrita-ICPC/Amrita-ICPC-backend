@@ -18,9 +18,7 @@ from .students.contests import router as students_router
 
 api_v1_router = APIRouter()
 
-api_v1_router.include_router(
-    user.router, prefix="/users", tags=["Users"], dependencies=[Depends(require_admin)]
-)
+api_v1_router.include_router(user.router, prefix="/users", tags=["Users"])
 api_v1_router.include_router(question.router, prefix="/questions", tags=["Questions"])
 api_v1_router.include_router(contest.router, prefix="/contests", tags=["Contests"])
 api_v1_router.include_router(bank.router, prefix="/banks", tags=["Banks"])

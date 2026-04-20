@@ -1,6 +1,6 @@
 """Data Transfer Objects for user repository operations."""
 
-from pydantic.dataclasses import dataclass
+from dataclasses import dataclass
 
 from app.repositories.dto.pagination import PaginationParams
 from app.utils.enums import UserRole

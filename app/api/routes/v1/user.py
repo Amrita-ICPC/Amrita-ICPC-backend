@@ -1,9 +1,10 @@
 from typing import Any, Dict
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import get_current_user, require_admin
+from app.auth.dependencies import get_current_user, get_current_user_id, require_admin
 from app.core.clients.database import get_db
 from app.core.logger import logger
 from app.core.response import create_api_response
@@ -100,6 +101,7 @@ async def sync_keycloak_users(
 async def list_users(
     request: Request,
     db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id),
     page: int = Query(1, ge=1, description="Page number (starts from 1)"),
     page_size: int = Query(10, ge=1, le=100, description="Number of items per page"),
     role: UserRole | None = Query(None, description="Filter by user role"),
@@ -121,8 +123,9 @@ async def list_users(
         Paginated list of users.
     """
     skip = (page - 1) * page_size
+
     filters = UserListFilters(skip=skip, limit=page_size, role=role, query=q)
-    total, users = await UserService.list_users(db, filters)
+    total, users = await UserService.list_users(db, filters, actor_id=user_id)
     pagination = get_pagination(total=total, page=page, page_size=page_size)
     return create_api_response(
         request,
