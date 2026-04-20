@@ -264,8 +264,15 @@ class AudienceService:
         return await self.repository.remove_users_from_audience(audience_id, normalized)
 
     @cache_get(
-        key_builder=lambda self, audience_id, *, skip, limit, actor_id, role=None: (
-            f"audience_users:user:{actor_id}:{audience_id}:skip:{skip}:limit:{limit}:role:{role or ''}"
+        key_builder=lambda self,
+        audience_id,
+        *,
+        skip,
+        limit,
+        actor_id,
+        role=None,
+        query=None: (
+            f"audience_users:user:{actor_id}:{audience_id}:skip:{skip}:limit:{limit}:role:{role or ''}:q:{query or ''}"
         ),
         ttl=60,
     )
@@ -277,6 +284,7 @@ class AudienceService:
         limit: int,
         actor_id: UUID,
         role: UserRole | None = None,
+        query: str | None = None,
     ) -> tuple[int, AudienceUsersResponse]:
         """List users in an audience.
 
@@ -286,6 +294,7 @@ class AudienceService:
             limit: Page size.
             actor_id: Admin user ID performing the operation.
             role: Optional role filter for returned users.
+            query: Optional sub-string filter applied to name, email, or phone number.
 
         Returns:
             Tuple of (total_users, AudienceUsersResponse).
@@ -297,11 +306,14 @@ class AudienceService:
             audience_id
         )
 
-        total = await self.repository.count_audience_users(audience_id, role=role)
+        total = await self.repository.count_audience_users(
+            audience_id, role=role, query=query
+        )
         page_users = await self.repository.list_audience_users_page(
             audience_id,
             PaginationParams(skip=skip, limit=limit),
             role=role,
+            query=query,
         )
         users = [UserResponse.model_validate(user) for user in page_users]
         counts = audience_with_counts.counts

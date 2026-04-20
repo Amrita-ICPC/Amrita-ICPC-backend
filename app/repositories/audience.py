@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.exceptions.audience import AudienceNotFoundError
 from app.models.audience import Audience, UserAudience
@@ -321,6 +322,7 @@ class AudienceRepository:
         pagination: PaginationParams,
         *,
         role: UserRole | None = None,
+        query: str | None = None,
     ) -> list[User]:
         """List a single page of users in an audience.
 
@@ -329,20 +331,39 @@ class AudienceRepository:
         Args:
             audience_id: Audience identifier.
             pagination: Pagination configuration.
+            role: Optional role filter.
+            query: Optional query filter on name, email, or phone number.
 
         Returns:
             List of User entities in the requested page.
         """
         stmt = (
             select(User)
+            .options(
+                selectinload(User.audience_links).joinedload(UserAudience.audience)
+            )
             .join(UserAudience, UserAudience.user_id == User.id)
             .where(UserAudience.audience_id == audience_id)
-            .order_by(User.name.asc())
+        )
+
+        if role is not None:
+            stmt = stmt.where(User.role == role)
+
+        if query is not None:
+            like_query = f"%{query}%"
+            stmt = stmt.where(
+                or_(
+                    User.name.ilike(like_query),
+                    User.email.ilike(like_query),
+                    User.phone_no.ilike(like_query),
+                )
+            )
+
+        stmt = (
+            stmt.order_by(User.name.asc(), User.id.asc())
             .offset(pagination.skip)
             .limit(pagination.limit)
         )
-        if role is not None:
-            stmt = stmt.where(User.role == role)
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
 
@@ -351,12 +372,14 @@ class AudienceRepository:
         audience_id: UUID,
         *,
         role: UserRole | None = None,
+        query: str | None = None,
     ) -> int:
         """Count users in an audience, optionally filtered by role.
 
         Args:
             audience_id: Audience identifier.
             role: Optional role filter.
+            query: Optional query filter on name, email, or phone number.
 
         Returns:
             Total number of matching users.
@@ -369,6 +392,15 @@ class AudienceRepository:
         )
         if role is not None:
             stmt = stmt.where(User.role == role)
+        if query is not None:
+            like_query = f"%{query}%"
+            stmt = stmt.where(
+                or_(
+                    User.name.ilike(like_query),
+                    User.email.ilike(like_query),
+                    User.phone_no.ilike(like_query),
+                )
+            )
         return int((await self.db.execute(stmt)).scalar() or 0)
 
     async def get_audience_users_by_user_ids(

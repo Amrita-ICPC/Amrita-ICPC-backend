@@ -4,11 +4,13 @@ from uuid import UUID
 from keycloak import KeycloakAdmin
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.cache.decorators import cache_delete, cache_get
 from app.core.config import config
 from app.core.logger import logger
 from app.exceptions.user import KeycloakSyncError, UserNotFoundError
+from app.models.audience import UserAudience
 from app.models.user import User
 from app.repositories.dto.user import UserListFilters
 from app.repositories.user import UserRepository
@@ -40,7 +42,14 @@ class UserService:
         Raises:
             UserNotFoundError: If user not found in database
         """
-        result = await db.execute(select(User).filter(User.user_id == keycloak_user_id))
+        stmt = (
+            select(User)
+            .options(
+                selectinload(User.audience_links).joinedload(UserAudience.audience)
+            )
+            .filter(User.user_id == keycloak_user_id)
+        )
+        result = await db.execute(stmt)
         user = result.scalars().first()
         if not user:
             raise UserNotFoundError(keycloak_user_id)
@@ -65,7 +74,14 @@ class UserService:
         Raises:
             UserNotFoundError: If user not found in database
         """
-        result = await db.execute(select(User).filter(User.id == user_id))
+        stmt = (
+            select(User)
+            .options(
+                selectinload(User.audience_links).joinedload(UserAudience.audience)
+            )
+            .filter(User.id == user_id)
+        )
+        result = await db.execute(stmt)
         user = result.scalars().first()
         if not user:
             raise UserNotFoundError(str(user_id))
