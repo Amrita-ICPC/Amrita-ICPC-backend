@@ -73,12 +73,13 @@ class UserService:
 
     @staticmethod
     @cache_get(
-        key_builder=lambda db,
-        filters: f"user:list:{filters.role}:{filters.query}:{filters.skip}:{filters.limit}",
+        key_builder=lambda db, filters, actor_id: (
+            f"user:list:{actor_id}:{filters.role}:{filters.query}:{filters.skip}:{filters.limit}"
+        ),
         ttl=300,
     )
     async def list_users(
-        db: AsyncSession, filters: UserListFilters
+        db: AsyncSession, filters: UserListFilters, actor_id: UUID
     ) -> tuple[int, list[UserResponse]]:
         """List users with filtering and pagination.
 

@@ -337,8 +337,9 @@ class AudienceService:
         """
 
         await self.repository.get_audience_or_raise(audience_id)
-        users = await self.user_repository.get_users_by_emails(bulk_data.emails)
-        missing_emails_count = len(bulk_data.emails) - len(users)
+        emails = list(dict.fromkeys(email.strip() for email in bulk_data.emails))
+        users = await self.user_repository.get_users_by_emails(emails)
+        missing_emails_count = len(emails) - len(users)
 
         if users:
             user_ids = set([user.id for user in users])
@@ -353,5 +354,5 @@ class AudienceService:
             already_present=len(existing_users) if users else 0,
             added=len(new_user_ids) if users else 0,
             not_found=missing_emails_count,
-            total=len(bulk_data.emails) if bulk_data.emails else 0,
+            total=len(emails) if bulk_data.emails else 0,
         )

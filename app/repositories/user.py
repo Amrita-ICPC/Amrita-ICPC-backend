@@ -1,6 +1,7 @@
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions.user import UserNotFoundError
@@ -109,7 +110,7 @@ class UserRepository:
         )
         return list(result.scalars().all())
 
-    def apply_filters(self, stmt, filters: UserListFilters):
+    def apply_filters(self, stmt: Select[Any], filters: UserListFilters) -> Select[Any]:
         if filters.role:
             stmt = stmt.where(User.role == filters.role)
 
