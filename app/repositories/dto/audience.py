@@ -52,3 +52,10 @@ class AudienceUserBulkData:
 
     audience_id: UUID
     user_ids: list[UUID]
+
+
+@dataclass(frozen=True, slots=True)
+class AudienceUserBulkDataEmail:
+    """DTO for bulk audience-user membership changes."""
+
+    emails: list[str]

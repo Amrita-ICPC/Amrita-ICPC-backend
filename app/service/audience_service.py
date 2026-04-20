@@ -15,9 +15,13 @@ from app.mappers.audience import (
     to_audience_response,
 )
 from app.repositories.audience import AudienceRepository
+from app.repositories.dto.audience import (
+    AudienceUserBulkDataEmail,
+)
 from app.repositories.dto.pagination import PaginationParams
 from app.repositories.user import UserRepository
 from app.schema.audience import (
+    AudienceAddUsersByEmailResponse,
     AudienceCreate,
     AudienceResponse,
     AudienceUpdate,
@@ -308,3 +312,46 @@ class AudienceService:
             student_count=counts.student_count,
         )
         return total, response
+
+    @cache_delete(
+        key_builder=lambda self, audience_id, bulk_data: [
+            "audiences:user:*",
+            f"audience:{audience_id}",
+            f"audience_users:user:*:{audience_id}:*",
+        ],
+    )
+    async def add_bulk_users_to_audience_by_email(
+        self, audience_id: UUID, bulk_data: AudienceUserBulkDataEmail
+    ) -> AudienceAddUsersByEmailResponse:
+        """Add users to an audience by their email addresses.
+
+        This method looks up user IDs for the provided emails, creates any missing users,
+        and then adds all corresponding user IDs to the audience. It returns the updated
+        audience user list with counts.
+
+        Args:
+            audience_id: Audience identifier.
+            bulk_data: Object containing lists of emails to add for each role.
+        Returns:
+            Updated audience user list with counts.
+        """
+
+        await self.repository.get_audience_or_raise(audience_id)
+        users = await self.user_repository.get_users_by_emails(bulk_data.emails)
+        missing_emails_count = len(bulk_data.emails) - len(users)
+
+        if users:
+            user_ids = set([user.id for user in users])
+            existing_users = await self.repository.get_audience_users_by_user_ids(
+                audience_id, list(user_ids)
+            )
+            new_user_ids = list(user_ids - set([user.id for user in existing_users]))
+            if new_user_ids:
+                await self.repository.add_users_to_audience(audience_id, new_user_ids)
+
+        return AudienceAddUsersByEmailResponse(
+            already_present=len(existing_users) if users else 0,
+            added=len(new_user_ids) if users else 0,
+            not_found=missing_emails_count,
+            total=len(bulk_data.emails) if bulk_data.emails else 0,
+        )
