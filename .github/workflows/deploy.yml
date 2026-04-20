@@ -1,0 +1,74 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches: [development]
+  pull_request:
+    branches: [development]
+
+jobs:
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dev dependencies
+        run: uv sync --frozen --dev --no-install-project
+
+      - name: Run ruff check
+        run: uv run ruff check .
+
+      - name: Run ruff format check
+        run: uv run ruff format --check .
+
+      - name: Run mypy
+        run: uv run mypy .
+
+  deploy:
+    name: Build & Deploy
+    runs-on: [self-hosted, icpc]
+    needs: lint
+    # Only deploy when code is pushed to development.
+    # We still run the lint job on pull_requests, but skip the deploy step.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/development'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Build Docker image
+        # Note: `docker build` does not natively support `--env-file`.
+        # Env variables required at runtime are handled by docker-compose and the runner.
+        run: |
+          docker build -t icpc-backend:latest .
+      
+      - name: Restart container
+        run: |
+          docker compose -f /home/amrita/Amrita-ICPC/backend/docker-compose.yml up -d --force-recreate --no-deps
+      
+      - name: Wait for API to be healthy
+        # A simple health check waiting for the API to be reachable
+        run: |
+          for i in $(seq 1 10); do
+            # Checking if the Swagger UI/docs page exists
+            if curl -sf http://localhost:8000/docs > /dev/null 2>&1; then
+              echo "Microservice is healthy"; break
+            fi
+            [ $i -eq 10 ] && { echo "Health check timed out"; exit 1; }
+            echo "Attempt $i/10 — retrying in 5s..."
+            sleep 5
+          done
+      
+      - name: Show final container state
+        run: docker compose -f /home/amrita/Amrita-ICPC/backend/docker-compose.yml ps
+      
+      - name: Cleanup old dangling images
+        run: docker image prune -f --filter "dangling=true"
