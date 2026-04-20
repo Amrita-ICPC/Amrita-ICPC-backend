@@ -254,6 +254,9 @@ async def list_audience_users(
     audience_id: UUID,
     page: int = Query(1, ge=1, description="Page number (starts from 1)"),
     page_size: int = Query(10, ge=1, le=100, description="Number of items per page"),
+    q: str | None = Query(
+        None, description="Optional search by name, email, or phone number"
+    ),
     role: UserRole | None = Query(None, description="Optional role filter"),
     actor_id: UUID = Depends(get_current_user_id),
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -266,6 +269,8 @@ async def list_audience_users(
         audience_id: Audience identifier.
         page: Page number (1-indexed).
         page_size: Page size.
+        q: Optional substring filter applied to user name, email, or phone number.
+        role: Optional role filter.
         current_user: Authenticated user payload from Keycloak.
         service: Injected audience service.
 
@@ -283,6 +288,7 @@ async def list_audience_users(
         limit=page_size,
         actor_id=actor_id,
         role=role,
+        query=q,
     )
     pagination = get_pagination(total=total, page=page, page_size=page_size)
     return create_api_response(
