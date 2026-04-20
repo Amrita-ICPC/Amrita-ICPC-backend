@@ -3,8 +3,10 @@ from uuid import UUID
 
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.exceptions.user import UserNotFoundError
+from app.models.audience import UserAudience
 from app.models.user import User
 from app.repositories.dto.pagination import PaginatedResult
 from app.repositories.dto.user import UserListFilters
@@ -55,7 +57,14 @@ class UserRepository:
         Raises:
             UserNotFoundError: If the user with the given ID does not exist.
         """
-        result = await self.db.execute(select(User).filter(User.id == user_id))
+        stmt = (
+            select(User)
+            .options(
+                selectinload(User.audience_links).joinedload(UserAudience.audience)
+            )
+            .filter(User.id == user_id)
+        )
+        result = await self.db.execute(stmt)
         user = result.scalars().first()
         if not user:
             raise UserNotFoundError(str(user_id))
@@ -73,9 +82,14 @@ class UserRepository:
             UserNotFoundError: If any user with the given IDs does not exist.
         """
         unique_user_ids = set(user_ids)
-        result = await self.db.execute(
-            select(User).filter(User.id.in_(unique_user_ids))
+        stmt = (
+            select(User)
+            .options(
+                selectinload(User.audience_links).joinedload(UserAudience.audience)
+            )
+            .filter(User.id.in_(unique_user_ids))
         )
+        result = await self.db.execute(stmt)
         users = list(result.scalars().all())
         if len(users) != len(user_ids):
             found_user_ids = {user.id for user in users}
@@ -92,7 +106,14 @@ class UserRepository:
         Returns:
             The User object if found, otherwise None.
         """
-        result = await self.db.execute(select(User).filter(User.id == user_id))
+        stmt = (
+            select(User)
+            .options(
+                selectinload(User.audience_links).joinedload(UserAudience.audience)
+            )
+            .filter(User.id == user_id)
+        )
+        result = await self.db.execute(stmt)
         return result.scalars().first()
 
     async def get_users_by_emails(self, emails: list[str]) -> list[User]:
@@ -105,9 +126,14 @@ class UserRepository:
             List of User objects matching the provided email addresses.
         """
         unique_emails = set(emails)
-        result = await self.db.execute(
-            select(User).filter(User.email.in_(unique_emails))
+        stmt = (
+            select(User)
+            .options(
+                selectinload(User.audience_links).joinedload(UserAudience.audience)
+            )
+            .filter(User.email.in_(unique_emails))
         )
+        result = await self.db.execute(stmt)
         return list(result.scalars().all())
 
     def apply_filters(self, stmt: Select[Any], filters: UserListFilters) -> Select[Any]:
@@ -131,6 +157,9 @@ class UserRepository:
 
         total = int((await self.db.execute(count_stmt)).scalar() or 0)
 
+        stmt = stmt.options(
+            selectinload(User.audience_links).joinedload(UserAudience.audience)
+        )
         result = await self.db.execute(
             stmt.order_by(User.name.asc(), User.id.asc())  # stable ordering
             .offset(filters.skip)

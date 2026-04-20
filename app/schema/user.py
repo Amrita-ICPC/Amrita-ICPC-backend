@@ -1,8 +1,8 @@
 from datetime import date, datetime
-from typing import List, Optional
+from typing import Any, List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 
 from app.utils.enums import UserRole
 
@@ -36,6 +36,14 @@ class UserSyncResponse(BaseModel):
     synced_by: dict
 
 
+class AudienceBasicInfo(BaseModel):
+    id: UUID
+    name: str
+
+    class Config:
+        from_attributes = True
+
+
 class UserResponse(BaseModel):
     id: UUID
     user_id: str
@@ -47,6 +55,14 @@ class UserResponse(BaseModel):
     dob: Optional[date] = None
     created_at: datetime
     last_updated: datetime
+    audience_links: List[AudienceBasicInfo] = []
+
+    @field_validator("audience_links", mode="before")
+    @classmethod
+    def flatten_audience_links(cls, v: Any) -> Any:
+        if isinstance(v, list):
+            return [getattr(item, "audience", item) for item in v]
+        return v
 
     class Config:
         from_attributes = True
