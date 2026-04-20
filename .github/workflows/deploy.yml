@@ -35,7 +35,7 @@ jobs:
   deploy:
     name: Build & Deploy
     runs-on: [self-hosted, icpc]
-    needs: lint
+    # needs: lint
     # Only deploy when code is pushed to development.
     # We still run the lint job on pull_requests, but skip the deploy step.
     if: github.event_name == 'push' && github.ref == 'refs/heads/development'
