@@ -370,3 +370,26 @@ class AudienceRepository:
         if role is not None:
             stmt = stmt.where(User.role == role)
         return int((await self.db.execute(stmt)).scalar() or 0)
+
+    async def get_audience_users_by_user_ids(
+        self, audience_id: UUID, user_ids: list[UUID]
+    ) -> list[User]:
+        """Fetch users in an audience matching a list of user IDs.
+
+        Args:
+            audience_id: Audience identifier.
+            user_ids: List of user IDs to match.
+        Returns:
+            List of User entities matching the criteria.
+        """
+        unique_user_ids = list(dict.fromkeys(user_ids))
+        result = await self.db.execute(
+            select(User)
+            .join(UserAudience, UserAudience.user_id == User.id)
+            .where(
+                UserAudience.audience_id == audience_id,
+                UserAudience.user_id.in_(unique_user_ids),
+            )
+        )
+        users = list(result.scalars().all())
+        return users

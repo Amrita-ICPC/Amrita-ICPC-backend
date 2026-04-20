@@ -94,6 +94,21 @@ class UserRepository:
         result = await self.db.execute(select(User).filter(User.id == user_id))
         return result.scalars().first()
 
+    async def get_users_by_emails(self, emails: list[str]) -> list[User]:
+        """
+        Retrieve users by their email addresses.
+
+        Args:
+            emails: List of email addresses to search for.
+        Returns:
+            List of User objects matching the provided email addresses.
+        """
+        unique_emails = set(emails)
+        result = await self.db.execute(
+            select(User).filter(User.email.in_(unique_emails))
+        )
+        return list(result.scalars().all())
+
     def apply_filters(self, stmt, filters: UserListFilters):
         if filters.role:
             stmt = stmt.where(User.role == filters.role)

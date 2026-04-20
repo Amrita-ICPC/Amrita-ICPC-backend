@@ -72,3 +72,18 @@ class AudienceUsersResponse(BaseModel):
     manager_count: int = Field(0, ge=0, description="Number of managers")
     instructor_count: int = Field(0, ge=0, description="Number of instructors")
     student_count: int = Field(0, ge=0, description="Number of students")
+
+
+class AudienceAddUsersByEmailResponse(BaseModel):
+    """Response payload for adding users to an audience by email."""
+
+    already_present: int = Field(
+        0, ge=0, description="Number of emails already present in the audience"
+    )
+    added: int = Field(
+        0, ge=0, description="Number of users successfully added to the audience"
+    )
+    not_found: int = Field(
+        0, ge=0, description="Number of emails that did not correspond to any user"
+    )
+    total: int = Field(0, ge=0, description="Total number of emails processed")
