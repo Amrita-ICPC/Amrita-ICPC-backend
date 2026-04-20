@@ -14,6 +14,7 @@ from app.repositories.audience import AudienceRepository
 from app.repositories.dto.audience import AudienceUserBulkDataEmail
 from app.repositories.user import UserRepository
 from app.schema.audience import (
+    AudienceAddUsersByEmailResponse,
     AudienceCreate,
     AudienceResponse,
     AudienceUpdate,
@@ -381,7 +382,7 @@ async def remove_users_from_audience(
 
 @router.post(
     "/{audience_id}/users/email",
-    response_model=APIResponse,
+    response_model=APIResponse[AudienceAddUsersByEmailResponse],
     summary="Add users to an audience in bulk by email",
     dependencies=[Depends(require_admin)],
 )
@@ -391,7 +392,7 @@ async def add_users_to_audience_by_email(
     payload: AudienceUserBulkDataEmail,
     current_user: Dict[str, Any] = Depends(get_current_user),
     service: AudienceService = Depends(get_audience_service),
-):
+) -> APIResponse[AudienceAddUsersByEmailResponse]:
     """Add users to an audience by their email addresses.
 
     Args:
@@ -410,10 +411,12 @@ async def add_users_to_audience_by_email(
     """
     result = await service.add_bulk_users_to_audience_by_email(audience_id, payload)
     logger.info(
-        "Added %s users to audience %s by email by user %s",
-        len(payload.emails),
+        "Added %s users to audience %s by email by user %s (%s already present, %s not found)",
+        result.added,
         audience_id,
         current_user.get("preferred_username"),
+        result.already_present,
+        result.not_found,
     )
     return create_api_response(
         request, message="Users added to audience successfully", data=result
