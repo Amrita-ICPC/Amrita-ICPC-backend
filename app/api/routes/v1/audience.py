@@ -11,6 +11,7 @@ from app.core.clients.database import get_db
 from app.core.logger import logger
 from app.core.response import create_api_response
 from app.repositories.audience import AudienceRepository
+from app.repositories.dto.audience import AudienceUserBulkDataEmail
 from app.repositories.user import UserRepository
 from app.schema.audience import (
     AudienceCreate,
@@ -375,4 +376,45 @@ async def remove_users_from_audience(
         request,
         data=removed_count,
         message="Users removed from audience successfully",
+    )
+
+
+@router.post(
+    "/{audience_id}/users/email",
+    response_model=APIResponse,
+    summary="Add users to an audience in bulk by email",
+    dependencies=[Depends(require_admin)],
+)
+async def add_users_to_audience_by_email(
+    request: Request,
+    audience_id: UUID,
+    payload: AudienceUserBulkDataEmail,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    service: AudienceService = Depends(get_audience_service),
+):
+    """Add users to an audience by their email addresses.
+
+    Args:
+        request: FastAPI request context.
+        audience_id: Audience identifier.
+        payload: Bulk user emails to add.
+        current_user: Authenticated user payload from Keycloak.
+        service: Injected audience service.
+
+    Returns:
+        Standard APIResponse with a success message.
+
+    Raises:
+        AudienceNotFoundError: If the audience does not exist.
+        PermissionDeniedError: If the caller is not an admin.
+    """
+    result = await service.add_bulk_users_to_audience_by_email(audience_id, payload)
+    logger.info(
+        "Added %s users to audience %s by email by user %s",
+        len(payload.emails),
+        audience_id,
+        current_user.get("preferred_username"),
+    )
+    return create_api_response(
+        request, message="Users added to audience successfully", data=result
     )
