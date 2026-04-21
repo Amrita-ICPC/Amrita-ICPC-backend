@@ -55,6 +55,7 @@ class CreateContestData:
     rules: str | None
     scoring_type: str
     team_approval_mode: TeamApprovalMode
+    audience_ids: list[UUID]
     created_by: UUID
 
 

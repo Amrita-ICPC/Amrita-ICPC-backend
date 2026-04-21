@@ -20,7 +20,9 @@ import pytest
 from app.core.guards.contest import ContestOperationGuard
 from app.models.contest import Contest, ContestInstructor
 from app.models.user import User
+from app.repositories.audience import AudienceRepository
 from app.repositories.contest import ContestRepository
+from app.repositories.question import QuestionRepository
 from app.repositories.user import UserRepository
 from app.schema.contest import ContestCreate, ContestUpdate
 from app.service.contest_service import ContestService
@@ -86,8 +88,33 @@ def mock_validator():
 
 
 @pytest.fixture
+def mock_audience_repository():
+    """Mock AudienceRepository for audience-related data access.
+
+    Returns:
+        AsyncMock: Mock AudienceRepository instance
+    """
+    return AsyncMock(spec=AudienceRepository)
+
+
+@pytest.fixture
+def mock_question_repository():
+    """Mock QuestionRepository for contest question data access.
+
+    Returns:
+        AsyncMock: Mock QuestionRepository instance
+    """
+    return AsyncMock(spec=QuestionRepository)
+
+
+@pytest.fixture
 def contest_service(
-    mock_contest_repository, mock_user_repository, mock_guard, mock_validator
+    mock_contest_repository,
+    mock_user_repository,
+    mock_guard,
+    mock_validator,
+    mock_audience_repository,
+    mock_question_repository,
 ):
     """ContestService instance with all dependencies mocked.
 
@@ -99,6 +126,8 @@ def contest_service(
         mock_user_repository: Mock UserRepository
         mock_guard: Mock ContestOperationGuard
         mock_validator: Mock ContestValidator
+        mock_audience_repository: Mock AudienceRepository
+        mock_question_repository: Mock QuestionRepository
 
     Returns:
         ContestService: Service instance with mocked dependencies
@@ -108,6 +137,8 @@ def contest_service(
         user_repository=mock_user_repository,
         guard=mock_guard,
         validator=mock_validator,
+        audience_repository=mock_audience_repository,
+        question_repository=mock_question_repository,
     )
 
 

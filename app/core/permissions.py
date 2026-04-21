@@ -3,7 +3,9 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.exceptions.audience import UserNotInAudienceError
 from app.exceptions.auth import PermissionDeniedError
+from app.models.audience import UserAudience
 from app.models.contest import Contest, ContestInstructor
 from app.models.user import User
 from app.utils.enums import UserRole
@@ -142,3 +144,29 @@ class TeamPermission:
         if user_id == team_leader_id:
             return
         await ContestPermission.can_manage_contest(db, user_id=user_id, contest=contest)
+
+
+class AudiencePermission:
+    @staticmethod
+    async def is_user_in_audience(
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        audience_ids: list[UUID],
+    ) -> None:
+        """
+        Raises UserNotInAudienceError if user is not in the audience.
+        """
+
+        unique_ids = set(audience_ids)
+
+        result = await db.execute(
+            select(UserAudience.audience_id).where(
+                UserAudience.user_id == user_id,
+                UserAudience.audience_id.in_(unique_ids),
+            )
+        )
+        found_ids = set(result.scalars().all())
+
+        if not unique_ids.issubset(found_ids):
+            raise UserNotInAudienceError(str(user_id))

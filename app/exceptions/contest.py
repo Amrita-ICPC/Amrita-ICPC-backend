@@ -121,3 +121,13 @@ class DuplicateQuestionOrderError(AppBaseException):
             message=f"Question order {order} already exists in contest {contest_id}",
             status_code=status.HTTP_409_CONFLICT,
         )
+
+
+class AudienceNotAssignedToContestError(AppBaseException):
+    """Raised when audience is not assigned to contest."""
+
+    def __init__(self, audience_id: str, contest_id: str):
+        super().__init__(
+            message=f"Audience {audience_id} is not assigned to contest {contest_id}",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
