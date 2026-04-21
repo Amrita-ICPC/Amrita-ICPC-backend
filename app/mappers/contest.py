@@ -3,6 +3,7 @@ from uuid import UUID
 from app.models.contest import Contest
 from app.repositories.dto.contest import UNSET, CreateContestData, UpdateContestData
 from app.schema.contest import (
+    ContestAudienceResponse,
     ContestCreate,
     ContestResponse,
     ContestSummaryResponse,
@@ -30,6 +31,7 @@ def build_create_contest_dto(
         rules=contest.rules,
         scoring_type=contest.scoring_type,
         team_approval_mode=contest.team_approval_mode,
+        audience_ids=contest.audience_ids,
         created_by=created_by,
     )
 
@@ -75,6 +77,7 @@ def to_contest_response(contest: Contest) -> ContestResponse:
     """Map contest ORM object to detail response schema."""
     response = ContestResponse.model_validate(contest)
     response.image = image_object_key_to_url(contest.image)
+
     return response
 
 
@@ -82,6 +85,14 @@ def to_contest_summary_response(contest: Contest) -> ContestSummaryResponse:
     """Map contest ORM object to summary response schema."""
     response = ContestSummaryResponse.model_validate(contest)
     response.image = image_object_key_to_url(contest.image)
+
+    # Map audience links to response objects if loaded
+    if hasattr(contest, "audience_links") and contest.audience_links:
+        response.audiences = [
+            ContestAudienceResponse.model_validate(link.audience)
+            for link in contest.audience_links
+        ]
+
     return response
 
 

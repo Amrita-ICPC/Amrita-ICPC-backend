@@ -5,10 +5,10 @@ from uuid import UUID
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload, selectinload
 
 from app.exceptions.audience import AudienceNotFoundError
-from app.models.audience import Audience, UserAudience
+from app.models.audience import Audience, ContestAudience, UserAudience
 from app.models.user import User
 from app.repositories.dto.audience import AudienceRoleCounts, AudienceWithCounts
 from app.repositories.dto.pagination import PaginatedResult, PaginationParams
@@ -425,3 +425,50 @@ class AudienceRepository:
         )
         users = list(result.scalars().all())
         return users
+
+    async def is_user_in_audience(self, user_id: UUID, audience_id: UUID) -> bool:
+        """Check if a specific user is a member of an audience.
+
+        Args:
+            user_id: User identifier.
+            audience_id: Audience identifier.
+
+        Returns:
+            True if the user is in the audience; otherwise, False.
+        """
+        result = await self.db.execute(
+            select(func.count())
+            .select_from(UserAudience)
+            .where(
+                UserAudience.user_id == user_id, UserAudience.audience_id == audience_id
+            )
+        )
+        return (result.scalar() or 0) > 0
+
+    async def get_audiences_by_contest_ids(
+        self, contest_ids: list[UUID]
+    ) -> dict[UUID, list[Audience]]:
+        """Fetch audiences for multiple contests in bulk.
+
+        Args:
+            contest_ids: List of contest identifiers.
+
+        Returns:
+            Dictionary mapping contest_id to list of Audience entities.
+        """
+        if not contest_ids:
+            return {}
+
+        stmt = (
+            select(ContestAudience)
+            .options(joinedload(ContestAudience.audience))
+            .where(ContestAudience.contest_id.in_(contest_ids))
+        )
+        result = await self.db.execute(stmt)
+        links = result.scalars().all()
+
+        mapping: dict[UUID, list[Audience]] = {cid: [] for cid in contest_ids}
+        for link in links:
+            mapping[link.contest_id].append(link.audience)
+
+        return mapping

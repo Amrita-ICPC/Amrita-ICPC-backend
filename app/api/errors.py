@@ -6,9 +6,13 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError, NoResultFound, SQLAlchemyError
 
 from app.core.logger import logger
+from app.exceptions.audience import (
+    UserNotInAudienceError,
+)
 from app.exceptions.bank_validation import BankValidationError
 from app.exceptions.base import AppBaseException
 from app.exceptions.contest import (
+    AudienceNotAssignedToContestError,
     ContestAlreadyExistsError,
     ContestNotFoundError,
     ContestOperationError,
@@ -156,6 +160,32 @@ def setup_exception_handlers(app: FastAPI) -> None:
             status_code=exc.status_code,
             message=exc.message,
             error_code="CONTEST_NOT_FOUND",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(AudienceNotAssignedToContestError)
+    async def audience_not_assigned_to_contest_handler(
+        request: Request, exc: AudienceNotAssignedToContestError
+    ):
+        logger.warning(f"Audience not assigned to contest: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="AUDIENCE_NOT_ASSIGNED_TO_CONTEST",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(UserNotInAudienceError)
+    async def user_not_in_audience_handler(
+        request: Request, exc: UserNotInAudienceError
+    ):
+        logger.warning(f"User not in audience: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="USER_NOT_IN_AUDIENCE",
             details=[exc.detail] if exc.detail else None,
         )
 

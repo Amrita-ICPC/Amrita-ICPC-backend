@@ -14,12 +14,15 @@ from app.core.clients.database import get_db
 from app.core.guards.contest import ContestOperationGuard
 from app.core.logger import logger
 from app.core.response import create_api_response
+from app.repositories.audience import AudienceRepository
 from app.repositories.contest import ContestRepository
 from app.repositories.question import QuestionRepository
 from app.repositories.user import UserRepository
 from app.schema.base import APIResponse
 from app.schema.contest import (
     AddContestQuestionsRequest,
+    ContestAudienceManageRequest,
+    ContestAudienceResponse,
     ContestCreate,
     ContestQuestionResponse,
     ContestResponse,
@@ -64,6 +67,7 @@ def get_contest_service(db: AsyncSession = Depends(get_db)) -> ContestService:
     contest_repository = ContestRepository(db)
     user_repository = UserRepository(db)
     question_repository = QuestionRepository(db)
+    audience_repository = AudienceRepository(db)
     guard = ContestOperationGuard(db)
     validator = ContestValidator()
     return ContestService(
@@ -71,6 +75,7 @@ def get_contest_service(db: AsyncSession = Depends(get_db)) -> ContestService:
         user_repository,
         guard,
         validator,
+        audience_repository,
         question_repository,
     )
 
@@ -836,6 +841,122 @@ async def remove_question_from_contest(
         request,
         data=None,
         message="Questions removed from contest successfully",
+    )
+
+
+@router.post(
+    "/{contest_id}/audiences",
+    response_model=APIResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Assign audiences to contest",
+    dependencies=[can_update("contests")],
+)
+async def assign_audiences_to_contest(
+    request: Request,
+    contest_id: UUID,
+    audience_request: ContestAudienceManageRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    service: ContestService = Depends(get_contest_service),
+):
+    """
+    Assign audiences to a contest.
+
+    Args:
+        request (Request): Framework context.
+        contest_id (UUID): The unique identifier of the contest.
+        audience_request (ContestAudienceManageRequest): Request containing audience IDs.
+        user_id (UUID): Authenticated user ID.
+        service (ContestService): Injected domain service.
+
+    Returns:
+        APIResponse: Success confirmation.
+    """
+    await service.assign_audiences_to_contest(
+        contest_id, audience_request.audience_ids, user_id
+    )
+    logger.info(
+        f"Assigned {len(audience_request.audience_ids)} audiences to contest {contest_id} (actor=REDACTED)"
+    )
+
+    return create_api_response(
+        request,
+        data=None,
+        message="Audiences assigned successfully",
+    )
+
+
+@router.delete(
+    "/{contest_id}/audiences",
+    response_model=APIResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Remove audiences from contest",
+    dependencies=[can_update("contests")],
+)
+async def remove_audiences_from_contest(
+    request: Request,
+    contest_id: UUID,
+    audience_request: ContestAudienceManageRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    service: ContestService = Depends(get_contest_service),
+):
+    """
+    Remove audiences from a contest.
+
+    Args:
+        request (Request): Framework context.
+        contest_id (UUID): The unique identifier of the contest.
+        audience_request (ContestAudienceManageRequest): Request containing audience IDs to remove.
+        user_id (UUID): Authenticated user ID.
+        service (ContestService): Injected domain service.
+
+    Returns:
+        APIResponse: Success confirmation.
+    """
+    await service.remove_audiences_from_contest(
+        contest_id, audience_request.audience_ids, user_id
+    )
+    logger.info(
+        f"Removed {len(audience_request.audience_ids)} audiences from contest {contest_id} (actor=REDACTED)"
+    )
+
+    return create_api_response(
+        request,
+        data=None,
+        message="Audiences removed successfully",
+    )
+
+
+@router.get(
+    "/{contest_id}/audiences",
+    response_model=APIResponse[list[ContestAudienceResponse]],
+    summary="Get contest audiences",
+    dependencies=[can_read("contests")],
+)
+async def get_contest_audiences(
+    request: Request,
+    contest_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: ContestService = Depends(get_contest_service),
+):
+    """
+    Get audiences for a contest.
+
+    Args:
+        request (Request): Framework context.
+        contest_id (UUID): The unique identifier of the contest.
+        user_id (UUID): Authenticated user ID.
+        service (ContestService): Injected domain service.
+
+    Returns:
+        APIResponse: List of audiences for the contest.
+    """
+    audiences = await service.get_contest_audiences(contest_id, user_id)
+    logger.info(f"Retrieved {len(audiences)} audiences for contest {contest_id}")
+
+    return create_api_response(
+        request,
+        data=audiences,
+        message="Audiences fetched successfully",
     )
 
 

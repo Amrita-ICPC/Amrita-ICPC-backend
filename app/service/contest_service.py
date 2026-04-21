@@ -5,7 +5,9 @@ from uuid import UUID
 from app.core.cache.decorators import cache_delete, cache_get, cache_set
 from app.core.guards.contest import ContestOperationGuard
 from app.core.logger import logger
+from app.core.permissions import AudiencePermission
 from app.exceptions.contest import (
+    AudienceNotAssignedToContestError,
     ContestNotFoundError,
     DuplicateQuestionOrderError,
     InvalidContestError,
@@ -33,6 +35,7 @@ from app.mappers.question import (
     build_testcase_entities,
 )
 from app.models.question import Question, QuestionTemplate
+from app.repositories.audience import AudienceRepository
 from app.repositories.contest import ContestRepository
 from app.repositories.dto import (
     ContestFilters,
@@ -44,6 +47,7 @@ from app.repositories.question import QuestionRepository
 from app.repositories.user import UserRepository
 from app.schema.contest import (
     AddContestQuestionsRequest,
+    ContestAudienceResponse,
     ContestCreate,
     ContestQuestionResponse,
     ContestResponse,
@@ -113,12 +117,14 @@ class ContestService:
         user_repository: UserRepository,
         guard: ContestOperationGuard,
         validator: ContestValidator,
+        audience_repository: AudienceRepository,
         question_repository: QuestionRepository | None = None,
     ):
         self.repository = repository
         self.user_repository = user_repository
         self.guard = guard
         self.validator = validator
+        self.audience_repository = audience_repository
         self.question_repository = question_repository
 
     @cache_delete(
@@ -154,11 +160,29 @@ class ContestService:
             contest.min_team_size, contest.max_team_size
         )
 
+        # Validate audience membership for non-admins
+        user = await self.user_repository.get_user_or_raise(created_by)
+        is_admin = user.role == UserRole.admin
+
+        if not is_admin and contest.audience_ids:
+            await AudiencePermission.is_user_in_audience(
+                self.repository.db,
+                user_id=created_by,
+                audience_ids=contest.audience_ids,
+            )
+
         contest_data = build_create_contest_dto(contest, created_by)
         contest_entity = build_contest_entity(contest_data)
 
         # Create contest via repository
         db_contest = await self.repository.create_contest(contest_entity)
+
+        # Link audiences if provided
+        if contest.audience_ids:
+            await self.repository.link_audiences_to_contest(
+                db_contest.id, contest.audience_ids
+            )
+
         return to_contest_response(db_contest)
 
     @cache_get(
@@ -294,7 +318,7 @@ class ContestService:
         )
         pagination = PaginationParams(skip=skip, limit=limit)
 
-        # Get contests from repository
+        # Get contests from repository (includes eager loaded audiences)
         result = await self.repository.get_contests_with_filters(
             user_id, user_is_admin, filters, pagination
         )
@@ -302,6 +326,61 @@ class ContestService:
         return result.total, [
             to_contest_summary_response(contest) for contest in result.items
         ]
+
+    async def assign_audiences_to_contest(
+        self, contest_id: UUID, audience_ids: list[UUID], user_id: UUID
+    ) -> None:
+        """
+        Assign multiple audiences to a contest.
+
+        Args:
+            contest_id: ID of the contest
+            audience_ids: List of audience IDs to assign
+            user_id: ID of the user performing the operation
+        """
+        contest = await self.repository.get_contest_or_raise(contest_id)
+        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
+
+        # Validate audience membership for non-admins
+        user = await self.user_repository.get_user_or_raise(user_id)
+        if user.role != UserRole.admin:
+            await AudiencePermission.is_user_in_audience(
+                self.repository.db, user_id=user_id, audience_ids=audience_ids
+            )
+
+        await self.repository.link_audiences_to_contest(contest_id, audience_ids)
+
+    async def remove_audiences_from_contest(
+        self, contest_id: UUID, audience_ids: list[UUID], user_id: UUID
+    ) -> None:
+        """
+        Remove multiple audiences from a contest.
+
+        Args:
+            contest_id: ID of the contest
+            audience_ids: List of audience IDs to remove
+            user_id: ID of the user performing the operation
+
+        Raises:
+            AudienceNotAssignedToContestError: If any audience ID is not currently assigned
+        """
+        contest = await self.repository.get_contest_or_raise(contest_id)
+        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
+
+        # Validate audience membership for non-admins
+        user = await self.user_repository.get_user_or_raise(user_id)
+        if user.role != UserRole.admin:
+            await AudiencePermission.is_user_in_audience(
+                self.repository.db, user_id=user_id, audience_ids=audience_ids
+            )
+
+        # Strict validation: Ensure all targeted IDs are currently assigned
+        current_ids = await self.repository.get_contest_audience_ids(contest_id)
+        for aid in audience_ids:
+            if aid not in current_ids:
+                raise AudienceNotAssignedToContestError(str(aid), str(contest_id))
+
+        await self.repository.unlink_audiences_from_contest(contest_id, audience_ids)
 
     @cache_delete(
         key_builder=lambda self, contest_id, contest_data, user_id: "contests:*",
@@ -1381,3 +1460,22 @@ class ContestService:
         assert self.question_repository is not None
         updated_question = await self.question_repository.update_question(question)
         return QuestionResponse.from_question(updated_question)
+
+    async def get_contest_audiences(
+        self, contest_id: UUID, user_id: UUID
+    ) -> list[ContestAudienceResponse]:
+        """
+        Retrieve all audiences associated with a contest.
+
+        Args:
+            contest_id: ID of the contest
+            user_id: ID of the user requesting the audiences
+
+        Returns:
+            List of audiences with details
+        """
+        contest = await self.repository.get_contest_or_raise(contest_id)
+        await self.guard.check_read_contest(user_id=user_id, contest=contest)
+
+        audiences = await self.repository.get_contest_audiences_with_details(contest_id)
+        return [ContestAudienceResponse.model_validate(a) for a in audiences]
