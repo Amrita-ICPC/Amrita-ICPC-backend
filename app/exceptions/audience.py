@@ -21,3 +21,13 @@ class AudienceAlreadyExistsError(AppBaseException):
             message=f"Audience with name '{name}' already exists",
             status_code=status.HTTP_409_CONFLICT,
         )
+
+
+class UserNotInAudienceError(AppBaseException):
+    """Raised when a user is not part of an audience."""
+
+    def __init__(self, user_id: str):
+        super().__init__(
+            message=f"User {user_id} is not allowed to the requested audience",
+            status_code=status.HTTP_403_FORBIDDEN,
+        )

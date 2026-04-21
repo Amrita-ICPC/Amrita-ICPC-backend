@@ -15,6 +15,8 @@ from app.exceptions.contest import (
     QuestionAlreadyInContestError,
 )
 from app.exceptions.user import UserNotFoundError
+from app.models import Audience
+from app.models.audience import ContestAudience
 from app.models.contest import (
     Contest,
     ContestInstructor,
@@ -208,6 +210,11 @@ class ContestRepository:
         if filters.is_public is not None:
             base_query = base_query.filter(Contest.is_public == filters.is_public)
 
+        # Eager load audiences
+        base_query = base_query.options(
+            selectinload(Contest.audience_links).joinedload(ContestAudience.audience)
+        )
+
         # Get distinct results (important when using outerjoin)
         base_query = base_query.distinct()
 
@@ -292,7 +299,7 @@ class ContestRepository:
         Create a new contest in the database.
 
         Args:
-            contest_data: CreateContestData object containing all contest creation data
+            contest: Contest ORM object
 
         Returns:
             The created Contest object with ID and timestamps populated
@@ -301,6 +308,103 @@ class ContestRepository:
         await self.db.flush()
         await self.db.refresh(contest)
         return contest
+
+    async def link_audiences_to_contest(
+        self, contest_id: UUID, audience_ids: list[UUID]
+    ) -> None:
+        """
+        Link audiences to a contest.
+
+        Only adds links for audience IDs that are not already associated
+        with the contest to avoid duplicate key errors.
+
+        Args:
+            contest_id: ID of the contest
+            audience_ids: List of audience IDs to link
+        """
+        if not audience_ids:
+            return
+
+        # Identify existing links to ensure idempotency
+        existing_links = await self.get_contest_audience_ids(contest_id)
+        new_ids = [aid for aid in audience_ids if aid not in existing_links]
+
+        if not new_ids:
+            return
+
+        links = [
+            ContestAudience(contest_id=contest_id, audience_id=audience_id)
+            for audience_id in new_ids
+        ]
+        self.db.add_all(links)
+        await self.db.flush()
+
+    async def unlink_audiences_from_contest(
+        self, contest_id: UUID, audience_ids: list[UUID]
+    ) -> None:
+        """
+        Remove audience links from a contest.
+
+        Args:
+            contest_id: ID of the contest
+            audience_ids: List of audience IDs to remove
+        """
+        if not audience_ids:
+            return
+
+        await self.db.execute(
+            delete(ContestAudience).where(
+                ContestAudience.contest_id == contest_id,
+                ContestAudience.audience_id.in_(audience_ids),
+            )
+        )
+        await self.db.flush()
+
+    async def get_contest_audience_ids(self, contest_id: UUID) -> set[UUID]:
+        """
+        Fetch all audience IDs currently linked to a contest.
+
+        Args:
+            contest_id: ID of the contest
+
+        Returns:
+            Set of associated audience IDs
+        """
+        result = await self.db.execute(
+            select(ContestAudience.audience_id)
+            .join(Contest, Contest.id == ContestAudience.contest_id)
+            .where(
+                ContestAudience.contest_id == contest_id,
+                Contest.is_deleted.is_(False),
+            )
+        )
+        return set(result.scalars().all())
+
+    async def get_contest_audiences_with_details(
+        self, contest_id: UUID
+    ) -> list[Audience]:
+        """
+        Fetch all audiences currently linked to a contest with full details.
+        Only returns details if the contest is not deleted.
+
+        Args:
+            contest_id: ID of the contest
+
+        Returns:
+            List of associated Audience objects
+        """
+        from app.models.audience import Audience, ContestAudience
+
+        result = await self.db.execute(
+            select(Audience)
+            .join(ContestAudience)
+            .join(Contest, Contest.id == ContestAudience.contest_id)
+            .where(
+                ContestAudience.contest_id == contest_id,
+                Contest.is_deleted.is_(False),
+            )
+        )
+        return list(result.scalars().all())
 
     async def update_contest(self, contest: Contest, user_id: UUID) -> Contest:
         """

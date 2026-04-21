@@ -32,6 +32,7 @@ def contest_service_with_questions(
     mock_user_repository: AsyncMock,
     mock_guard: AsyncMock,
     mock_validator: AsyncMock,
+    mock_audience_repository: AsyncMock,
     mock_question_repository: AsyncMock,
 ) -> ContestService:
     """ContestService instance with question repository wired."""
@@ -40,6 +41,7 @@ def contest_service_with_questions(
         user_repository=mock_user_repository,
         guard=mock_guard,
         validator=mock_validator,
+        audience_repository=mock_audience_repository,
         question_repository=mock_question_repository,
     )
 

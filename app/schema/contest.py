@@ -4,7 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.utils.enums import ContestStatus, ScoringType, TeamApprovalMode
+from app.utils.enums import AudienceType, ContestStatus, ScoringType, TeamApprovalMode
 
 
 class ContestBase(BaseModel):
@@ -61,6 +61,10 @@ class ContestBase(BaseModel):
 class ContestCreate(ContestBase):
     """Schema for creating a contest."""
 
+    audience_ids: List[UUID] = Field(
+        default_factory=list, description="List of audience IDs to link to this contest"
+    )
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -112,6 +116,16 @@ class ContestUpdate(BaseModel):
         return self
 
 
+class ContestAudienceResponse(BaseModel):
+    """Schema for audience information within a contest."""
+
+    id: UUID = Field(..., description="Audience ID")
+    name: str = Field(..., description="Audience name")
+    audience_type: AudienceType = Field(..., description="Audience type")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class ContestSummaryResponse(BaseModel):
     """Schema for contest summary response (List view)."""
 
@@ -127,6 +141,9 @@ class ContestSummaryResponse(BaseModel):
     team_approval_mode: TeamApprovalMode = Field(
         ...,
         description="How teams are approved in this contest",
+    )
+    audiences: List[ContestAudienceResponse] = Field(
+        default_factory=list, description="List of audiences linked to this contest"
     )
 
     model_config = ConfigDict(from_attributes=True)
@@ -166,6 +183,16 @@ class InstructorManageRequest(BaseModel):
 
     instructor_ids: List[UUID] = Field(
         ..., description="List of instructor IDs to assign or remove"
+    )
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ContestAudienceManageRequest(BaseModel):
+    """Schema for managing audiences in a contest."""
+
+    audience_ids: List[UUID] = Field(
+        ..., description="List of audience IDs to assign or remove"
     )
 
     model_config = ConfigDict(from_attributes=True)
