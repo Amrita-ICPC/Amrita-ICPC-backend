@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import List, Optional
+from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -61,7 +61,7 @@ class ContestBase(BaseModel):
 class ContestCreate(ContestBase):
     """Schema for creating a contest."""
 
-    audience_ids: List[UUID] = Field(
+    audience_ids: list[UUID] = Field(
         default_factory=list, description="List of audience IDs to link to this contest"
     )
 
@@ -142,7 +142,7 @@ class ContestSummaryResponse(BaseModel):
         ...,
         description="How teams are approved in this contest",
     )
-    audiences: List[ContestAudienceResponse] = Field(
+    audiences: list[ContestAudienceResponse] = Field(
         default_factory=list, description="List of audiences linked to this contest"
     )
 
@@ -181,7 +181,7 @@ class MessageResponse(BaseModel):
 class InstructorManageRequest(BaseModel):
     """Schema for managing instructors in a contest."""
 
-    instructor_ids: List[UUID] = Field(
+    instructor_ids: list[UUID] = Field(
         ..., description="List of instructor IDs to assign or remove"
     )
 
@@ -191,7 +191,7 @@ class InstructorManageRequest(BaseModel):
 class ContestAudienceManageRequest(BaseModel):
     """Schema for managing audiences in a contest."""
 
-    audience_ids: List[UUID] = Field(
+    audience_ids: list[UUID] = Field(
         ..., description="List of audience IDs to assign or remove"
     )
 
@@ -238,7 +238,7 @@ class AddContestQuestionRequest(BaseModel):
 class AddContestQuestionsRequest(BaseModel):
     """Schema for adding multiple questions to a contest in batch."""
 
-    questions: List[AddContestQuestionRequest] = Field(
+    questions: list[AddContestQuestionRequest] = Field(
         ...,
         min_length=1,
         description="List of questions to add to the contest",
@@ -250,7 +250,7 @@ class AddContestQuestionsRequest(BaseModel):
 class RemoveContestQuestionRequest(BaseModel):
     """Schema for removing questions from a contest."""
 
-    question_ids: List[UUID] = Field(
+    question_ids: list[UUID] = Field(
         ...,
         min_length=1,
         description="List of question IDs to remove from contest",
