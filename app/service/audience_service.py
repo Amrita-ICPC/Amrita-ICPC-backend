@@ -27,6 +27,7 @@ from app.schema.audience import (
     AudienceUpdate,
     AudienceUsersResponse,
 )
+from app.schema.audience_brief import AudienceBriefResponse
 from app.schema.user import UserResponse
 from app.utils.enums import UserRole
 
@@ -122,6 +123,54 @@ class AudienceService:
             for item in result.items
         ]
         return result.total, audiences
+
+    @cache_get(
+        key_builder=lambda self, *, actor_id, is_admin, skip, limit, query=None: (
+            f"audiences:brief:{'admin' if is_admin else 'user'}:{actor_id}:skip:{skip}:limit:{limit}:q:{query or ''}"
+        ),
+        ttl=60,
+    )
+    async def list_audience_briefs_for_actor(
+        self,
+        *,
+        actor_id: UUID,
+        is_admin: bool,
+        skip: int,
+        limit: int,
+        query: str | None = None,
+    ) -> tuple[int, list[AudienceBriefResponse]]:
+        """List brief audience objects for the caller.
+
+        For admins, this method lists all audiences. For non-admin users, it lists
+        only the audiences the user belongs to.
+
+        Args:
+            actor_id: Current caller's database user ID.
+            is_admin: Whether the caller should be treated as an admin.
+            skip: Offset for pagination.
+            limit: Page size.
+            query: Optional case-insensitive name search.
+
+        Returns:
+            Tuple of total count and a list of AudienceBriefResponse objects.
+        """
+        if is_admin:
+            result = await self.repository.list_audience_briefs(
+                PaginationParams(skip=skip, limit=limit),
+                query=query,
+            )
+        else:
+            result = await self.repository.list_audience_briefs_for_user(
+                actor_id,
+                PaginationParams(skip=skip, limit=limit),
+                query=query,
+            )
+
+        briefs = [
+            AudienceBriefResponse(id=item.id, name=item.name, type=item.audience_type)
+            for item in result.items
+        ]
+        return result.total, briefs
 
     @cache_get(
         key_builder=lambda self, audience_id: f"audience:{audience_id}",

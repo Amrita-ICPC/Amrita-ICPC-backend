@@ -6,7 +6,13 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import get_current_user, get_current_user_id, require_admin
+from app.auth.dependencies import (
+    get_current_user,
+    get_current_user_id,
+    get_user_groups,
+    get_user_roles,
+    require_admin,
+)
 from app.core.clients.database import get_db
 from app.core.logger import logger
 from app.core.response import create_api_response
@@ -21,6 +27,7 @@ from app.schema.audience import (
     AudienceUsersBulkRequest,
     AudienceUsersResponse,
 )
+from app.schema.audience_brief import AudienceBriefResponse
 from app.schema.base import APIResponse
 from app.service.audience_service import AudienceService
 from app.utils.enums import UserRole
@@ -114,8 +121,8 @@ async def list_audiences(
     Returns:
         Standard APIResponse containing audiences and pagination metadata.
 
-    Raises:
-        PermissionDeniedError: If the caller is not an admin.
+    Notes:
+        This endpoint is accessible only to administrators.
     """
     skip = (page - 1) * page_size
     total, audiences = await service.list_audiences(
@@ -123,6 +130,62 @@ async def list_audiences(
         limit=page_size,
         query=q,
         actor_id=actor_id,
+    )
+    pagination = get_pagination(total=total, page=page, page_size=page_size)
+    return create_api_response(
+        request,
+        data=audiences,
+        message="Audiences fetched successfully",
+        pagination=pagination,
+    )
+
+
+@router.get(
+    "/my",
+    response_model=APIResponse[list[AudienceBriefResponse]],
+    summary="List audiences for the current user (brief)",
+)
+async def list_user_audiences(
+    request: Request,
+    page: int = Query(1, ge=1, description="Page number (starts from 1)"),
+    page_size: int = Query(10, ge=1, le=100, description="Number of items per page"),
+    q: str | None = Query(None, description="Optional search by audience name"),
+    actor_id: UUID = Depends(get_current_user_id),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    service: AudienceService = Depends(get_audience_service),
+):
+    """List audiences available to the current user.
+
+    For administrators, this endpoint returns all audiences in the system.
+    For non-admin users, it returns only audiences they belong to.
+
+    The response objects are intentionally minimal and contain only `id`, `name`,
+    and `type`.
+
+    Args:
+        request: FastAPI request context.
+        page: Page number (1-indexed).
+        page_size: Page size.
+        q: Optional substring filter applied to audience names.
+        actor_id: Current caller's database user ID.
+        current_user: Authenticated user payload from Keycloak.
+        service: Injected audience service.
+
+    Returns:
+        Standard APIResponse containing the audiences and pagination metadata.
+    """
+    skip = (page - 1) * page_size
+    roles = get_user_roles(current_user)
+    groups = get_user_groups(current_user)
+    normalized_groups = [g.lstrip("/") for g in groups if g]
+    is_admin = "admin" in roles or "admin" in normalized_groups
+
+    total, audiences = await service.list_audience_briefs_for_actor(
+        actor_id=actor_id,
+        is_admin=is_admin,
+        skip=skip,
+        limit=page_size,
+        query=q,
     )
     pagination = get_pagination(total=total, page=page, page_size=page_size)
     return create_api_response(
