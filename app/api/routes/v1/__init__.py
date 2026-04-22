@@ -1,6 +1,4 @@
-from fastapi import APIRouter, Depends
-
-from app.auth.dependencies import require_admin
+from fastapi import APIRouter
 
 from .. import health
 from . import (
@@ -30,7 +28,6 @@ api_v1_router.include_router(
     audience.router,
     prefix="/audiences",
     tags=["Audiences"],
-    dependencies=[Depends(require_admin)],
 )
 api_v1_router.include_router(students_router, tags=["Students"])
 api_v1_router.include_router(execution.router)

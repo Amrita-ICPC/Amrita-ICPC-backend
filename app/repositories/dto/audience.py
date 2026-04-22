@@ -29,6 +29,15 @@ class AudienceWithCounts:
 
 
 @dataclass(frozen=True, slots=True)
+class AudienceBrief:
+    """Minimal audience projection used for lightweight list endpoints."""
+
+    id: UUID
+    name: str
+    audience_type: AudienceType
+
+
+@dataclass(frozen=True, slots=True)
 class CreateAudienceData:
     """DTO for creating a new audience."""
 

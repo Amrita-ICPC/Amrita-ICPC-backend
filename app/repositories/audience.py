@@ -10,7 +10,11 @@ from sqlalchemy.orm import joinedload, selectinload
 from app.exceptions.audience import AudienceNotFoundError
 from app.models.audience import Audience, ContestAudience, UserAudience
 from app.models.user import User
-from app.repositories.dto.audience import AudienceRoleCounts, AudienceWithCounts
+from app.repositories.dto.audience import (
+    AudienceBrief,
+    AudienceRoleCounts,
+    AudienceWithCounts,
+)
 from app.repositories.dto.pagination import PaginatedResult, PaginationParams
 from app.utils.enums import UserRole
 
@@ -191,6 +195,87 @@ class AudienceRepository:
             )
             items.append(AudienceWithCounts(audience=audience, counts=counts))
 
+        return PaginatedResult(total=total, items=items)
+
+    async def list_audience_briefs(
+        self,
+        pagination: PaginationParams,
+        *,
+        query: str | None = None,
+    ) -> PaginatedResult:
+        """List audiences as minimal projections.
+
+        Args:
+            pagination: Pagination configuration (skip/limit).
+            query: Optional case-insensitive substring filter on name.
+
+        Returns:
+            PaginatedResult with total count and a list of AudienceBrief items.
+        """
+        stmt = select(Audience.id, Audience.name, Audience.audience_type)
+        count_stmt = select(func.count(Audience.id))
+
+        if query:
+            like = f"%{query}%"
+            stmt = stmt.where(Audience.name.ilike(like))
+            count_stmt = count_stmt.where(Audience.name.ilike(like))
+
+        total = int((await self.db.execute(count_stmt)).scalar() or 0)
+        result = await self.db.execute(
+            stmt.order_by(Audience.name.asc())
+            .offset(pagination.skip)
+            .limit(pagination.limit)
+        )
+        items = [
+            AudienceBrief(id=aud_id, name=name, audience_type=audience_type)
+            for (aud_id, name, audience_type) in result.all()
+        ]
+        return PaginatedResult(total=total, items=items)
+
+    async def list_audience_briefs_for_user(
+        self,
+        user_id: UUID,
+        pagination: PaginationParams,
+        *,
+        query: str | None = None,
+    ) -> PaginatedResult:
+        """List audiences a user belongs to as minimal projections.
+
+        Args:
+            user_id: User identifier whose audiences should be listed.
+            pagination: Pagination configuration (skip/limit).
+            query: Optional case-insensitive substring filter on name.
+
+        Returns:
+            PaginatedResult with total count and a list of AudienceBrief items.
+        """
+        stmt = (
+            select(Audience.id, Audience.name, Audience.audience_type)
+            .join(UserAudience, UserAudience.audience_id == Audience.id)
+            .where(UserAudience.user_id == user_id)
+        )
+        count_stmt = (
+            select(func.count(func.distinct(UserAudience.audience_id)))
+            .select_from(UserAudience)
+            .join(Audience, Audience.id == UserAudience.audience_id)
+            .where(UserAudience.user_id == user_id)
+        )
+
+        if query:
+            like = f"%{query}%"
+            stmt = stmt.where(Audience.name.ilike(like))
+            count_stmt = count_stmt.where(Audience.name.ilike(like))
+
+        total = int((await self.db.execute(count_stmt)).scalar() or 0)
+        result = await self.db.execute(
+            stmt.order_by(Audience.name.asc())
+            .offset(pagination.skip)
+            .limit(pagination.limit)
+        )
+        items = [
+            AudienceBrief(id=aud_id, name=name, audience_type=audience_type)
+            for (aud_id, name, audience_type) in result.all()
+        ]
         return PaginatedResult(total=total, items=items)
 
     async def get_audience_with_counts(self, audience_id: UUID) -> AudienceWithCounts:
