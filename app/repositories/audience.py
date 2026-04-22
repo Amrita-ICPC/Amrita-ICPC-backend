@@ -59,6 +59,27 @@ class AudienceRepository:
         )
         return result.scalars().first()
 
+    async def get_audience_by_ids_or_raise(
+        self, audience_ids: list[UUID]
+    ) -> list[Audience]:
+        """Fetch audiences by IDs.
+
+        Args:
+            audience_ids: List of audience identifiers.
+
+        Returns:
+            List of Audience entities.
+        """
+        unique_ids = list(set(audience_ids))
+
+        result = await self.db.execute(
+            select(Audience).where(Audience.id.in_(unique_ids))
+        )
+        audiences = list(result.scalars().all())
+        if len(audiences) != len(unique_ids):
+            raise AudienceNotFoundError(str(audience_ids))
+        return audiences
+
     async def get_audience_or_raise(self, audience_id: UUID) -> Audience:
         """Fetch an audience by ID or raise if not found.
 
@@ -439,6 +460,7 @@ class AudienceRepository:
         result = await self.db.execute(
             select(func.count())
             .select_from(UserAudience)
+            .join(Audience, Audience.id == UserAudience.audience_id)
             .where(
                 UserAudience.user_id == user_id, UserAudience.audience_id == audience_id
             )
@@ -461,6 +483,7 @@ class AudienceRepository:
 
         stmt = (
             select(ContestAudience)
+            .join(Audience, Audience.id == ContestAudience.audience_id)
             .options(joinedload(ContestAudience.audience))
             .where(ContestAudience.contest_id.in_(contest_ids))
         )
