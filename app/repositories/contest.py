@@ -327,7 +327,9 @@ class ContestRepository:
 
         # Identify existing links to ensure idempotency
         existing_links = await self.get_contest_audience_ids(contest_id)
-        new_ids = [aid for aid in audience_ids if aid not in existing_links]
+        new_ids = list(
+            dict.fromkeys(aid for aid in audience_ids if aid not in existing_links)
+        )
 
         if not new_ids:
             return

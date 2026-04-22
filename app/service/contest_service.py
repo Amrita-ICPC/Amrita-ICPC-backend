@@ -170,7 +170,9 @@ class ContestService:
                 user_id=created_by,
                 audience_ids=contest.audience_ids,
             )
-
+        await self.audience_repository.get_audience_by_ids_or_raise(
+            contest.audience_ids
+        )
         contest_data = build_create_contest_dto(contest, created_by)
         contest_entity = build_contest_entity(contest_data)
 
@@ -327,6 +329,9 @@ class ContestService:
             to_contest_summary_response(contest) for contest in result.items
         ]
 
+    @cache_delete(
+        key_builder=lambda self, contest_id, audience_ids, user_id: "contests:*",
+    )
     async def assign_audiences_to_contest(
         self, contest_id: UUID, audience_ids: list[UUID], user_id: UUID
     ) -> None:
@@ -339,6 +344,8 @@ class ContestService:
             user_id: ID of the user performing the operation
         """
         contest = await self.repository.get_contest_or_raise(contest_id)
+        if contest.is_deleted:
+            raise ContestNotFoundError(str(contest_id))
         await self.guard.check_manage_contest(user_id=user_id, contest=contest)
 
         # Validate audience membership for non-admins
@@ -347,9 +354,13 @@ class ContestService:
             await AudiencePermission.is_user_in_audience(
                 self.repository.db, user_id=user_id, audience_ids=audience_ids
             )
+        await self.audience_repository.get_audience_by_ids_or_raise(audience_ids)
 
         await self.repository.link_audiences_to_contest(contest_id, audience_ids)
 
+    @cache_delete(
+        key_builder=lambda self, contest_id, audience_ids, user_id: "contests:*",
+    )
     async def remove_audiences_from_contest(
         self, contest_id: UUID, audience_ids: list[UUID], user_id: UUID
     ) -> None:
@@ -365,6 +376,8 @@ class ContestService:
             AudienceNotAssignedToContestError: If any audience ID is not currently assigned
         """
         contest = await self.repository.get_contest_or_raise(contest_id)
+        if contest.is_deleted:
+            raise ContestNotFoundError(str(contest_id))
         await self.guard.check_manage_contest(user_id=user_id, contest=contest)
 
         # Validate audience membership for non-admins
@@ -1475,6 +1488,8 @@ class ContestService:
             List of audiences with details
         """
         contest = await self.repository.get_contest_or_raise(contest_id)
+        if contest.is_deleted:
+            raise ContestNotFoundError(str(contest_id))
         await self.guard.check_read_contest(user_id=user_id, contest=contest)
 
         audiences = await self.repository.get_contest_audiences_with_details(contest_id)
