@@ -23,6 +23,15 @@ class InvalidTeamSizeError(AppBaseException):
         )
 
 
+class InvalidTeamSizeByModeError(AppBaseException):
+    """Raised when the team size is greater than 1 when the contest mode is individual"""
+
+    def __init__(self, detail=None):
+        super().__init__(
+            "Team size must be 1 when the contest mode is individual", 400, detail
+        )
+
+
 class TeamNotFoundError(AppBaseException):
     """Raised when a team is not found."""
 
