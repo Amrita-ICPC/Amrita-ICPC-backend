@@ -24,7 +24,7 @@ from app.models.contest import (
     ContestTeam,
     ContestTeamProgress,
 )
-from app.models.question import Question, QuestionLanguage
+from app.models.question import Question, QuestionLanguage, Submission
 from app.models.team import Team, TeamUser
 from app.models.user import User
 from app.repositories.dto import (
@@ -159,6 +159,47 @@ class ContestRepository:
         if not contest:
             raise ContestNotFoundError(str(contest_id))
         return contest
+
+    async def count_questions_in_contest(self, contest_id: UUID) -> int:
+        """Count the number of questions in a contest.
+
+        Args:
+            contest_id: Contest identifier.
+
+        Returns:
+            Total number of questions linked to the contest.
+        """
+        result = await self.db.execute(
+            select(func.count())
+            .select_from(ContestQuestion)
+            .filter(ContestQuestion.contest_id == contest_id)
+        )
+        return int(result.scalar() or 0)
+
+    async def count_submissions_in_contest(self, contest_id: UUID) -> int:
+        """Count the number of submissions for questions in a contest.
+
+        Notes:
+            The Submission model does not store contest_id directly. This count is
+            computed by joining submissions to questions that are linked to the
+            contest via `contest_question`.
+
+        Args:
+            contest_id: Contest identifier.
+
+        Returns:
+            Total number of submissions for the contest's questions.
+        """
+        result = await self.db.execute(
+            select(func.count())
+            .select_from(Submission)
+            .join(
+                ContestQuestion,
+                ContestQuestion.question_id == Submission.question_id,
+            )
+            .filter(ContestQuestion.contest_id == contest_id)
+        )
+        return int(result.scalar() or 0)
 
     async def get_contests_with_filters(
         self,

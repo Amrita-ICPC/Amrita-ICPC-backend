@@ -262,7 +262,46 @@ class TeamRepository:
             select(TeamUser).filter(TeamUser.team_id == team_id).subquery()
         )
         member_count = (await self.db.execute(count_query)).scalar() or 0
-        return member_count
+        return int(member_count or 0)
+
+    async def count_teams_in_contest(self, contest_id: UUID) -> int:
+        """Count the number of teams registered in a contest.
+
+        This method counts rows in the `contest_team` association table for the
+        provided contest.
+
+        Args:
+            contest_id: Contest identifier.
+
+        Returns:
+            Total number of teams in the contest.
+        """
+        result = await self.db.execute(
+            select(func.count())
+            .select_from(ContestTeam)
+            .filter(ContestTeam.contest_id == contest_id)
+        )
+        return int(result.scalar() or 0)
+
+    async def count_participants_in_contest(self, contest_id: UUID) -> int:
+        """Count the number of distinct participants in a contest.
+
+        A participant is counted as a distinct user present in any team that is
+        linked to the contest.
+
+        Args:
+            contest_id: Contest identifier.
+
+        Returns:
+            Total number of distinct users participating in the contest.
+        """
+        result = await self.db.execute(
+            select(func.count(func.distinct(TeamUser.user_id)))
+            .select_from(ContestTeam)
+            .join(TeamUser, TeamUser.team_id == ContestTeam.team_id)
+            .filter(ContestTeam.contest_id == contest_id)
+        )
+        return int(result.scalar() or 0)
 
     async def get_all_team_members(self, team_id: UUID) -> list[TeamUser]:
         """

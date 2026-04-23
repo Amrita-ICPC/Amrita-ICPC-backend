@@ -17,6 +17,7 @@ from app.core.response import create_api_response
 from app.repositories.audience import AudienceRepository
 from app.repositories.contest import ContestRepository
 from app.repositories.question import QuestionRepository
+from app.repositories.team import TeamRepository
 from app.repositories.user import UserRepository
 from app.schema.base import APIResponse
 from app.schema.contest import (
@@ -68,6 +69,7 @@ def get_contest_service(db: AsyncSession = Depends(get_db)) -> ContestService:
     user_repository = UserRepository(db)
     question_repository = QuestionRepository(db)
     audience_repository = AudienceRepository(db)
+    team_repository = TeamRepository(db)
     guard = ContestOperationGuard(db)
     validator = ContestValidator()
     return ContestService(
@@ -77,6 +79,7 @@ def get_contest_service(db: AsyncSession = Depends(get_db)) -> ContestService:
         validator,
         audience_repository,
         question_repository,
+        team_repository,
     )
 
 
