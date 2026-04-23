@@ -166,6 +166,19 @@ class TeamApprovalStatus(str, enum.Enum):
     APPROVED = "APPROVED"
 
 
+class ContestMode(str, enum.Enum):
+    """
+    Enumeration of team mode for a contest
+
+    Attributes:
+        INDIVIDUAL: Each participant competes independently.
+        TEAM: Teams compete collaboratively.
+    """
+
+    INDIVIDUAL = "individual"
+    TEAM = "team"
+
+
 class ViolationType(str, enum.Enum):
     """
     Enumeration of violation types that can occur during contests.

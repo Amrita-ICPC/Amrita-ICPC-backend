@@ -4,13 +4,14 @@ from uuid import UUID
 from app.exceptions.team import (
     CannotRemoveTeamLeaderError,
     InvalidLeaderAssignmentError,
+    InvalidTeamSizeByModeError,
     InvalidTeamSizeError,
     MemberNotInTeamError,
     TeamAlreadyExistsError,
 )
 from app.models.contest import Contest
 from app.models.team import Team
-from app.utils.enums import TeamStatus
+from app.utils.enums import ContestMode, TeamStatus
 
 
 class TeamValidator:
@@ -162,3 +163,9 @@ class TeamValidator:
             raise CannotRemoveTeamLeaderError(team_name)
         if new_leader_id is not None and new_leader_id in members_ids_to_remove:
             raise InvalidLeaderAssignmentError(str(new_leader_id), team_name)
+
+    @staticmethod
+    def validate_team_size_by_contest_mode(members_count: int, mode: ContestMode):
+        if mode == ContestMode.INDIVIDUAL:
+            if members_count != 1:
+                raise InvalidTeamSizeByModeError()
