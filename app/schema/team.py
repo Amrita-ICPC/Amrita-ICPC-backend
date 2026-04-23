@@ -22,6 +22,7 @@ class TeamCreate(BaseModel):
         logo: URL or path to the team logo.
         member_ids: List of user IDs to include in the team.
         status: Status of the team (default: DRAFT).
+
     """
 
     name: str = Field(..., min_length=1, max_length=255)
@@ -30,7 +31,6 @@ class TeamCreate(BaseModel):
     member_ids: List[UUID] = Field(default_factory=list)
     leader_id: Optional[UUID] = None
     status: TeamStatus = Field(default=TeamStatus.DRAFT)
-
     # @model_validator(mode="after")
     # def validate_leader(self) -> "TeamCreate":
     #     member_ids = self.member_ids

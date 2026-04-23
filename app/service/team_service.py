@@ -24,7 +24,12 @@ from app.schema.team import (
     TeamMemberResponse,
     TeamUpdate,
 )
-from app.utils.enums import TeamApprovalMode, TeamApprovalStatus, TeamStatus
+from app.utils.enums import (
+    ContestMode,
+    TeamApprovalMode,
+    TeamApprovalStatus,
+    TeamStatus,
+)
 from app.validators.team import TeamValidator
 
 
@@ -139,6 +144,12 @@ class TeamService:
         await self.guard.check_create_team(
             user_id=created_by, contest=contest, member_ids=team_data.member_ids
         )
+        self.validator.validate_team_size_by_contest_mode(
+            len(team_data.member_ids), contest.mode
+        )
+        creator = await self.repository.get_user_or_raise(created_by)
+        if contest.mode == ContestMode.INDIVIDUAL:
+            team_data.name = creator.name
 
         existing_team = await self.repository.find_team_by_name(
             contest_id, team_data.name

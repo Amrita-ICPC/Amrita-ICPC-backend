@@ -21,6 +21,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 from app.models.team import Team
 from app.utils.enums import (
+    ContestMode,
     ContestStatus,
     ScoringType,
     TeamApprovalMode,
@@ -42,6 +43,11 @@ class Contest(Base):
         ),
         CheckConstraint("end_time > start_time", name="check_contest_dates"),
         CheckConstraint("max_team_size >= min_team_size", name="check_team_size"),
+        CheckConstraint(
+            "(mode = 'individual' AND min_team_size = 1 AND max_team_size = 1) OR "
+            "(mode = 'team')",
+            name="check_mode_team_size_consistency",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -70,6 +76,11 @@ class Contest(Base):
     team_approval_mode: Mapped[TeamApprovalMode] = mapped_column(
         Enum(TeamApprovalMode, name="teamapprovalmode"),
         default=TeamApprovalMode.AUTO_APPROVE,
+        nullable=False,
+    )
+    mode: Mapped[ContestMode] = mapped_column(
+        Enum(ContestMode, name="contest_mode"),
+        default=ContestMode.INDIVIDUAL,
         nullable=False,
     )
 

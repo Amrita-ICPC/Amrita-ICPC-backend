@@ -2,7 +2,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
-from app.utils.enums import ContestStatus, QuestionDifficulty, TeamApprovalMode
+from app.utils.enums import (
+    ContestMode,
+    ContestStatus,
+    QuestionDifficulty,
+    TeamApprovalMode,
+)
 
 
 class _UnsetType:
@@ -55,6 +60,7 @@ class CreateContestData:
     rules: str | None
     scoring_type: str
     team_approval_mode: TeamApprovalMode
+    mode: ContestMode
     audience_ids: list[UUID]
     created_by: UUID
 
@@ -83,3 +89,4 @@ class UpdateContestData:
     rules: str | None | _UnsetType = UNSET
     scoring_type: str | None | _UnsetType = UNSET
     team_approval_mode: TeamApprovalMode | None | _UnsetType = UNSET
+    mode: ContestMode | None | _UnsetType = UNSET
