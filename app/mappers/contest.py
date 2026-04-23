@@ -73,10 +73,37 @@ def build_update_contest_dto(contest_data: ContestUpdate) -> UpdateContestData:
     )
 
 
-def to_contest_response(contest: Contest) -> ContestResponse:
-    """Map contest ORM object to detail response schema."""
+def to_contest_response(
+    contest: Contest,
+    *,
+    team_count: int | None = None,
+    question_count: int | None = None,
+    submission_count: int | None = None,
+    participant_count: int | None = None,
+) -> ContestResponse:
+    """Map contest ORM object to detail response schema.
+
+    Args:
+        contest: Contest ORM entity.
+        team_count: Optional number of teams in the contest. When provided, the
+            value is populated on the response.
+        question_count: Optional number of questions in the contest.
+        submission_count: Optional number of submissions for contest questions.
+        participant_count: Optional number of distinct contest participants.
+
+    Returns:
+        Contest detail response schema.
+    """
     response = ContestResponse.model_validate(contest)
     response.image = image_object_key_to_url(contest.image)
+    if team_count is not None:
+        response.team_count = team_count
+    if question_count is not None:
+        response.question_count = question_count
+    if submission_count is not None:
+        response.submission_count = submission_count
+    if participant_count is not None:
+        response.participant_count = participant_count
 
     return response
 
