@@ -154,6 +154,16 @@ class ContestDetailResponse(ContestBase):
 
     id: UUID = Field(..., description="Contest ID")
     status: ContestStatus = Field(..., description="Contest status")
+    team_count: int = Field(0, ge=0, description="Number of teams in the contest")
+    question_count: int = Field(
+        0, ge=0, description="Number of questions in the contest"
+    )
+    submission_count: int = Field(
+        0, ge=0, description="Number of submissions for contest questions"
+    )
+    participant_count: int = Field(
+        0, ge=0, description="Number of participants (distinct users) in the contest"
+    )
     created_by: UUID = Field(..., description="Creator user ID")
     creator: Optional["InstructorResponse"] = Field(None, description="Creator details")
     created_at: datetime = Field(..., description="Contest creation time (UTC)")

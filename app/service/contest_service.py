@@ -44,6 +44,7 @@ from app.repositories.dto import (
 from app.repositories.dto.contest import UNSET, ContestQuestionFilters
 from app.repositories.dto.question import UpdateQuestionData
 from app.repositories.question import QuestionRepository
+from app.repositories.team import TeamRepository
 from app.repositories.user import UserRepository
 from app.schema.contest import (
     AddContestQuestionsRequest,
@@ -119,6 +120,7 @@ class ContestService:
         validator: ContestValidator,
         audience_repository: AudienceRepository,
         question_repository: QuestionRepository | None = None,
+        team_repository: TeamRepository | None = None,
     ):
         self.repository = repository
         self.user_repository = user_repository
@@ -126,6 +128,7 @@ class ContestService:
         self.validator = validator
         self.audience_repository = audience_repository
         self.question_repository = question_repository
+        self.team_repository = team_repository
 
     @cache_delete(
         key_builder=lambda self, contest, created_by: "contests:*",
@@ -218,7 +221,26 @@ class ContestService:
         # Check permissions
         await self.guard.check_read_contest(user_id=user_id, contest=contest)
 
-        return to_contest_response(contest)
+        team_count = 0
+        participant_count = 0
+        if self.team_repository is not None:
+            team_count = await self.team_repository.count_teams_in_contest(contest_id)
+            participant_count = (
+                await self.team_repository.count_participants_in_contest(contest_id)
+            )
+
+        question_count = await self.repository.count_questions_in_contest(contest_id)
+        submission_count = await self.repository.count_submissions_in_contest(
+            contest_id
+        )
+
+        return to_contest_response(
+            contest,
+            team_count=team_count,
+            question_count=question_count,
+            submission_count=submission_count,
+            participant_count=participant_count,
+        )
 
     @cache_get(
         key_builder=lambda self,
