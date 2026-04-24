@@ -165,7 +165,9 @@ class TeamValidator:
             raise InvalidLeaderAssignmentError(str(new_leader_id), team_name)
 
     @staticmethod
-    def validate_team_size_by_contest_mode(members_count: int, mode: ContestMode):
-        if mode == ContestMode.INDIVIDUAL:
+    def validate_team_size_by_contest_mode(
+        members_count: int, contest_mode: ContestMode
+    ):
+        if contest_mode == ContestMode.INDIVIDUAL:
             if members_count != 1:
                 raise InvalidTeamSizeByModeError()

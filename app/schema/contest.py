@@ -43,7 +43,7 @@ class ContestBase(BaseModel):
         default=TeamApprovalMode.AUTO_APPROVE,
         description="How teams are approved in this contest",
     )
-    mode: ContestMode = Field(
+    contest_mode: ContestMode = Field(
         default=ContestMode.INDIVIDUAL, description="Contest mode (individual or team)"
     )
 
@@ -103,7 +103,7 @@ class ContestUpdate(BaseModel):
     max_team_size: Optional[int] = Field(None, description="Maximum team size")
     rules: Optional[str] = Field(None, description="Contest rules")
     scoring_type: Optional[ScoringType] = Field(None, description="Scoring type")
-    mode: Optional[ContestMode] = Field(None, description="Contest mode")
+    contest_mode: Optional[ContestMode] = Field(None, description="Contest mode")
     team_approval_mode: Optional[TeamApprovalMode] = Field(
         None,
         description="How teams are approved in this contest",
@@ -152,7 +152,9 @@ class ContestSummaryResponse(BaseModel):
         ...,
         description="How teams are approved in this contest",
     )
-    mode: ContestMode = Field(..., description="Contest mode (individual or team)")
+    contest_mode: ContestMode = Field(
+        ..., description="Contest mode (individual or team)"
+    )
     audiences: list[ContestAudienceResponse] = Field(
         default_factory=list, description="List of audiences linked to this contest"
     )

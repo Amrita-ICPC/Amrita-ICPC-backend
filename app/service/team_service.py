@@ -145,10 +145,10 @@ class TeamService:
             user_id=created_by, contest=contest, member_ids=team_data.member_ids
         )
         self.validator.validate_team_size_by_contest_mode(
-            len(team_data.member_ids), contest.mode
+            len(team_data.member_ids), contest.contest_mode
         )
         creator = await self.repository.get_user_or_raise(created_by)
-        if contest.mode == ContestMode.INDIVIDUAL:
+        if contest.contest_mode == ContestMode.INDIVIDUAL:
             team_data.name = creator.name
 
         existing_team = await self.repository.find_team_by_name(

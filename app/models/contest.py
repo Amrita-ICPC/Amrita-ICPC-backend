@@ -44,8 +44,8 @@ class Contest(Base):
         CheckConstraint("end_time > start_time", name="check_contest_dates"),
         CheckConstraint("max_team_size >= min_team_size", name="check_team_size"),
         CheckConstraint(
-            "(mode = 'individual' AND min_team_size = 1 AND max_team_size = 1) OR "
-            "(mode = 'team')",
+            "(contest_mode = 'individual' AND min_team_size = 1 AND max_team_size = 1) OR "
+            "(contest_mode = 'team')",
             name="check_mode_team_size_consistency",
         ),
     )
@@ -78,7 +78,7 @@ class Contest(Base):
         default=TeamApprovalMode.AUTO_APPROVE,
         nullable=False,
     )
-    mode: Mapped[ContestMode] = mapped_column(
+    contest_mode: Mapped[ContestMode] = mapped_column(
         Enum(ContestMode, name="contest_mode"),
         default=ContestMode.INDIVIDUAL,
         nullable=False,

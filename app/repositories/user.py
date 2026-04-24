@@ -140,6 +140,13 @@ class UserRepository:
         if filters.role:
             stmt = stmt.where(User.role == filters.role)
 
+        if filters.audience_ids:
+            stmt = stmt.where(
+                User.audience_links.any(
+                    UserAudience.audience_id.in_(filters.audience_ids)
+                )
+            )
+
         if filters.query:
             like_query = f"%{filters.query}%"
             stmt = stmt.where(
