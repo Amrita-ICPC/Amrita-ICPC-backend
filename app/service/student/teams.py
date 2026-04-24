@@ -246,6 +246,15 @@ class StudentTeamService:
             user_id=created_by, contest=contest, member_ids=[created_by]
         )
 
+        # Get user's audience for this contest (audience-based team constraint)
+        user_audience = await self.repository.get_user_audience_for_contest(
+            user_id=created_by, contest_id=contest_id
+        )
+        if not user_audience:
+            raise PermissionDeniedError(
+                f"User {created_by} is not in any audience for contest {contest_id}"
+            )
+
         (
             team,
             contest_team,
@@ -256,10 +265,11 @@ class StudentTeamService:
             team_description=team_data.description,
             contest_id=contest_id,
             created_by=created_by,
+            audience_id=user_audience.id,
         )
 
         logger.info(
-            f"Student {created_by} created team {team.id} for contest {contest_id}"
+            f"Student {created_by} created team {team.id} for contest {contest_id} in audience {user_audience.id}"
         )
 
         return StudentTeamCreateAndJoinResponse(
@@ -326,6 +336,12 @@ class StudentTeamService:
         existing_member_ids = {tu.user_id for tu in team_members_detailed}
         if user_id in existing_member_ids:
             raise MemberAlreadyInTeamError(str(user_id), team.name)
+
+        # Audience-based constraint: User must be in same audience as team
+        if team.audience_id:
+            await self.guard.check_user_in_audience(
+                user_id=user_id, audience_id=team.audience_id
+            )
 
         # Add as team member
         await self.repository.add_team_members(
@@ -442,6 +458,12 @@ class StudentTeamService:
 
         # Step 4: Validate all users exist
         await self.repository.get_users_or_raise(user_ids=member_ids)
+
+        # Audience-based constraint: All members must be in same audience as team
+        if team.audience_id:
+            await self.guard.check_users_in_audience(
+                user_ids=member_ids, audience_id=team.audience_id
+            )
 
         # Step 5: Validate no duplicate memberships
         existing_member_ids = {tu.user_id for tu in existing_team_members}

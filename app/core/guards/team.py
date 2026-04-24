@@ -1,9 +1,12 @@
 # app/guards/team_guard.py
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.permissions import ContestPermission, TeamPermission
+from app.exceptions.auth import PermissionDeniedError
+from app.models.audience import UserAudience
 from app.models.contest import Contest
 
 
@@ -143,3 +146,47 @@ class TeamOperationGuard:
         await TeamPermission.is_student_allowed_for_contest(
             self.db, user_ids=[user_id] + member_ids, contest_id=contest.id
         )
+
+    async def check_user_in_audience(
+        self,
+        user_id: UUID,
+        audience_id: UUID,
+    ):
+        """
+        Validates that a user belongs to a specific audience.
+
+        Args:
+            user_id: User to check
+            audience_id: Audience to verify membership in
+
+        Raises:
+            PermissionDeniedError: If user is not in the audience
+        """
+        result = await self.db.execute(
+            select(UserAudience).where(
+                UserAudience.user_id == user_id,
+                UserAudience.audience_id == audience_id,
+            )
+        )
+        if result.scalars().first() is None:
+            raise PermissionDeniedError(
+                f"User {user_id} is not a member of audience {audience_id}"
+            )
+
+    async def check_users_in_audience(
+        self,
+        user_ids: list[UUID],
+        audience_id: UUID,
+    ):
+        """
+        Validates that all users belong to a specific audience.
+
+        Args:
+            user_ids: Users to check
+            audience_id: Audience to verify membership in
+
+        Raises:
+            PermissionDeniedError: If any user is not in the audience
+        """
+        for user_id in user_ids:
+            await self.check_user_in_audience(user_id, audience_id)
