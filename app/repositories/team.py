@@ -7,6 +7,7 @@ from sqlalchemy.orm import joinedload, selectinload
 from app.exceptions.contest import ContestNotFoundError
 from app.exceptions.team import TeamNotFoundError
 from app.exceptions.user import UserNotFoundError
+from app.models.audience import Audience, ContestAudience, UserAudience
 from app.models.contest import Contest, ContestTeam, ContestTeamProgress
 from app.models.team import Team, TeamUser
 from app.models.user import User
@@ -643,6 +644,35 @@ class TeamRepository:
 
         return PaginatedResult(total=total, items=teams)
 
+    async def get_user_audience_for_contest(
+        self,
+        user_id: UUID,
+        contest_id: UUID,
+    ) -> Audience | None:
+        """
+        Get the audience that a user belongs to for a specific contest.
+
+        Args:
+            user_id: User ID
+            contest_id: Contest ID
+
+        Returns:
+            Audience object if user belongs to an audience linked to contest, else None
+        """
+        result = await self.db.execute(
+            select(Audience)
+            .join(UserAudience, UserAudience.audience_id == Audience.id)
+            .join(
+                ContestAudience,
+                ContestAudience.audience_id == Audience.id,
+            )
+            .filter(
+                UserAudience.user_id == user_id,
+                ContestAudience.contest_id == contest_id,
+            )
+        )
+        return result.scalars().first()
+
     async def get_available_teams_in_contest(
         self,
         contest_id: UUID,
@@ -786,6 +816,7 @@ class TeamRepository:
         team_name: str,
         team_description: str | None,
         created_by: UUID,
+        audience_id: UUID | None = None,
     ) -> tuple[Team, ContestTeam, ContestTeamProgress, TeamUser]:
         """
         Create a new team for student in a contest.
@@ -798,6 +829,7 @@ class TeamRepository:
             team_name: Name for new team
             team_description: Optional team description
             created_by: Student user ID creating the team
+            audience_id: Optional audience the team is associated with
 
         Returns:
             Tuple of (Team, ContestTeam, ContestTeamProgress, TeamUser)
@@ -808,6 +840,7 @@ class TeamRepository:
             description=team_description,
             created_by=created_by,
             leader_id=created_by,
+            audience_id=audience_id,
         )
         self.db.add(team)
         await self.db.flush()
