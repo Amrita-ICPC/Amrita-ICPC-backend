@@ -29,9 +29,9 @@ def build_create_contest_dto(
         min_team_size=contest.min_team_size,
         max_team_size=contest.max_team_size,
         rules=contest.rules,
-        scoring_type=contest.scoring_type,
+        scoring_type=contest.scoring_type.value,
         team_approval_mode=contest.team_approval_mode,
-        mode=contest.mode,
+        contest_mode=contest.contest_mode,
         audience_ids=contest.audience_ids,
         created_by=created_by,
     )
@@ -47,7 +47,9 @@ def build_update_contest_dto(contest_data: ContestUpdate) -> UpdateContestData:
         is_public=contest_data.is_public if "is_public" in fields_set else UNSET,
         start_time=contest_data.start_time if "start_time" in fields_set else UNSET,
         end_time=contest_data.end_time if "end_time" in fields_set else UNSET,
-        mode=contest_data.mode if "mode" in fields_set else UNSET,
+        contest_mode=contest_data.contest_mode
+        if "contest_mode" in fields_set
+        else UNSET,
         registration_start=(
             contest_data.registration_start
             if "registration_start" in fields_set
@@ -142,6 +144,7 @@ def build_contest_entity(contest_data: CreateContestData) -> Contest:
         rules=contest_data.rules,
         scoring_type=contest_data.scoring_type,
         team_approval_mode=contest_data.team_approval_mode,
+        contest_mode=contest_data.contest_mode,
         created_by=contest_data.created_by,
     )
 

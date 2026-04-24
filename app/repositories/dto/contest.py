@@ -60,7 +60,7 @@ class CreateContestData:
     rules: str | None
     scoring_type: str
     team_approval_mode: TeamApprovalMode
-    mode: ContestMode
+    contest_mode: ContestMode
     audience_ids: list[UUID]
     created_by: UUID
 
@@ -89,4 +89,4 @@ class UpdateContestData:
     rules: str | None | _UnsetType = UNSET
     scoring_type: str | None | _UnsetType = UNSET
     team_approval_mode: TeamApprovalMode | None | _UnsetType = UNSET
-    mode: ContestMode | None | _UnsetType = UNSET
+    contest_mode: ContestMode | None | _UnsetType = UNSET
