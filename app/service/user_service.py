@@ -90,7 +90,7 @@ class UserService:
     @staticmethod
     @cache_get(
         key_builder=lambda db, filters, actor_id: (
-            f"user:list:{actor_id}:{filters.role}:{filters.query}:{filters.skip}:{filters.limit}"
+            f"user:list:{actor_id}:{filters.role}:{filters.query}:{filters.audience_ids}:{filters.skip}:{filters.limit}"
         ),
         ttl=300,
     )

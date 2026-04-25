@@ -106,6 +106,7 @@ async def list_users(
     page_size: int = Query(10, ge=1, le=100, description="Number of items per page"),
     role: UserRole | None = Query(None, description="Filter by user role"),
     q: str | None = Query(None, description="Search by name, email, or phone number"),
+    audience_ids: list[UUID] | None = Query(None, description="Filter by audience IDs"),
 ):
     """List users with filtering and pagination.
 
@@ -118,13 +119,16 @@ async def list_users(
         page_size: Number of items per page.
         role: Optional filter for user role.
         q: Optional search query for name, email, or phone number.
+        audience_ids: Optional filter for audience IDs.
 
     Returns:
         Paginated list of users.
     """
     skip = (page - 1) * page_size
 
-    filters = UserListFilters(skip=skip, limit=page_size, role=role, query=q)
+    filters = UserListFilters(
+        skip=skip, limit=page_size, role=role, query=q, audience_ids=audience_ids
+    )
     total, users = await UserService.list_users(db, filters, actor_id=user_id)
     pagination = get_pagination(total=total, page=page, page_size=page_size)
     return create_api_response(
