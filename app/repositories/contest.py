@@ -873,6 +873,7 @@ class ContestRepository:
         self,
         filters: StudentContestFilters,
         pagination: PaginationParams,
+        user_id: UUID | None = None,
     ) -> PaginatedResult:
         """
         Retrieve public and active contests available for student registration.
@@ -882,14 +883,18 @@ class ContestRepository:
         - Not deleted (is_deleted = False)
         - In SCHEDULED or RUNNING status
         - Within registration window (if applicable)
+        - Visible to user's audiences (if user_id provided)
 
         Args:
             filters: StudentContestFilters for optional search and status filtering
             pagination: PaginationParams for skip/limit
+            user_id: Optional user ID to filter by user's audiences
 
         Returns:
             PaginatedResult with available contests
         """
+        from app.models.audience import ContestAudience, UserAudience
+
         base_query = (
             select(Contest)
             .options(selectinload(Contest.questions))
@@ -899,6 +904,25 @@ class ContestRepository:
                 Contest.status.in_([ContestStatus.SCHEDULED, ContestStatus.RUNNING]),
             )
         )
+
+        # Filter by user's audiences if user_id is provided
+        if user_id:
+            # Get user's audiences
+            user_audiences_query = (
+                select(UserAudience.audience_id)
+                .filter(UserAudience.user_id == user_id)
+            )
+            user_audiences = await self.db.execute(user_audiences_query)
+            user_audience_ids = set(user_audiences.scalars().all())
+
+            if not user_audience_ids:
+                # User is not in any audience, return no contests
+                return PaginatedResult(items=[], total=0)
+
+            # Only include contests that have at least one audience the user belongs to
+            base_query = base_query.join(
+                ContestAudience, Contest.id == ContestAudience.contest_id
+            ).filter(ContestAudience.audience_id.in_(user_audience_ids))
 
         # Apply search filter
         if filters.search_term:
@@ -1179,22 +1203,26 @@ class ContestRepository:
         self,
         filters: StudentContestFilters,
         pagination: PaginationParams,
+        user_id: UUID | None = None,
     ) -> PaginatedResult:
         """
         Retrieve public contests filtered by problem difficulty level.
 
         Returns public, available contests that contain problems of specified difficulty.
         Helps students find contests matching their skill level.
+        Only returns contests visible to user's audiences.
 
         Implementation:
         - Joins Contest with ContestQuestion with Question
         - Filters for public contests only
         - Filters by difficulty level
+        - Filters by user's audiences (if user_id provided)
         - Returns distinct contests to avoid duplicates from multiple problems
 
         Args:
             filters: StudentContestFilters with difficulty_level specified
             pagination: PaginationParams for skip/limit
+            user_id: Optional user ID to filter by user's audiences
 
         Returns:
             PaginatedResult with contests containing problems of specified difficulty
@@ -1205,6 +1233,7 @@ class ContestRepository:
         if not filters.difficulty_level:
             raise ValueError("Difficulty level must be specified in filters")
 
+        from app.models.audience import ContestAudience, UserAudience
         from app.models.question import Question
 
         # Build base query joining contests with their problems
@@ -1221,6 +1250,25 @@ class ContestRepository:
             )
             .distinct()
         )
+
+        # Filter by user's audiences if user_id is provided
+        if user_id:
+            # Get user's audiences
+            user_audiences_query = (
+                select(UserAudience.audience_id)
+                .filter(UserAudience.user_id == user_id)
+            )
+            user_audiences = await self.db.execute(user_audiences_query)
+            user_audience_ids = set(user_audiences.scalars().all())
+
+            if not user_audience_ids:
+                # User is not in any audience, return no contests
+                return PaginatedResult(items=[], total=0)
+
+            # Only include contests that have at least one audience the user belongs to
+            base_query = base_query.join(
+                ContestAudience, Contest.id == ContestAudience.contest_id
+            ).filter(ContestAudience.audience_id.in_(user_audience_ids))
 
         # Apply additional search filter
         if filters.search_term:

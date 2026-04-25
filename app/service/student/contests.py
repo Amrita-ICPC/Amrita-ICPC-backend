@@ -112,6 +112,7 @@ class StudentContestService:
         - Contest is in SCHEDULED or RUNNING status
         - Not soft-deleted
         - Registration window is open
+        - Visible to user's audiences (only contests the user's audiences can see)
 
         Implementation:
         - Delegates filtering to repository
@@ -135,7 +136,7 @@ class StudentContestService:
         pagination = PaginationParams(skip=skip, limit=limit)
 
         result = await self.contest_repository.get_available_contests_for_student(
-            filters=filters, pagination=pagination
+            filters=filters, pagination=pagination, user_id=user_id
         )
 
         logger.info(
@@ -400,6 +401,7 @@ class StudentContestService:
 
         Retrieves public contests containing problems of specific difficulty.
         Helps students find contests matching their skill level.
+        Only shows contests visible to user's audiences.
 
         Difficulty is validated against QuestionDifficulty enum.
 
@@ -431,7 +433,7 @@ class StudentContestService:
         pagination = PaginationParams(skip=skip, limit=limit)
 
         result = await self.contest_repository.get_contests_by_difficulty(
-            filters=filters, pagination=pagination
+            filters=filters, pagination=pagination, user_id=user_id
         )
 
         logger.info(
