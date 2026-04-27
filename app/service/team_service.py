@@ -3,6 +3,7 @@ from uuid import UUID
 
 from app.core.cache.decorators import cache_delete, cache_get, cache_set
 from app.core.guards.team import TeamOperationGuard
+from app.exceptions.auth import PermissionDeniedError
 from app.exceptions.team import ApprovalNotAllowedError
 from app.mappers.team import (
     apply_team_updates,
@@ -144,6 +145,21 @@ class TeamService:
         await self.guard.check_create_team(
             user_id=created_by, contest=contest, member_ids=team_data.member_ids
         )
+        
+        # Audience-based constraint: Validate creator and members are in the same audience for this contest
+        user_audience = await self.repository.get_user_audience_for_contest(
+            user_id=created_by, contest_id=contest_id
+        )
+        if not user_audience:
+            raise PermissionDeniedError(
+                f"User {created_by} is not in any audience for contest {contest_id}"
+            )
+        
+        # Validate all members are in the same audience
+        await self.guard.check_users_in_audience(
+            user_ids=team_data.member_ids, audience_id=user_audience.id
+        )
+        
         self.validator.validate_team_size_by_contest_mode(
             len(team_data.member_ids), contest.contest_mode
         )
@@ -173,6 +189,9 @@ class TeamService:
             contest=contest,
             creator_role=creator.role,
         )
+        
+        # Set the audience_id on the team to enforce audience-based constraints
+        team.audience_id = user_audience.id
 
         created_contest_team = await self.repository.create_team(
             team=team,
@@ -492,6 +511,12 @@ class TeamService:
         contest_team = await self.repository.get_contest_team_or_raise(
             contest_id=contest_id, team_id=team_id
         )
+        
+        # Audience-based constraint: If team has audience_id, validate all new members are in that audience
+        if contest_team.team.audience_id:
+            await self.guard.check_users_in_audience(
+                user_ids=member_data.member_ids, audience_id=contest_team.team.audience_id
+            )
 
         # Validate team size
         team_members_count = await self.repository.get_team_members_count_or_raise(
