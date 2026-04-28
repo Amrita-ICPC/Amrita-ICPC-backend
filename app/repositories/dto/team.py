@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from uuid import UUID
 
-from app.utils.enums import TeamStatus
+from app.utils.enums import TeamApprovalStatus, TeamStatus
 
 
 class _UnsetType:
@@ -53,3 +53,4 @@ class UpdateTeamData:
 class TeamFilters:
     search_term: str | None = None
     status: TeamStatus | None = None
+    approval_status: TeamApprovalStatus | None = None

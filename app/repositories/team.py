@@ -304,6 +304,39 @@ class TeamRepository:
         )
         return int(result.scalar() or 0)
 
+    async def get_team_status_counts(self, contest_id: UUID) -> dict[str, int]:
+        """
+        Get counts of teams by status and approval status in a contest.
+
+        Args:
+            contest_id: ID of the contest
+
+        Returns:
+            Dictionary containing counts for approved, waiting, rejected, and disqualified teams.
+        """
+        # Count by TeamApprovalStatus
+        approval_query = (
+            select(ContestTeam.approval_status, func.count(ContestTeam.team_id))
+            .filter(ContestTeam.contest_id == contest_id)
+            .group_by(ContestTeam.approval_status)
+        )
+        approval_results = await self.db.execute(approval_query)
+        approval_counts = {status: count for status, count in approval_results.all()}
+
+        # Count by TeamStatus.DISQUALIFIED
+        disqualified_query = select(func.count(ContestTeam.team_id)).filter(
+            ContestTeam.contest_id == contest_id,
+            ContestTeam.team_status == TeamStatus.DISQUALIFIED,
+        )
+        disqualified_count = (await self.db.execute(disqualified_query)).scalar() or 0
+
+        return {
+            "approved_count": approval_counts.get(TeamApprovalStatus.APPROVED, 0),
+            "waiting_count": approval_counts.get(TeamApprovalStatus.WAITING, 0),
+            "rejected_count": approval_counts.get(TeamApprovalStatus.REJECTED, 0),
+            "disqualified_count": int(disqualified_count),
+        }
+
     async def get_all_team_members(self, team_id: UUID) -> list[TeamUser]:
         """
         Retrieve all TeamUser records for a team without pagination.
@@ -449,10 +482,14 @@ class TeamRepository:
         Returns:
             PaginatedResult containing total count and list of ContestTeam objects
         """
-        # Build base query with eager loading of team relationship
+        # Build base query with eager loading of team and its members
         base_query = (
             select(ContestTeam)
-            .options(joinedload(ContestTeam.team))
+            .options(
+                joinedload(ContestTeam.team)
+                .selectinload(Team.members)
+                .selectinload(TeamUser.user)
+            )
             .join(Team, ContestTeam.team_id == Team.id)
             .filter(ContestTeam.contest_id == contest_id)
         )
@@ -464,6 +501,12 @@ class TeamRepository:
         # Apply status filter if provided
         if filters.status:
             base_query = base_query.filter(ContestTeam.team_status == filters.status)
+
+        # Apply approval status filter if provided
+        if filters.approval_status:
+            base_query = base_query.filter(
+                ContestTeam.approval_status == filters.approval_status
+            )
 
         # Get total count before pagination
         count_query = select(func.count()).select_from(

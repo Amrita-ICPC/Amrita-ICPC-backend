@@ -161,10 +161,12 @@ class TeamStatus(str, enum.Enum):
     Attributes:
         DRAFT: Team is being formed and can still be modified.
         CONFIRMED: Team is finalized and ready for contest participation.
+        DISQUALIFIED: Team has been disqualified from the contest.
     """
 
     DRAFT = "DRAFT"
     CONFIRMED = "CONFIRMED"
+    DISQUALIFIED = "DISQUALIFIED"
 
 
 class TeamApprovalStatus(str, enum.Enum):
@@ -174,10 +176,12 @@ class TeamApprovalStatus(str, enum.Enum):
     Attributes:
         WAITING: Team is awaiting instructor review.
         APPROVED: Team enrollment is approved.
+        REJECTED: Team enrollment is rejected.
     """
 
     WAITING = "WAITING"
     APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
 
 
 class ContestMode(str, enum.Enum):

@@ -8,6 +8,7 @@ from pydantic import (
     Field,
     model_validator,
 )
+from sqlalchemy import inspect
 
 from app.utils.enums import TeamApprovalStatus, TeamStatus
 
@@ -96,6 +97,17 @@ class TeamResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class TeamMemberPreview(BaseModel):
+    """
+    Schema for a minimal team member preview.
+    """
+
+    id: UUID
+    name: str
+    avatar: Optional[str] = None
+    initials: str
+
+
 class ContestTeamResponse(BaseModel):
     """
     Schema for contest team response without member details.
@@ -111,6 +123,8 @@ class ContestTeamResponse(BaseModel):
         created_by: ID of the user who created the team.
         created_at: Timestamp when the team was created.
         updated_at: Timestamp when the team was last updated.
+        members_preview: List of first 3 members for display.
+        extra_members_count: Number of members beyond the preview.
     """
 
     id: UUID
@@ -123,6 +137,8 @@ class ContestTeamResponse(BaseModel):
     created_by: Optional[UUID]
     created_at: datetime
     updated_at: datetime
+    members_preview: List[TeamMemberPreview] = Field(default_factory=list)
+    extra_members_count: int = 0
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -135,9 +151,36 @@ class ContestTeamResponse(BaseModel):
             contest_team: ContestTeam ORM object
 
         Returns:
-            ContestTeamResponse with basic team data (no members)
+            ContestTeamResponse with basic team data and member previews.
         """
         team = contest_team.team
+        members_preview = []
+        extra_count = 0
+
+        if "members" in inspect(team).unloaded:
+            raise ValueError("Team members must be preloaded")
+
+        # Safely handle members if loaded
+        members = team.members
+        if members:
+            # First 3 members only
+            for team_user in members[:3]:
+                user = team_user.user
+                # Calculate initials (e.g., "John Doe" -> "JD")
+                names = user.name.split()
+                initials = "".join([n[0].upper() for n in names[:2]]) if names else ""
+
+                members_preview.append(
+                    TeamMemberPreview(
+                        id=user.id,
+                        name=user.name,
+                        avatar=None,  # Not available in current User model
+                        initials=initials,
+                    )
+                )
+
+            if len(members) > 3:
+                extra_count = len(members) - 3
 
         return cls(
             id=team.id,
@@ -150,6 +193,8 @@ class ContestTeamResponse(BaseModel):
             created_by=team.created_by,
             created_at=team.created_at,
             updated_at=team.updated_at,
+            members_preview=members_preview,
+            extra_members_count=extra_count,
         )
 
 
@@ -280,3 +325,27 @@ class TeamMemberRemove(BaseModel):
     new_leader_id: Optional[UUID] = Field(
         None, description="New leader if removing current leader"
     )
+
+
+class TeamStatusCounts(BaseModel):
+    """
+    Schema for team status counts in a contest.
+    """
+
+    approved_count: int = 0
+    waiting_count: int = 0
+    rejected_count: int = 0
+    disqualified_count: int = 0
+
+
+class TeamListResponse(BaseModel):
+    """
+    Schema for paginated team list with status counts.
+    """
+
+    total: int
+    teams: List[ContestTeamResponse]
+    approved_count: int = 0
+    waiting_count: int = 0
+    rejected_count: int = 0
+    disqualified_count: int = 0

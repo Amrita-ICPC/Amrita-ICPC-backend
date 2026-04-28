@@ -7,6 +7,7 @@ from app.repositories.dto.team import UNSET, CreateTeamData, UpdateTeamData
 from app.schema.team import (
     ContestTeamResponse,
     TeamCreate,
+    TeamListResponse,
     TeamMemberResponse,
     TeamUpdate,
 )
@@ -69,6 +70,22 @@ def to_contest_team_response_list(
 ) -> list[ContestTeamResponse]:
     """Map contest team ORM list to response schema list."""
     return [to_contest_team_response(contest_team) for contest_team in contest_teams]
+
+
+def to_team_list_response(
+    total: int,
+    contest_teams: list["ContestTeam"],
+    status_counts: dict[str, int],
+) -> TeamListResponse:
+    """Map contest team list and counts to TeamListResponse."""
+    return TeamListResponse(
+        total=total,
+        teams=to_contest_team_response_list(contest_teams),
+        approved_count=status_counts.get("approved_count", 0),
+        waiting_count=status_counts.get("waiting_count", 0),
+        rejected_count=status_counts.get("rejected_count", 0),
+        disqualified_count=status_counts.get("disqualified_count", 0),
+    )
 
 
 def to_team_member_responses(
