@@ -161,7 +161,8 @@ class TestGetAllContestsSuccess:
 
         assert total == 1
         assert len(contests) == 1
-        assert contests[0] == mock_contest
+        assert isinstance(contests[0], ContestSummaryResponse)
+        assert contests[0].id == mock_contest.id
 
     @pytest.mark.asyncio
     async def test_empty_results_returns_zero_count(
@@ -219,11 +220,11 @@ class TestGetAllContestsSuccess:
         mock_user_repository.get_user_or_raise.return_value = mock_user
         mock_user.role = UserRole.student
 
-        await contest_service.get_all_contests(user_id, status=ContestStatus.SCHEDULED)
+        await contest_service.get_all_contests(user_id, status=ContestStatus.PUBLISHED)
 
         call_args = mock_contest_repository.get_contests_with_filters.call_args
         filters = call_args[0][2]
-        assert filters.status == ContestStatus.SCHEDULED
+        assert filters.status == ContestStatus.PUBLISHED
 
     @pytest.mark.asyncio
     async def test_with_pagination_returns_correct_page(

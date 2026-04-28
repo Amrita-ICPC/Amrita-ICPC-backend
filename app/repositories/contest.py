@@ -2,7 +2,7 @@ import re
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import and_, delete, func, or_, select
+from sqlalchemy import and_, case, delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
@@ -35,7 +35,7 @@ from app.repositories.dto import (
     StudentContestFilters,
 )
 from app.repositories.dto.contest_question import AddContestQuestionData
-from app.utils.enums import ContestStatus, TeamApprovalStatus
+from app.utils.enums import ContestRunStatus, ContestStatus, TeamApprovalStatus
 
 
 class ContestRepository:
@@ -201,6 +201,7 @@ class ContestRepository:
         )
         return int(result.scalar() or 0)
 
+    # TODO: Update the filters with factory and builder design pattern
     async def get_contests_with_filters(
         self,
         user_id: UUID,
@@ -227,10 +228,20 @@ class ContestRepository:
 
         # Non-admin users can only see contests they created or are assigned to as instructors
         if not is_admin:
-            base_query = base_query.outerjoin(ContestInstructor).filter(
+            instructor_exists = (
+                select(1)
+                .select_from(ContestInstructor)
+                .where(
+                    ContestInstructor.contest_id == Contest.id,
+                    ContestInstructor.instructor_id == user_id,
+                )
+                .exists()
+            )
+
+            base_query = base_query.filter(
                 or_(
                     Contest.created_by == user_id,
-                    ContestInstructor.instructor_id == user_id,
+                    instructor_exists,
                 )
             )
 
@@ -247,6 +258,18 @@ class ContestRepository:
         if filters.status:
             base_query = base_query.filter(Contest.status == filters.status)
 
+        # Apply run_status filter using SQL datetime comparisons
+        now = datetime.now(timezone.utc)
+        if filters.run_status is not None:
+            if filters.run_status == ContestRunStatus.UPCOMING:
+                base_query = base_query.filter(Contest.start_time > now)
+            elif filters.run_status == ContestRunStatus.LIVE:
+                base_query = base_query.filter(
+                    Contest.start_time <= now, Contest.end_time >= now
+                )
+            elif filters.run_status == ContestRunStatus.ENDED:
+                base_query = base_query.filter(Contest.end_time < now)
+
         # Apply visibility filter
         if filters.is_public is not None:
             base_query = base_query.filter(Contest.is_public == filters.is_public)
@@ -256,14 +279,18 @@ class ContestRepository:
             selectinload(Contest.audience_links).joinedload(ContestAudience.audience)
         )
 
-        # Get distinct results (important when using outerjoin)
-        base_query = base_query.distinct()
-
         # Get total count before pagination
         count_query = select(func.count()).select_from(
             base_query.with_only_columns(Contest.id).subquery()
         )
         total = (await self.db.execute(count_query)).scalar() or 0
+
+        # Default sort: LIVE → UPCOMING → ENDED (then by start_time ascending)
+        run_status_order = case(
+            (Contest.start_time <= now, case((Contest.end_time >= now, 0), else_=2)),
+            else_=1,
+        )
+        base_query = base_query.order_by(run_status_order, Contest.start_time.asc())
 
         # Apply pagination
         result = await self.db.execute(
@@ -517,14 +544,7 @@ class ContestRepository:
         now = datetime.now(timezone.utc)
         contest.published_at = now
         contest.published_by = user_id
-
-        # Update status based on start/end times
-        if now < contest.start_time:
-            contest.status = ContestStatus.SCHEDULED
-        elif contest.start_time <= now <= contest.end_time:
-            contest.status = ContestStatus.RUNNING
-        else:
-            contest.status = ContestStatus.FINISHED
+        contest.status = ContestStatus.PUBLISHED
 
         await self.db.flush()
 
@@ -901,16 +921,21 @@ class ContestRepository:
             .filter(
                 Contest.is_public.is_(True),
                 Contest.is_deleted.is_(False),
-                Contest.status.in_([ContestStatus.SCHEDULED, ContestStatus.RUNNING]),
+                Contest.status.in_(
+                    [
+                        ContestStatus.PUBLISHED,
+                        ContestStatus.PAUSED,
+                        ContestStatus.CANCELLED,
+                    ]
+                ),
             )
         )
 
         # Filter by user's audiences if user_id is provided
         if user_id:
             # Get user's audiences
-            user_audiences_query = (
-                select(UserAudience.audience_id)
-                .filter(UserAudience.user_id == user_id)
+            user_audiences_query = select(UserAudience.audience_id).filter(
+                UserAudience.user_id == user_id
             )
             user_audiences = await self.db.execute(user_audiences_query)
             user_audience_ids = set(user_audiences.scalars().all())
@@ -1245,7 +1270,7 @@ class ContestRepository:
             .filter(
                 Contest.is_public.is_(True),
                 Contest.is_deleted.is_(False),
-                Contest.status.in_([ContestStatus.SCHEDULED, ContestStatus.RUNNING]),
+                Contest.status.in_([ContestStatus.PUBLISHED]),
                 Question.difficulty == filters.difficulty_level,
             )
             .distinct()
@@ -1254,9 +1279,8 @@ class ContestRepository:
         # Filter by user's audiences if user_id is provided
         if user_id:
             # Get user's audiences
-            user_audiences_query = (
-                select(UserAudience.audience_id)
-                .filter(UserAudience.user_id == user_id)
+            user_audiences_query = select(UserAudience.audience_id).filter(
+                UserAudience.user_id == user_id
             )
             user_audiences = await self.db.execute(user_audiences_query)
             user_audience_ids = set(user_audiences.scalars().all())
@@ -1323,7 +1347,7 @@ class ContestRepository:
             .join(TeamUser, TeamUser.team_id == Team.id)
             .filter(
                 TeamUser.user_id == user_id,
-                Contest.status == ContestStatus.FINISHED,
+                # Contest.status == ContestStatus.FINISHED,
                 Contest.is_deleted.is_(False),
             )
             .order_by(Contest.end_time.desc())
@@ -1338,7 +1362,7 @@ class ContestRepository:
             .join(TeamUser, TeamUser.team_id == Team.id)
             .filter(
                 TeamUser.user_id == user_id,
-                Contest.status == ContestStatus.FINISHED,
+                # Contest.status == ContestStatus.FINISHED,
                 Contest.is_deleted.is_(False),
             )
         )

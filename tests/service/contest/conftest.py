@@ -26,7 +26,13 @@ from app.repositories.question import QuestionRepository
 from app.repositories.user import UserRepository
 from app.schema.contest import ContestCreate, ContestUpdate
 from app.service.contest_service import ContestService
-from app.utils.enums import ContestStatus, ScoringType, TeamApprovalMode, UserRole
+from app.utils.enums import (
+    ContestMode,
+    ContestStatus,
+    ScoringType,
+    TeamApprovalMode,
+    UserRole,
+)
 from app.validators.contest import ContestValidator
 
 # Patch cache decorators to disable Redis access in tests
@@ -178,8 +184,10 @@ def mock_contest(user_id):
     contest.rules = None
     contest.scoring_type = ScoringType.AUTO
     contest.team_approval_mode = TeamApprovalMode.AUTO_APPROVE
+    contest.contest_mode = ContestMode.INDIVIDUAL
     contest.status = ContestStatus.DRAFT
     contest.published_at = None
+    contest.published_by = None
     contest.show_leaderboard = False
     contest.is_deleted = False
     contest.deleted_at = None
