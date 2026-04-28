@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import List, cast
 from uuid import UUID
 
-from app.core.cache.decorators import cache_delete, cache_get, cache_set
+from app.core.cache.decorators import cache_delete, cache_get
 from app.core.guards.contest import ContestOperationGuard
 from app.core.logger import logger
 from app.core.permissions import AudiencePermission
@@ -138,11 +138,6 @@ class ContestService:
 
     @cache_delete(
         key_builder=lambda self, contest, created_by: "contests:*",
-    )
-    @cache_set(
-        key_builder=lambda result: f"contest:{result.id}",
-        ttl=300,
-        from_result=True,
     )
     async def create_contest(
         self, contest: ContestCreate, created_by: UUID
@@ -438,12 +433,10 @@ class ContestService:
         await self.repository.unlink_audiences_from_contest(contest_id, audience_ids)
 
     @cache_delete(
-        key_builder=lambda self, contest_id, contest_data, user_id: "contests:*",
-    )
-    @cache_set(
-        key_builder=lambda result: f"contest:{result.id}",
-        ttl=300,
-        from_result=True,
+        key_builder=lambda self, contest_id, contest_data, user_id: [
+            f"contest:{contest_id}*",
+            "contests:*",
+        ],
     )
     async def update_contest(
         self, contest_id: UUID, contest_data: ContestUpdate, user_id: UUID
@@ -538,7 +531,7 @@ class ContestService:
 
     @cache_delete(
         key_builder=lambda self, contest_id, user_id: [
-            f"contest:{contest_id}",
+            f"contest:{contest_id}*",
             "contests:*",
         ]
     )
@@ -709,7 +702,7 @@ class ContestService:
 
     @cache_delete(
         key_builder=lambda self, contest_id, user_id: [
-            f"contest:{contest_id}",
+            f"contest:{contest_id}*",
             "contests:*",
         ]
     )
@@ -740,7 +733,79 @@ class ContestService:
 
     @cache_delete(
         key_builder=lambda self, contest_id, user_id: [
-            f"contest:{contest_id}",
+            f"contest:{contest_id}*",
+            "contests:*",
+        ]
+    )
+    async def pause_contest(self, contest_id: UUID, user_id: UUID) -> None:
+        """Pause a published contest.
+
+        Args:
+            contest_id: Contest ID to pause.
+            user_id: User ID performing the action.
+
+        Raises:
+            ContestNotFoundError: If contest not found or soft-deleted.
+            PermissionDeniedError: If user lacks permission.
+        """
+        contest = await self.repository.get_contest_or_raise(contest_id)
+        if contest.is_deleted:
+            raise ContestNotFoundError(str(contest_id))
+        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
+        await self.repository.pause_contest(contest, user_id)
+        logger.info(f"Contest {contest_id} paused")
+
+    @cache_delete(
+        key_builder=lambda self, contest_id, user_id: [
+            f"contest:{contest_id}*",
+            "contests:*",
+        ]
+    )
+    async def resume_contest(self, contest_id: UUID, user_id: UUID) -> None:
+        """Resume a paused contest.
+
+        Args:
+            contest_id: Contest ID to resume.
+            user_id: User ID performing the action.
+
+        Raises:
+            ContestNotFoundError: If contest not found or soft-deleted.
+            PermissionDeniedError: If user lacks permission.
+        """
+        contest = await self.repository.get_contest_or_raise(contest_id)
+        if contest.is_deleted:
+            raise ContestNotFoundError(str(contest_id))
+        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
+        await self.repository.resume_contest(contest, user_id)
+        logger.info(f"Contest {contest_id} resumed")
+
+    @cache_delete(
+        key_builder=lambda self, contest_id, user_id: [
+            f"contest:{contest_id}*",
+            "contests:*",
+        ]
+    )
+    async def cancel_contest(self, contest_id: UUID, user_id: UUID) -> None:
+        """Cancel a contest.
+
+        Args:
+            contest_id: Contest ID to cancel.
+            user_id: User ID performing the action.
+
+        Raises:
+            ContestNotFoundError: If contest not found or soft-deleted.
+            PermissionDeniedError: If user lacks permission.
+        """
+        contest = await self.repository.get_contest_or_raise(contest_id)
+        if contest.is_deleted:
+            raise ContestNotFoundError(str(contest_id))
+        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
+        await self.repository.cancel_contest(contest, user_id)
+        logger.info(f"Contest {contest_id} cancelled")
+
+    @cache_delete(
+        key_builder=lambda self, contest_id, user_id: [
+            f"contest:{contest_id}*",
             "contests:*",
         ]
     )
@@ -771,7 +836,7 @@ class ContestService:
 
     @cache_delete(
         key_builder=lambda self, contest_id, user_id: [
-            f"contest:{contest_id}",
+            f"contest:{contest_id}*",
             "contests:*",
         ]
     )
