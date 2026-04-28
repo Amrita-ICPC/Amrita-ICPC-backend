@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.utils.enums import (
     AudienceType,
     ContestMode,
+    ContestRunStatus,
     ContestStatus,
     ScoringType,
     TeamApprovalMode,
@@ -145,7 +146,10 @@ class ContestSummaryResponse(BaseModel):
     image: Optional[str] = Field(None, description="Contest image URL")
     start_time: datetime = Field(..., description="Contest start time (UTC)")
     end_time: datetime = Field(..., description="Contest end time (UTC)")
-    status: ContestStatus = Field(..., description="Contest status")
+    status: ContestStatus = Field(..., description="Contest lifecycle status")
+    run_status: ContestRunStatus = Field(
+        ..., description="Contest temporal run-state (UPCOMING / LIVE / ENDED)"
+    )
     created_at: datetime = Field(..., description="Contest creation time (UTC)")
     is_public: bool = Field(..., description="Whether contest is public")
     team_approval_mode: TeamApprovalMode = Field(
@@ -166,7 +170,10 @@ class ContestDetailResponse(ContestBase):
     """Schema for comprehensive contest response (Detail view)."""
 
     id: UUID = Field(..., description="Contest ID")
-    status: ContestStatus = Field(..., description="Contest status")
+    status: ContestStatus = Field(..., description="Contest lifecycle status")
+    run_status: ContestRunStatus = Field(
+        ..., description="Contest temporal run-state (UPCOMING / LIVE / ENDED)"
+    )
     team_count: int = Field(0, ge=0, description="Number of teams in the contest")
     question_count: int = Field(
         0, ge=0, description="Number of questions in the contest"

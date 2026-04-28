@@ -48,7 +48,7 @@ from app.schema.question import (
     UpdateQuestionTestCaseRequest,
 )
 from app.service.contest_service import ContestService
-from app.utils.enums import ContestStatus, QuestionDifficulty
+from app.utils.enums import ContestRunStatus, ContestStatus, QuestionDifficulty
 from app.utils.pagination import get_pagination
 from app.validators.contest import ContestValidator
 
@@ -140,7 +140,10 @@ async def get_all_contests(
     user_id: UUID = Depends(get_current_user_id),
     search: str | None = Query(None, description="Search by contest name"),
     contest_status: ContestStatus | None = Query(
-        None, description="Filter by contest status"
+        None, description="Filter by contest lifecycle status (DRAFT/PUBLISHED/etc)"
+    ),
+    run_status: ContestRunStatus | None = Query(
+        None, description="Filter by contest run-state (UPCOMING/LIVE/ENDED)"
     ),
     is_public: bool | None = Query(
         None, description="Filter by visibility (public/private)"
@@ -156,7 +159,8 @@ async def get_all_contests(
         request (Request): Framework context.
         user_id (UUID): Authenticated user ID.
         search (str | None): Optional string to search contest names.
-        contest_status (ContestStatus | None): Optional filter for contest status.
+        contest_status (ContestStatus | None): Optional filter for lifecycle status.
+        run_status (ContestRunStatus | None): Optional filter for temporal run-state.
         is_public (bool | None): Optional filter for visibility.
         page (int): Page number (starts from 1).
         page_size (int): Number of contests per page.
@@ -173,7 +177,7 @@ async def get_all_contests(
     """
     skip = (page - 1) * page_size
     total, contests = await service.get_all_contests(
-        user_id, search, contest_status, is_public, skip, page_size
+        user_id, search, contest_status, run_status, is_public, skip, page_size
     )
 
     pagination = get_pagination(total=total, page=page, page_size=page_size)
