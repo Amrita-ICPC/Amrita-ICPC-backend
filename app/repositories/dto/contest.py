@@ -4,6 +4,7 @@ from uuid import UUID
 
 from app.utils.enums import (
     ContestMode,
+    ContestRunStatus,
     ContestStatus,
     QuestionDifficulty,
     TeamApprovalMode,
@@ -23,6 +24,7 @@ class ContestFilters:
 
     search_term: str | None = None
     status: ContestStatus | None = None
+    run_status: ContestRunStatus | None = None
     is_public: bool | None = None
 
 

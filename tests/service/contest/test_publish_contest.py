@@ -48,7 +48,7 @@ class TestPublishContestSuccess:
         user_id,
     ):
         """Test that already running contests can be republished."""
-        mock_contest.status = ContestStatus.RUNNING
+        mock_contest.status = ContestStatus.PUBLISHED
 
         await contest_service.publish_contest(mock_contest.id, user_id)
 

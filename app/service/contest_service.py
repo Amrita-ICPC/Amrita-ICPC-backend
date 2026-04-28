@@ -72,7 +72,13 @@ from app.schema.question import (
     UpdateQuestionTemplateRequest,
     UpdateQuestionTestCaseRequest,
 )
-from app.utils.enums import ContestStatus, QuestionDifficulty, UserRole
+from app.utils.contest import compute_run_status
+from app.utils.enums import (
+    ContestRunStatus,
+    ContestStatus,
+    QuestionDifficulty,
+    UserRole,
+)
 from app.validators.contest import ContestValidator
 from app.validators.question import QuestionValidator
 
@@ -188,7 +194,10 @@ class ContestService:
                 db_contest.id, contest.audience_ids
             )
 
-        return to_contest_response(db_contest)
+        return to_contest_response(
+            db_contest,
+            run_status=compute_run_status(db_contest.start_time, db_contest.end_time),
+        )
 
     @cache_get(
         key_builder=lambda self,
@@ -236,6 +245,7 @@ class ContestService:
 
         return to_contest_response(
             contest,
+            run_status=compute_run_status(contest.start_time, contest.end_time),
             team_count=team_count,
             question_count=question_count,
             submission_count=submission_count,
@@ -305,9 +315,10 @@ class ContestService:
         user_id,
         search_term=None,
         status=None,
+        run_status=None,
         is_public=None,
         skip=0,
-        limit=100: f"contests:user:{user_id}:search:{search_term}:status:{status}:public:{is_public}:skip:{skip}:limit:{limit}",
+        limit=100: f"contests:user:{user_id}:search:{search_term}:status:{status}:run_status:{run_status}:public:{is_public}:skip:{skip}:limit:{limit}",
         ttl=300,
     )
     async def get_all_contests(
@@ -315,6 +326,7 @@ class ContestService:
         user_id: UUID,
         search_term: str | None = None,
         status: ContestStatus | None = None,
+        run_status: ContestRunStatus | None = None,
         is_public: bool | None = None,
         skip: int = 0,
         limit: int = 100,
@@ -325,7 +337,8 @@ class ContestService:
         Args:
             user_id: User ID
             search_term: Optional search term for contest name
-            status: Optional status to filter by
+            status: Optional lifecycle status to filter by (DRAFT/PUBLISHED/etc)
+            run_status: Optional temporal run-state to filter by (UPCOMING/LIVE/ENDED)
             is_public: Optional visibility filter
             skip: Number of records to skip
             limit: Maximum number of records to return
@@ -338,7 +351,10 @@ class ContestService:
         user_is_admin = user.role == UserRole.admin
         # Create filter and pagination objects
         filters = ContestFilters(
-            search_term=search_term, status=status, is_public=is_public
+            search_term=search_term,
+            status=status,
+            run_status=run_status,
+            is_public=is_public,
         )
         pagination = PaginationParams(skip=skip, limit=limit)
 
@@ -348,7 +364,11 @@ class ContestService:
         )
 
         return result.total, [
-            to_contest_summary_response(contest) for contest in result.items
+            to_contest_summary_response(
+                contest,
+                run_status=compute_run_status(contest.start_time, contest.end_time),
+            )
+            for contest in result.items
         ]
 
     @cache_delete(
@@ -509,7 +529,12 @@ class ContestService:
 
         # Update contest via repository
         updated_contest = await self.repository.update_contest(contest, user_id)
-        return to_contest_response(updated_contest)
+        return to_contest_response(
+            updated_contest,
+            run_status=compute_run_status(
+                updated_contest.start_time, updated_contest.end_time
+            ),
+        )
 
     @cache_delete(
         key_builder=lambda self, contest_id, user_id: [
@@ -537,7 +562,10 @@ class ContestService:
         # Check permissions
         await self.guard.check_manage_contest(user_id=user_id, contest=contest)
 
-        response = to_contest_response(contest)
+        response = to_contest_response(
+            contest,
+            run_status=compute_run_status(contest.start_time, contest.end_time),
+        )
         await self.repository.delete_contest(contest)
 
         return response

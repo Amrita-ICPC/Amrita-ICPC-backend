@@ -33,7 +33,7 @@ class TestUpdateContestSuccess:
         user_id,
     ):
         """Test that successful update returns ContestResponse."""
-        updated_contest = MagicMock()
+        updated_contest = mock_contest
         updated_contest.id = mock_contest.id
         updated_contest.name = "Updated Name"
         mock_contest_repository.update_contest.return_value = updated_contest
@@ -57,11 +57,12 @@ class TestUpdateContestSuccess:
         mock_contest_repository,
         mock_validator,
         setup_valid_contest,
+        mock_contest,
         user_id,
     ):
         """Test that partial update with only name works."""
         update_data = ContestUpdate(name="New Name")
-        updated_contest = MagicMock()
+        updated_contest = mock_contest
         mock_contest_repository.update_contest.return_value = updated_contest
 
         with patch.object(ContestResponse, "model_validate"):
@@ -80,11 +81,12 @@ class TestUpdateContestSuccess:
         mock_contest_repository,
         mock_validator,
         setup_valid_contest,
+        mock_contest,
         user_id,
     ):
         """Test that partial update with only description works."""
         update_data = ContestUpdate(description="New description")
-        updated_contest = MagicMock()
+        updated_contest = mock_contest
         mock_contest_repository.update_contest.return_value = updated_contest
 
         with patch.object(ContestResponse, "model_validate"):
@@ -107,7 +109,7 @@ class TestUpdateContestSuccess:
     ):
         """Test that explicitly passing description=None clears description."""
         update_data = ContestUpdate(description=None)
-        updated_contest = MagicMock()
+        updated_contest = mock_contest
         mock_contest_repository.update_contest.return_value = updated_contest
 
         with patch.object(ContestResponse, "model_validate"):
@@ -128,7 +130,7 @@ class TestUpdateContestSuccess:
     ):
         """Test that explicitly passing registration_end=None clears registration end."""
         update_data = ContestUpdate(registration_end=None)
-        updated_contest = MagicMock()
+        updated_contest = mock_contest
         mock_contest_repository.update_contest.return_value = updated_contest
 
         with patch.object(ContestResponse, "model_validate"):
@@ -198,7 +200,7 @@ class TestUpdateContestPermissions:
         user_id,
     ):
         """Test that guard is called with correct arguments."""
-        updated_contest = MagicMock()
+        updated_contest = mock_contest
         mock_contest_repository.update_contest.return_value = updated_contest
 
         with patch.object(ContestResponse, "model_validate"):
@@ -226,7 +228,7 @@ class TestUpdateContestDateValidation:
     ):
         """Test that validation is called with merged dates."""
         update_data = ContestUpdate(name="New Name")
-        updated_contest = MagicMock()
+        updated_contest = mock_contest
         mock_contest_repository.update_contest.return_value = updated_contest
 
         with patch.object(ContestResponse, "model_validate"):
@@ -322,7 +324,7 @@ class TestUpdateContestRepositoryContract:
         user_id,
     ):
         """Test that repository is called with contest object."""
-        updated_contest = MagicMock()
+        updated_contest = mock_contest
         mock_contest_repository.update_contest.return_value = updated_contest
 
         with patch.object(ContestResponse, "model_validate"):
