@@ -323,6 +323,102 @@ class TeamService:
 
         raise ApprovalNotAllowedError(str(team_id), str(contest_id))
 
+    @cache_delete(
+        key_builder=lambda self, contest_id, team_id, *args, **kwargs: [
+            f"contest:{contest_id}:team:{team_id}:*",
+            f"contest:{contest_id}:teams:*",
+        ]
+    )
+    async def reject_team(
+        self, contest_id: UUID, team_id: UUID, rejected_by: UUID
+    ) -> ContestTeamResponse:
+        """
+        Reject a team in a contest.
+
+        Args:
+            contest_id: UUID of the contest containing the team
+            team_id: UUID of the team to reject
+            rejected_by: UUID of the user rejecting the team
+
+        Returns:
+            ContestTeamResponse: Updated team approval state
+        """
+        contest = await self.repository.get_contest_or_raise(contest_id)
+        await self.guard.check_update_team(user_id=rejected_by, contest=contest)
+
+        contest_team = await self.repository.get_contest_team_or_raise(
+            contest_id, team_id
+        )
+
+        updated_team = await self.repository.update_team_approval_status(
+            contest_team, TeamApprovalStatus.REJECTED
+        )
+        return to_contest_team_response(updated_team)
+
+    @cache_delete(
+        key_builder=lambda self, contest_id, team_id, *args, **kwargs: [
+            f"contest:{contest_id}:team:{team_id}:*",
+            f"contest:{contest_id}:teams:*",
+        ]
+    )
+    async def confirm_team(
+        self, contest_id: UUID, team_id: UUID, confirmed_by: UUID
+    ) -> ContestTeamResponse:
+        """
+        Confirm a team for contest participation.
+
+        Args:
+            contest_id: UUID of the contest containing the team
+            team_id: UUID of the team to confirm
+            confirmed_by: UUID of the user confirming the team
+
+        Returns:
+            ContestTeamResponse: Updated team status
+        """
+        contest = await self.repository.get_contest_or_raise(contest_id)
+        await self.guard.check_update_team(user_id=confirmed_by, contest=contest)
+
+        contest_team = await self.repository.get_contest_team_or_raise(
+            contest_id, team_id
+        )
+
+        updated_team = await self.repository.update_team_status(
+            contest_team, TeamStatus.CONFIRMED
+        )
+        return to_contest_team_response(updated_team)
+
+    @cache_delete(
+        key_builder=lambda self, contest_id, team_id, *args, **kwargs: [
+            f"contest:{contest_id}:team:{team_id}:*",
+            f"contest:{contest_id}:teams:*",
+        ]
+    )
+    async def disqualify_team(
+        self, contest_id: UUID, team_id: UUID, disqualified_by: UUID
+    ) -> ContestTeamResponse:
+        """
+        Disqualify a team from a contest.
+
+        Args:
+            contest_id: UUID of the contest containing the team
+            team_id: UUID of the team to disqualify
+            disqualified_by: UUID of the user disqualifying the team
+
+        Returns:
+            ContestTeamResponse: Updated team status
+        """
+        contest = await self.repository.get_contest_or_raise(contest_id)
+        await self.guard.check_update_team(user_id=disqualified_by, contest=contest)
+
+        contest_team = await self.repository.get_contest_team_or_raise(
+            contest_id, team_id
+        )
+
+        updated_team = await self.repository.update_team_status(
+            contest_team, TeamStatus.DISQUALIFIED
+        )
+        return to_contest_team_response(updated_team)
+
     @cache_get(
         key_builder=lambda self,
         contest_id,

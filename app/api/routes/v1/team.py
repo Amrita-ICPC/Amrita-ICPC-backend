@@ -152,6 +152,105 @@ async def approve_team(
     return create_api_response(request, data=team, message="Team approved successfully")
 
 
+@router.patch(
+    "/contests/{contest_id}/teams/{team_id}/reject",
+    response_model=APIResponse[ContestTeamResponse],
+    summary="Reject a team in a contest",
+    dependencies=[can_update("teams")],
+)
+async def reject_team(
+    request: Request,
+    contest_id: UUID,
+    team_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: TeamService = Depends(get_team_service),
+):
+    """
+    Reject a contest team.
+
+    Args:
+        request (Request): Framework context.
+        contest_id (UUID): The unique identifier of the contest.
+        team_id (UUID): The unique identifier of the team.
+        user_id (UUID): Authenticated user ID.
+        service (TeamService): Injected domain service.
+
+    Returns:
+        APIResponse: Standardized response encapsulating the updated team data.
+    """
+    team = await service.reject_team(contest_id, team_id, user_id)
+    logger.info(f"Team {team_id} rejected in contest {contest_id} by user {user_id}")
+    return create_api_response(request, data=team, message="Team rejected successfully")
+
+
+@router.patch(
+    "/contests/{contest_id}/teams/{team_id}/confirm",
+    response_model=APIResponse[ContestTeamResponse],
+    summary="Confirm a team in a contest",
+    dependencies=[can_update("teams")],
+)
+async def confirm_team(
+    request: Request,
+    contest_id: UUID,
+    team_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: TeamService = Depends(get_team_service),
+):
+    """
+    Confirm a contest team.
+
+    Args:
+        request (Request): Framework context.
+        contest_id (UUID): The unique identifier of the contest.
+        team_id (UUID): The unique identifier of the team.
+        user_id (UUID): Authenticated user ID.
+        service (TeamService): Injected domain service.
+
+    Returns:
+        APIResponse: Standardized response encapsulating the updated team data.
+    """
+    team = await service.confirm_team(contest_id, team_id, user_id)
+    logger.info(f"Team {team_id} confirmed in contest {contest_id} by user {user_id}")
+    return create_api_response(
+        request, data=team, message="Team confirmed successfully"
+    )
+
+
+@router.patch(
+    "/contests/{contest_id}/teams/{team_id}/disqualify",
+    response_model=APIResponse[ContestTeamResponse],
+    summary="Disqualify a team in a contest",
+    dependencies=[can_update("teams")],
+)
+async def disqualify_team(
+    request: Request,
+    contest_id: UUID,
+    team_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: TeamService = Depends(get_team_service),
+):
+    """
+    Disqualify a contest team.
+
+    Args:
+        request (Request): Framework context.
+        contest_id (UUID): The unique identifier of the contest.
+        team_id (UUID): The unique identifier of the team.
+        user_id (UUID): Authenticated user ID.
+        service (TeamService): Injected domain service.
+
+    Returns:
+        APIResponse: Standardized response encapsulating the updated team data.
+    """
+    team = await service.disqualify_team(contest_id, team_id, user_id)
+    logger.info(
+        f"Team {team_id} disqualified in contest {contest_id} by user {user_id}"
+    )
+    return create_api_response(
+        request, data=team, message="Team disqualified successfully"
+    )
+
+
 @router.get(
     "/contests/{contest_id}/teams",
     response_model=APIResponse[TeamListResponse],

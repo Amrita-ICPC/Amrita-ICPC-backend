@@ -541,7 +541,11 @@ class TeamRepository:
         """
         result = await self.db.execute(
             select(ContestTeam)
-            .options(joinedload(ContestTeam.team))
+            .options(
+                joinedload(ContestTeam.team)
+                .selectinload(Team.members)
+                .selectinload(TeamUser.user)
+            )
             .filter(
                 ContestTeam.contest_id == contest_id,
                 ContestTeam.team_id == team_id,
@@ -605,7 +609,11 @@ class TeamRepository:
 
         result = await self.db.execute(
             select(ContestTeam)
-            .options(joinedload(ContestTeam.team))
+            .options(
+                joinedload(ContestTeam.team)
+                .selectinload(Team.members)
+                .selectinload(TeamUser.user)
+            )
             .filter(
                 ContestTeam.team_id == team.id,
                 ContestTeam.contest_id == contest_team.contest_id,
@@ -634,7 +642,46 @@ class TeamRepository:
 
         result = await self.db.execute(
             select(ContestTeam)
-            .options(joinedload(ContestTeam.team))
+            .options(
+                joinedload(ContestTeam.team)
+                .selectinload(Team.members)
+                .selectinload(TeamUser.user)
+            )
+            .filter(
+                ContestTeam.team_id == contest_team.team_id,
+                ContestTeam.contest_id == contest_team.contest_id,
+            )
+        )
+        updated_contest_team: ContestTeam | None = result.scalar_one_or_none()
+        if not updated_contest_team:
+            raise TeamNotFoundError(
+                str(contest_team.team_id), str(contest_team.contest_id)
+            )
+        return updated_contest_team
+
+    async def update_team_status(
+        self, contest_team: ContestTeam, status: TeamStatus
+    ) -> ContestTeam:
+        """
+        Update a team's status (DRAFT, CONFIRMED, DISQUALIFIED) within a contest.
+
+        Args:
+            contest_team: ContestTeam object to update
+            status: New status to persist
+
+        Returns:
+            The updated ContestTeam object with team relationship loaded
+        """
+        contest_team.team_status = status
+        await self.db.flush()
+
+        result = await self.db.execute(
+            select(ContestTeam)
+            .options(
+                joinedload(ContestTeam.team)
+                .selectinload(Team.members)
+                .selectinload(TeamUser.user)
+            )
             .filter(
                 ContestTeam.team_id == contest_team.team_id,
                 ContestTeam.contest_id == contest_team.contest_id,
