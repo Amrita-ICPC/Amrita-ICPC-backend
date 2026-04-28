@@ -27,6 +27,7 @@ All tests follow the existing test structure established in test_create_team.py
 and test_update_team.py for consistency across the test suite.
 """
 
+from datetime import datetime
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -36,15 +37,18 @@ from app.core.permissions import PermissionDeniedError
 from app.exceptions.contest import ContestNotFoundError
 from app.exceptions.team import TeamNotFoundError
 from app.repositories.team import PaginationParams, TeamFilters
-from app.schema.team import ContestTeamResponse
-from app.utils.enums import TeamStatus
+from app.schema.team import (
+    ContestTeamResponse,
+    TeamListResponse,
+)
+from app.utils.enums import TeamApprovalStatus, TeamStatus
 
 
 class TestGetContestTeamsSuccess:
     """Test successful team retrieval scenarios."""
 
     @pytest.mark.asyncio
-    async def test_returns_tuple_with_count_and_teams(
+    async def test_returns_team_list_response_with_counts(
         self,
         team_service,
         mock_repository,
@@ -52,22 +56,47 @@ class TestGetContestTeamsSuccess:
         contest_id,
         user_id,
     ):
-        """Test that get_contest_teams returns (total_count, list[ContestTeamResponse])."""
+        """Test that get_contest_teams returns TeamListResponse with counts."""
         mock_teams = [MagicMock(), MagicMock(), MagicMock()]
         mock_result = MagicMock(total=3, items=mock_teams)
         mock_repository.get_contest_or_raise.return_value = mock_contest
         mock_repository.get_contest_teams.return_value = mock_result
+        mock_repository.get_team_status_counts.return_value = {
+            "approved_count": 1,
+            "waiting_count": 1,
+            "rejected_count": 1,
+            "disqualified_count": 0,
+        }
 
+        mock_response = ContestTeamResponse(
+            id=uuid4(),
+            name="Team",
+            description="Description",
+            logo=None,
+            status=TeamStatus.DRAFT,
+            approval_status=TeamApprovalStatus.APPROVED,
+            leader_id=uuid4(),
+            created_by=uuid4(),
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+            members_preview=[],
+            extra_members_count=0,
+        )
         with patch.object(
-            ContestTeamResponse, "from_contest_team", side_effect=lambda x: x
+            ContestTeamResponse, "from_contest_team", return_value=mock_response
         ):
-            total, teams = await team_service.get_contest_teams(contest_id, user_id)
+            result = await team_service.get_contest_teams(contest_id, user_id)
 
-        assert total == 3
-        assert len(teams) == 3
+        assert isinstance(result, TeamListResponse)
+        assert result.total == 3
+        assert len(result.teams) == 3
+        assert result.approved_count == 1
+        assert result.waiting_count == 1
+        assert result.rejected_count == 1
+        assert result.disqualified_count == 0
 
     @pytest.mark.asyncio
-    async def test_empty_results_returns_zero_count(
+    async def test_empty_results_returns_empty_response(
         self,
         team_service,
         mock_repository,
@@ -75,15 +104,22 @@ class TestGetContestTeamsSuccess:
         contest_id,
         user_id,
     ):
-        """Test that empty results return (0, [])."""
+        """Test that empty results return TeamListResponse with 0 total and empty list."""
         mock_result = MagicMock(total=0, items=[])
         mock_repository.get_contest_or_raise.return_value = mock_contest
         mock_repository.get_contest_teams.return_value = mock_result
+        mock_repository.get_team_status_counts.return_value = {
+            "approved_count": 0,
+            "waiting_count": 0,
+            "rejected_count": 0,
+            "disqualified_count": 0,
+        }
 
-        total, teams = await team_service.get_contest_teams(contest_id, user_id)
+        result = await team_service.get_contest_teams(contest_id, user_id)
 
-        assert total == 0
-        assert teams == []
+        assert result.total == 0
+        assert result.teams == []
+        assert result.approved_count == 0
 
     @pytest.mark.asyncio
     async def test_with_search_term_filters_correctly(
@@ -98,6 +134,7 @@ class TestGetContestTeamsSuccess:
         mock_result = MagicMock(total=0, items=[])
         mock_repository.get_contest_or_raise.return_value = mock_contest
         mock_repository.get_contest_teams.return_value = mock_result
+        mock_repository.get_team_status_counts.return_value = {}
 
         await team_service.get_contest_teams(contest_id, user_id, search_term="Alpha")
 
@@ -118,6 +155,7 @@ class TestGetContestTeamsSuccess:
         mock_result = MagicMock(total=0, items=[])
         mock_repository.get_contest_or_raise.return_value = mock_contest
         mock_repository.get_contest_teams.return_value = mock_result
+        mock_repository.get_team_status_counts.return_value = {}
 
         await team_service.get_contest_teams(
             contest_id, user_id, status=TeamStatus.CONFIRMED
@@ -126,6 +164,29 @@ class TestGetContestTeamsSuccess:
         call_args = mock_repository.get_contest_teams.call_args[0]
         filters = call_args[1]
         assert filters.status == TeamStatus.CONFIRMED
+
+    @pytest.mark.asyncio
+    async def test_with_approval_status_filter_returns_only_matching(
+        self,
+        team_service,
+        mock_repository,
+        mock_contest,
+        contest_id,
+        user_id,
+    ):
+        """Test that approval_status filter is passed to repository."""
+        mock_result = MagicMock(total=0, items=[])
+        mock_repository.get_contest_or_raise.return_value = mock_contest
+        mock_repository.get_contest_teams.return_value = mock_result
+        mock_repository.get_team_status_counts.return_value = {}
+
+        await team_service.get_contest_teams(
+            contest_id, user_id, approval_status=TeamApprovalStatus.APPROVED
+        )
+
+        call_args = mock_repository.get_contest_teams.call_args[0]
+        filters = call_args[1]
+        assert filters.approval_status == TeamApprovalStatus.APPROVED
 
     @pytest.mark.asyncio
     async def test_with_pagination_returns_correct_page(
@@ -140,6 +201,7 @@ class TestGetContestTeamsSuccess:
         mock_result = MagicMock(total=0, items=[])
         mock_repository.get_contest_or_raise.return_value = mock_contest
         mock_repository.get_contest_teams.return_value = mock_result
+        mock_repository.get_team_status_counts.return_value = {}
 
         await team_service.get_contest_teams(contest_id, user_id, skip=10, limit=20)
 
@@ -161,12 +223,14 @@ class TestGetContestTeamsSuccess:
         mock_result = MagicMock(total=0, items=[])
         mock_repository.get_contest_or_raise.return_value = mock_contest
         mock_repository.get_contest_teams.return_value = mock_result
+        mock_repository.get_team_status_counts.return_value = {}
 
         await team_service.get_contest_teams(
             contest_id,
             user_id,
             search_term="Team",
             status=TeamStatus.DRAFT,
+            approval_status=TeamApprovalStatus.WAITING,
             skip=5,
             limit=15,
         )
@@ -177,6 +241,7 @@ class TestGetContestTeamsSuccess:
 
         assert filters.search_term == "Team"
         assert filters.status == TeamStatus.DRAFT
+        assert filters.approval_status == TeamApprovalStatus.WAITING
         assert pagination.skip == 5
         assert pagination.limit == 15
 
@@ -241,6 +306,7 @@ class TestGetContestTeamsPermissions:
         mock_result = MagicMock(total=0, items=[])
         mock_repository.get_contest_or_raise.return_value = mock_contest
         mock_repository.get_contest_teams.return_value = mock_result
+        mock_repository.get_team_status_counts.return_value = {}
 
         await team_service.get_contest_teams(contest_id, user_id)
 
@@ -265,6 +331,7 @@ class TestGetContestTeamsRepositoryContract:
         mock_result = MagicMock(total=0, items=[])
         mock_repository.get_contest_or_raise.return_value = mock_contest
         mock_repository.get_contest_teams.return_value = mock_result
+        mock_repository.get_team_status_counts.return_value = {}
 
         await team_service.get_contest_teams(
             contest_id, user_id, search_term="Alpha", status=TeamStatus.CONFIRMED
@@ -289,6 +356,7 @@ class TestGetContestTeamsRepositoryContract:
         mock_result = MagicMock(total=0, items=[])
         mock_repository.get_contest_or_raise.return_value = mock_contest
         mock_repository.get_contest_teams.return_value = mock_result
+        mock_repository.get_team_status_counts.return_value = {}
 
         await team_service.get_contest_teams(contest_id, user_id, skip=20, limit=50)
 
@@ -311,16 +379,77 @@ class TestGetContestTeamsRepositoryContract:
         mock_result = MagicMock(total=2, items=mock_teams)
         mock_repository.get_contest_or_raise.return_value = mock_contest
         mock_repository.get_contest_teams.return_value = mock_result
+        mock_repository.get_team_status_counts.return_value = {}
 
+        mock_response = ContestTeamResponse(
+            id=uuid4(),
+            name="Team",
+            description="Description",
+            logo=None,
+            status=TeamStatus.DRAFT,
+            approval_status=TeamApprovalStatus.APPROVED,
+            leader_id=uuid4(),
+            created_by=uuid4(),
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+            members_preview=[],
+            extra_members_count=0,
+        )
         with patch.object(
             ContestTeamResponse, "from_contest_team"
         ) as mock_from_contest_team:
-            mock_from_contest_team.side_effect = lambda x: MagicMock()
+            mock_from_contest_team.return_value = mock_response
 
-            _, teams = await team_service.get_contest_teams(contest_id, user_id)
+            result = await team_service.get_contest_teams(contest_id, user_id)
 
             assert mock_from_contest_team.call_count == 2
-            assert len(teams) == 2
+            assert len(result.teams) == 2
+
+    @pytest.mark.asyncio
+    async def test_member_preview_logic(self):
+        """Test the logic for generating member previews and counts."""
+        mock_user1 = MagicMock(id=uuid4())
+        mock_user1.name = "John Doe"
+        mock_user2 = MagicMock(id=uuid4())
+        mock_user2.name = "Jane Smith"
+        mock_user3 = MagicMock(id=uuid4())
+        mock_user3.name = "Alice Wonderland"
+        mock_user4 = MagicMock(id=uuid4())
+        mock_user4.name = "Bob Builder"
+
+        mock_team_users = [
+            MagicMock(user=mock_user1),
+            MagicMock(user=mock_user2),
+            MagicMock(user=mock_user3),
+            MagicMock(user=mock_user4),
+        ]
+
+        mock_team = MagicMock(
+            id=uuid4(),
+            description="Desc",
+            logo="logo.png",
+            leader_id=uuid4(),
+            created_by=uuid4(),
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+            members=mock_team_users,
+        )
+        mock_team.name = "Team Alpha"
+
+        mock_contest_team = MagicMock(
+            team=mock_team,
+            team_status=TeamStatus.CONFIRMED,
+            approval_status=TeamApprovalStatus.APPROVED,
+        )
+
+        response = ContestTeamResponse.from_contest_team(mock_contest_team)
+
+        assert len(response.members_preview) == 3
+        assert response.extra_members_count == 1
+        assert response.members_preview[0].name == "John Doe"
+        assert response.members_preview[0].initials == "JD"
+        assert response.members_preview[1].initials == "JS"
+        assert response.members_preview[2].initials == "AW"
 
 
 class TestGetTeamByIdSuccess:

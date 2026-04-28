@@ -11,7 +11,7 @@ from app.mappers.team import (
     build_team_creation_entities,
     build_update_team_dto,
     to_contest_team_response,
-    to_contest_team_response_list,
+    to_team_list_response,
     to_team_member_responses,
 )
 from app.repositories.dto import PaginationParams, TeamFilters
@@ -19,6 +19,7 @@ from app.repositories.team import TeamRepository
 from app.schema.team import (
     ContestTeamResponse,
     TeamCreate,
+    TeamListResponse,
     TeamMemberAdd,
     TeamMemberRemove,
     TeamMemberResponse,
@@ -328,8 +329,9 @@ class TeamService:
         user_id,
         search_term=None,
         status=None,
+        approval_status=None,
         skip=0,
-        limit=100: f"contest:{contest_id}:teams:user:{user_id}:search:{search_term}:status:{status}:skip:{skip}:limit:{limit}",
+        limit=100: f"contest:{contest_id}:teams:user:{user_id}:search:{search_term}:status:{status}:approval:{approval_status}:skip:{skip}:limit:{limit}",
         ttl=300,
     )
     async def get_contest_teams(
@@ -338,33 +340,34 @@ class TeamService:
         user_id: UUID,
         search_term: str | None = None,
         status: TeamStatus | None = None,
+        approval_status: TeamApprovalStatus | None = None,
         skip: int = 0,
         limit: int = 100,
-    ) -> tuple[int, list[ContestTeamResponse]]:
+    ) -> TeamListResponse:
         """
         Retrieve all teams in a contest with optional search and filtering.
 
         Uses repository pattern for database queries and guard pattern for
         permission validation. Supports pagination, text search by team name,
-        and status filtering.
+        and status filtering (team status and approval status).
 
         Implementation:
         - Validates read permissions via TeamOperationGuard
         - Delegates query execution to TeamRepository with filters and pagination
-        - Returns paginated results with total count
+        - Fetches team status counts
+        - Returns TeamListResponse with paginated results and counts
 
         Args:
             contest_id: UUID of the contest to get teams from
             user_id: UUID of the user requesting teams (for permission validation)
             search_term: Optional text to search in team names (case-insensitive)
-            status: Optional TeamStatus to filter teams (DRAFT or CONFIRMED)
+            status: Optional TeamStatus to filter teams (DRAFT, CONFIRMED, DISQUALIFIED)
+            approval_status: Optional TeamApprovalStatus to filter teams (WAITING, APPROVED, REJECTED)
             skip: Number of teams to skip for pagination (default: 0)
             limit: Maximum teams to return, capped at 100 (default: 100)
 
         Returns:
-            Tuple containing:
-            - Total count of teams matching the filters
-            - List of ContestTeamResponse objects for the requested page
+            TeamListResponse: Paginated results and status counts
 
         Raises:
             ContestNotFoundError: If the contest does not exist
@@ -375,7 +378,9 @@ class TeamService:
         await self.guard.check_read_team(user_id=user_id, contest=contest)
 
         # Create filter and pagination objects
-        filters = TeamFilters(search_term=search_term, status=status)
+        filters = TeamFilters(
+            search_term=search_term, status=status, approval_status=approval_status
+        )
         pagination = PaginationParams(skip=skip, limit=limit)
 
         # Delegate to repository
@@ -383,7 +388,10 @@ class TeamService:
             contest_id, filters, pagination
         )
 
-        return result.total, to_contest_team_response_list(result.items)
+        # Get status counts
+        status_counts = await self.repository.get_team_status_counts(contest_id)
+
+        return to_team_list_response(result.total, result.items, status_counts)
 
     @cache_get(
         key_builder=lambda self,
