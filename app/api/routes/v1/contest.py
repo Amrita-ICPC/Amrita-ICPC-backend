@@ -477,6 +477,123 @@ async def publish_contest(
     )
 
 
+@router.post(
+    "/{contest_id}/pause",
+    response_model=APIResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Pause a contest",
+    dependencies=[can_update("contests")],
+)
+async def pause_contest(
+    request: Request,
+    contest_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: ContestService = Depends(get_contest_service),
+):
+    """Pause a published contest.
+
+    Args:
+        request (Request): Framework context.
+        contest_id (UUID): The unique identifier of the contest to pause.
+        user_id (UUID): Authenticated user ID.
+        service (ContestService): Injected domain service.
+
+    Returns:
+        APIResponse: Success confirmation.
+
+    Raises:
+        UnauthorizedError: If the caller is not authenticated.
+        PermissionDeniedError: If the caller lacks update permission.
+        ContestNotFoundError: If the contest does not exist.
+    """
+    await service.pause_contest(contest_id, user_id)
+    logger.info(f"Contest with ID {contest_id} paused (actor=REDACTED)")
+
+    return create_api_response(
+        request,
+        data=None,
+        message="Contest paused successfully",
+    )
+
+
+@router.post(
+    "/{contest_id}/resume",
+    response_model=APIResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Resume a paused contest",
+    dependencies=[can_update("contests")],
+)
+async def resume_contest(
+    request: Request,
+    contest_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: ContestService = Depends(get_contest_service),
+):
+    """Resume a paused contest.
+
+    Args:
+        request (Request): Framework context.
+        contest_id (UUID): The unique identifier of the contest to resume.
+        user_id (UUID): Authenticated user ID.
+        service (ContestService): Injected domain service.
+
+    Returns:
+        APIResponse: Success confirmation.
+
+    Raises:
+        UnauthorizedError: If the caller is not authenticated.
+        PermissionDeniedError: If the caller lacks update permission.
+        ContestNotFoundError: If the contest does not exist.
+    """
+    await service.resume_contest(contest_id, user_id)
+    logger.info(f"Contest with ID {contest_id} resumed (actor=REDACTED)")
+
+    return create_api_response(
+        request,
+        data=None,
+        message="Contest resumed successfully",
+    )
+
+
+@router.post(
+    "/{contest_id}/cancel",
+    response_model=APIResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Cancel a contest",
+    dependencies=[can_update("contests")],
+)
+async def cancel_contest(
+    request: Request,
+    contest_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: ContestService = Depends(get_contest_service),
+):
+    """Cancel a contest.
+
+    Args:
+        request (Request): Framework context.
+        contest_id (UUID): The unique identifier of the contest to cancel.
+        user_id (UUID): Authenticated user ID.
+        service (ContestService): Injected domain service.
+
+    Returns:
+        APIResponse: Success confirmation.
+
+    Raises:
+        UnauthorizedError: If the caller is not authenticated.
+        PermissionDeniedError: If the caller lacks update permission.
+        ContestNotFoundError: If the contest does not exist.
+    """
+    await service.cancel_contest(contest_id, user_id)
+    logger.info(f"Contest with ID {contest_id} cancelled (actor=REDACTED)")
+
+    return create_api_response(
+        request,
+        data=None,
+        message="Contest cancelled successfully",
+    )
+
+
 @router.delete(
     "/{contest_id}",
     response_model=APIResponse,

@@ -548,6 +548,42 @@ class ContestRepository:
 
         await self.db.flush()
 
+    async def pause_contest(self, contest: Contest, user_id: UUID) -> None:
+        """Pause a contest by setting its status to PAUSED.
+
+        Args:
+            contest: Contest object to pause.
+            user_id: ID of the user pausing the contest.
+        """
+        contest.status = ContestStatus.PAUSED
+        contest.updated_by = user_id
+        contest.updated_at = datetime.now(timezone.utc)
+        await self.db.flush()
+
+    async def resume_contest(self, contest: Contest, user_id: UUID) -> None:
+        """Resume a paused contest by setting its status back to PUBLISHED.
+
+        Args:
+            contest: Contest object to resume.
+            user_id: ID of the user resuming the contest.
+        """
+        contest.status = ContestStatus.PUBLISHED
+        contest.updated_by = user_id
+        contest.updated_at = datetime.now(timezone.utc)
+        await self.db.flush()
+
+    async def cancel_contest(self, contest: Contest, user_id: UUID) -> None:
+        """Cancel a contest by setting its status to CANCELLED.
+
+        Args:
+            contest: Contest object to cancel.
+            user_id: ID of the user cancelling the contest.
+        """
+        contest.status = ContestStatus.CANCELLED
+        contest.updated_by = user_id
+        contest.updated_at = datetime.now(timezone.utc)
+        await self.db.flush()
+
     async def get_all_instructors_for_contest(self, contest_id: UUID) -> list[User]:
         """
         Retrieve all instructors assigned to a contest.
