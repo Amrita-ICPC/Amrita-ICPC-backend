@@ -17,13 +17,14 @@ from app.schema.base import APIResponse
 from app.schema.team import (
     ContestTeamResponse,
     TeamCreate,
+    TeamListResponse,
     TeamMemberAdd,
     TeamMemberRemove,
     TeamMemberResponse,
     TeamUpdate,
 )
 from app.service.team_service import TeamService
-from app.utils.enums import TeamStatus
+from app.utils.enums import TeamApprovalStatus, TeamStatus
 from app.utils.pagination import get_pagination
 from app.validators.team import TeamValidator
 
@@ -153,7 +154,7 @@ async def approve_team(
 
 @router.get(
     "/contests/{contest_id}/teams",
-    response_model=APIResponse[list[ContestTeamResponse]],
+    response_model=APIResponse[TeamListResponse],
     summary="Get all teams in a contest",
     dependencies=[can_read("contests")],
 )
@@ -162,6 +163,9 @@ async def get_contest_teams(
     contest_id: UUID,
     search: str | None = Query(None, description="Search by team name"),
     team_status: TeamStatus | None = Query(None, description="Filter by team status"),
+    approval_status: TeamApprovalStatus | None = Query(
+        None, description="Filter by approval status"
+    ),
     page: int = Query(1, ge=1, description="Page number (starts from 1)"),
     page_size: int = Query(10, ge=1, le=100, description="Number of teams per page"),
     user_id: UUID = Depends(get_current_user_id),
@@ -184,15 +188,15 @@ async def get_contest_teams(
         APIResponse: Standardized response with list of teams and pagination state.
     """
     skip = (page - 1) * page_size
-    total, teams = await service.get_contest_teams(
-        contest_id, user_id, search, team_status, skip, page_size
+    team_list = await service.get_contest_teams(
+        contest_id, user_id, search, team_status, approval_status, skip, page_size
     )
 
-    pagination = get_pagination(total=total, page=page, page_size=page_size)
+    pagination = get_pagination(total=team_list.total, page=page, page_size=page_size)
 
     return create_api_response(
         request,
-        data=teams,
+        data=team_list,
         message="Teams fetched successfully",
         pagination=pagination,
     )
