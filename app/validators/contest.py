@@ -218,7 +218,7 @@ class ContestValidator:
             raise InvalidContestError("Question order must be greater than 0")
 
     @staticmethod
-    def validate_question_score(score: int) -> None:
+    def validate_question_score(score: int | None) -> None:
         """
         Validate that question score is a positive integer.
 
@@ -228,11 +228,11 @@ class ContestValidator:
         Raises:
             InvalidContestError: If score is not positive.
         """
-        if score <= 0:
+        if score is not None and score <= 0:
             raise InvalidContestError("Question score must be greater than 0")
 
     @staticmethod
-    def validate_question_duration(duration: int) -> None:
+    def validate_question_duration(duration: int | None) -> None:
         """
         Validate that question duration is a positive integer.
 
@@ -242,5 +242,5 @@ class ContestValidator:
         Raises:
             InvalidContestError: If duration is not positive.
         """
-        if duration <= 0:
+        if duration is not None and duration <= 0:
             raise InvalidContestError("Question duration must be greater than 0")

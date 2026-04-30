@@ -248,18 +248,20 @@ class AddContestQuestionRequest(BaseModel):
     """Schema for a single question to add to a contest."""
 
     question_id: UUID = Field(..., description="Question ID to add to contest")
-    order: int = Field(
-        ..., gt=0, description="Position of the question in the contest (1-indexed)"
-    )
-    duration: int = Field(
-        ...,
+    order: Optional[int] = Field(
+        None,
         gt=0,
-        description="Time allocated for this question in seconds",
+        description="Position of the question in the contest (optional, 1-indexed)",
     )
-    score: int = Field(
-        ...,
+    duration: Optional[int] = Field(
+        None,
         gt=0,
-        description="Points awarded for solving this question",
+        description="Time allocated for this question in seconds (optional)",
+    )
+    score: Optional[int] = Field(
+        None,
+        gt=0,
+        description="Points awarded for solving this question (optional, defaults to 100)",
     )
 
     model_config = ConfigDict(from_attributes=True)
@@ -294,8 +296,9 @@ class ContestQuestionResponse(BaseModel):
 
     question_id: UUID = Field(..., description="Question ID")
     order: int = Field(..., description="Position of the question in the contest")
-    duration: int = Field(
-        ..., description="Time allocated for this question in seconds"
+    duration: int | None = Field(
+        ...,
+        description="Time allocated for this question in seconds",
     )
     score: int = Field(..., description="Points awarded for solving this question")
     created_at: datetime = Field(..., description="When question was added to contest")

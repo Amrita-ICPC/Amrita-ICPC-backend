@@ -22,6 +22,7 @@ from app.repositories.language import LanguageRepository
 from app.repositories.question import QuestionRepository
 from app.repositories.tag import TagRepository
 from app.schema.base import APIResponse
+from app.schema.execution import CodeRunResponse, DraftCodeRunRequest
 from app.schema.question import (
     Judge0LanguageResponse,
     PlatformLanguageCreateRequest,
@@ -32,6 +33,7 @@ from app.schema.question import (
     QuestionUpdate,
 )
 from app.schema.tag import TagCreate, TagResponse, TagUpdate
+from app.service.code_execution_service import CodeExecutionService
 from app.service.question_service import QuestionService
 from app.service.tag_service import TagService
 from app.validators.question import QuestionValidator
@@ -65,6 +67,13 @@ def get_tag_service(db: AsyncSession = Depends(get_db)) -> TagService:
     """Build TagService with request-scoped dependencies."""
     repository = TagRepository(db)
     return TagService(repository)
+
+
+def get_code_execution_service(
+    db: AsyncSession = Depends(get_db),
+) -> CodeExecutionService:
+    """Build CodeExecutionService with request-scoped dependencies."""
+    return CodeExecutionService(db)
 
 
 @router.post(
@@ -410,4 +419,39 @@ async def delete_question(
         request,
         data=None,
         message="Question deleted successfully",
+    )
+
+
+@router.post(
+    "/test-draft",
+    response_model=APIResponse[CodeRunResponse],
+    status_code=status.HTTP_200_OK,
+    dependencies=[can_create("questions")],
+)
+async def test_draft_code(
+    request: Request,
+    data: DraftCodeRunRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    service: CodeExecutionService = Depends(get_code_execution_service),
+):
+    """Run code for a draft question with ad-hoc test cases.
+
+    This endpoint allows testing code snippets before a question is created.
+    No data is persisted to the database.
+
+    Args:
+        request: FastAPI request object.
+        data: Draft code run request with code and test cases.
+        user_id: Authenticated user ID.
+        service: Injected CodeExecutionService.
+
+    Returns:
+        API response containing the execution results.
+    """
+    result = await service.run_draft_code(data)
+    logger.info(f"Draft code execution completed for user {user_id}")
+    return create_api_response(
+        request,
+        data=result,
+        message="Code executed successfully",
     )

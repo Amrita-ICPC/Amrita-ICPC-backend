@@ -13,7 +13,7 @@ DTOs in this module:
 """
 
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 from uuid import UUID
 
 
@@ -37,8 +37,8 @@ class AddContestQuestionData:
     contest_id: UUID
     question_id: UUID
     order: int
-    duration: int
-    score: int
+    duration: Optional[int]
+    score: Optional[int]
     created_by: UUID
 
 
