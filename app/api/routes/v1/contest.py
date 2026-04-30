@@ -37,7 +37,7 @@ from app.schema.question import (
     AddQuestionAllowedLanguagesRequest,
     AddQuestionTemplatesRequest,
     AddQuestionTestCasesRequest,
-    QuestionListSummaryResponse,
+    ContestQuestionsListResponse,
     QuestionResponse,
     RemoveQuestionAllowedLanguagesRequest,
     RemoveQuestionTemplatesRequest,
@@ -281,7 +281,7 @@ async def get_contest(
 
 @router.get(
     "/{contest_id}/questions",
-    response_model=APIResponse[list[QuestionListSummaryResponse]],
+    response_model=APIResponse[ContestQuestionsListResponse],
     summary="Get contest questions",
     dependencies=[can_read("contests")],
 )
@@ -302,7 +302,7 @@ async def get_contest_questions(
     ),
     service: ContestService = Depends(get_contest_service),
     user_id: UUID = Depends(get_current_user_id),
-) -> APIResponse[list[QuestionListSummaryResponse]]:
+) -> APIResponse[ContestQuestionsListResponse]:
     """
     Get paginated overview questions for a contest.
 
@@ -328,7 +328,7 @@ async def get_contest_questions(
         ContestNotFoundError: If the contest does not exist.
     """
     skip = (page - 1) * page_size
-    total, questions = await service.get_contest_questions(
+    response_data = await service.get_contest_questions(
         contest_id,
         user_id,
         search,
@@ -339,10 +339,12 @@ async def get_contest_questions(
         page_size,
     )
 
-    pagination = get_pagination(total=total, page=page, page_size=page_size)
+    pagination = get_pagination(
+        total=response_data.total_count, page=page, page_size=page_size
+    )
     return create_api_response(
         request,
-        data=questions,
+        data=response_data,
         message="Contest questions fetched successfully",
         pagination=pagination,
     )

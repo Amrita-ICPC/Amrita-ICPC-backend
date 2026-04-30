@@ -73,3 +73,23 @@ class TemplateAlreadyExistsError(AppBaseException):
             message=f"Template for language {language_id} already exists for question {question_id}.",
             status_code=status.HTTP_409_CONFLICT,
         )
+
+
+class TagNotFoundError(AppBaseException):
+    """Exception raised when a requested tag doesn't exist."""
+
+    def __init__(self, tag_id: str | UUID):
+        super().__init__(
+            message=f"Tag with ID {tag_id} not found.",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+
+class TagAlreadyExistsError(AppBaseException):
+    """Exception raised when a tag with the same name already exists."""
+
+    def __init__(self, name: str):
+        super().__init__(
+            message=f"Tag with name '{name}' already exists.",
+            status_code=status.HTTP_409_CONFLICT,
+        )

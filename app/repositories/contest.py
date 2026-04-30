@@ -25,17 +25,24 @@ from app.models.contest import (
     ContestTeamProgress,
 )
 from app.models.question import Question, QuestionLanguage, Submission
+from app.models.tag import QuestionTag
 from app.models.team import Team, TeamUser
 from app.models.user import User
 from app.repositories.dto import (
     ContestFilters,
     ContestQuestionFilters,
+    ContestQuestionsPaginatedResult,
     PaginatedResult,
     PaginationParams,
     StudentContestFilters,
 )
 from app.repositories.dto.contest_question import AddContestQuestionData
-from app.utils.enums import ContestRunStatus, ContestStatus, TeamApprovalStatus
+from app.utils.enums import (
+    ContestRunStatus,
+    ContestStatus,
+    QuestionDifficulty,
+    TeamApprovalStatus,
+)
 
 
 class ContestRepository:
@@ -729,7 +736,7 @@ class ContestRepository:
         contest_id: UUID,
         pagination: PaginationParams,
         filters: ContestQuestionFilters,
-    ) -> PaginatedResult:
+    ) -> ContestQuestionsPaginatedResult:
         """
         Retrieve paginated questions for a contest with optional filtering.
 
@@ -748,6 +755,11 @@ class ContestRepository:
             select(Question)
             .join(ContestQuestion, ContestQuestion.question_id == Question.id)
             .filter(ContestQuestion.contest_id == contest_id)
+            .options(
+                selectinload(Question.languages).joinedload(QuestionLanguage.language),
+                selectinload(Question.tags).joinedload(QuestionTag.tag),
+                selectinload(Question.testcases),
+            )
         )
 
         # Apply filters
@@ -806,6 +818,19 @@ class ContestRepository:
 
         total = (await self.db.execute(count_query)).scalar() or 0
 
+        # Get difficulty counts for this contest
+        difficulty_query = (
+            select(
+                Question.difficulty,
+                func.count(Question.id).label("count"),
+            )
+            .join(ContestQuestion, ContestQuestion.question_id == Question.id)
+            .where(ContestQuestion.contest_id == contest_id)
+            .group_by(Question.difficulty)
+        )
+        difficulty_result = await self.db.execute(difficulty_query)
+        counts = {row[0]: row[1] for row in difficulty_result.all()}
+
         # Apply pagination
         query = base_query.offset(pagination.skip).limit(pagination.limit)
 
@@ -813,7 +838,13 @@ class ContestRepository:
         result = await self.db.execute(query)
         items = list(result.scalars().all())
 
-        return PaginatedResult(total=total, items=items)
+        return ContestQuestionsPaginatedResult(
+            total=total,
+            items=items,
+            easy_count=counts.get(QuestionDifficulty.EASY, 0),
+            medium_count=counts.get(QuestionDifficulty.MEDIUM, 0),
+            hard_count=counts.get(QuestionDifficulty.HARD, 0),
+        )
 
     async def get_ordered_question_orders_for_contest(
         self, contest_id: UUID

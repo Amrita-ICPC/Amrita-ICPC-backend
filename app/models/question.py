@@ -7,6 +7,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Integer,
+    String,
     Text,
     UniqueConstraint,
 )
@@ -30,6 +31,7 @@ class Question(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
+    title: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
 
     question_text: Mapped[str] = mapped_column(Text, nullable=False)
     difficulty: Mapped[QuestionDifficulty] = mapped_column(
@@ -51,7 +53,12 @@ class Question(Base):
 
     banks = relationship("BankQuestion", back_populates="question")
     contests = relationship("ContestQuestion", back_populates="question")
-    tags = relationship("QuestionTag", back_populates="question")
+    tags = relationship(
+        "QuestionTag",
+        back_populates="question",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
     testcases = relationship(
         "TestCase",
         back_populates="question",
@@ -139,22 +146,13 @@ class TestCase(Base):
 
 class QuestionLanguage(Base):
     __tablename__ = "question_language"
-    __table_args__ = (
-        UniqueConstraint(
-            "question_id",
-            "language_id",
-            name="uq_question_language_per_question",
-        ),
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
 
     question_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("question.id"), nullable=False
+        ForeignKey("question.id"), primary_key=True
     )
-    language_id: Mapped[int] = mapped_column(ForeignKey("language.id"), nullable=False)
+    language_id: Mapped[int] = mapped_column(
+        ForeignKey("language.id"), primary_key=True
+    )
 
     question: Mapped[Question] = relationship("Question", back_populates="languages")
     language: Mapped[Language] = relationship(

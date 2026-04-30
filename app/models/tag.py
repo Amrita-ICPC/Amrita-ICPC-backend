@@ -15,7 +15,12 @@ class Tag(Base):
     )
     name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
 
-    questions = relationship("QuestionTag", back_populates="tag")
+    questions = relationship(
+        "QuestionTag",
+        back_populates="tag",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
 
 class QuestionTag(Base):
