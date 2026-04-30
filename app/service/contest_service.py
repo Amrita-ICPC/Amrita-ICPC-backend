@@ -980,9 +980,11 @@ class ContestService:
         dto_list = []
         seen_question_ids: set[UUID] = set()
         seen_orders: set[int] = set()
-        existing_orders = await self.repository.get_ordered_question_orders_for_contest(
-            contest_id
+        existing_contest_questions = (
+            await self.repository.get_ordered_question_orders_for_contest(contest_id)
         )
+        existing_orders = {cq.order for cq in existing_contest_questions}
+        max_order = await self.repository.get_max_question_order(contest_id)
 
         for question_request in request.questions:
             if question_request.question_id in seen_question_ids:
@@ -1005,26 +1007,36 @@ class ContestService:
                     str(question_request.question_id), str(contest_id)
                 )
 
-            # Validate business rules (order, duration, score)
-            self.validator.validate_question_order(question_request.order)
+            # Determine order
+            if question_request.order is not None:
+                current_order = question_request.order
+                self.validator.validate_question_order(current_order)
 
-            if question_request.order in seen_orders:
-                raise DuplicateQuestionOrderError(
-                    question_request.order,
-                    str(contest_id),
-                )
-            if question_request.order in existing_orders:
-                raise DuplicateQuestionOrderError(
-                    question_request.order,
-                    str(contest_id),
-                )
-            seen_orders.add(question_request.order)
+                if current_order in seen_orders or current_order in existing_orders:
+                    raise DuplicateQuestionOrderError(
+                        current_order,
+                        str(contest_id),
+                    )
+                # Update max_order if the provided order is higher
+                if current_order > max_order:
+                    max_order = current_order
+            else:
+                max_order += 1
+                current_order = max_order
+                # Ensure automatically assigned order doesn't conflict with manually assigned ones in the same batch
+                while current_order in seen_orders or current_order in existing_orders:
+                    max_order += 1
+                    current_order = max_order
+
+            seen_orders.add(current_order)
 
             self.validator.validate_question_duration(question_request.duration)
             self.validator.validate_question_score(question_request.score)
 
             # Build DTO
-            dto = build_add_contest_question_dto(question_request, contest_id, user_id)
+            dto = build_add_contest_question_dto(
+                question_request, contest_id, user_id, order=current_order
+            )
             dto_list.append(dto)
 
         # Step 4: Batch add to repository

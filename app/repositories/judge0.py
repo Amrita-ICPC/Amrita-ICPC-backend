@@ -9,6 +9,7 @@ Only submissions are persisted, handled at the service layer.
 """
 
 import asyncio
+import base64
 import logging
 from typing import Optional, cast
 
@@ -67,6 +68,15 @@ class Judge0Repository:
                 redacted[key] = truncate(redacted[key])
         return redacted
 
+    def _decode_base64(self, value: str | None) -> str | None:
+        """Decode base64 string from Judge0 to UTF-8."""
+        if value is None:
+            return None
+        try:
+            return base64.b64decode(value).decode("utf-8")
+        except Exception:
+            return value
+
     async def submit_code(
         self, request: Judge0ExecutionRequestDTO, stdin: str
     ) -> Judge0SubmissionDTO:
@@ -91,16 +101,18 @@ class Judge0Repository:
 
         try:
             payload = {
-                "source_code": request.source_code,
+                "source_code": base64.b64encode(
+                    request.source_code.encode("utf-8")
+                ).decode("utf-8"),
                 "language_id": request.language_id,
-                "stdin": stdin,
+                "stdin": base64.b64encode(stdin.encode("utf-8")).decode("utf-8"),
             }
 
             # Submit to Judge0
             response = await client.post(
                 "/submissions",
                 json=payload,
-                params={"base64_encoded": "false", "wait": "false"},
+                params={"base64_encoded": "true", "wait": "false"},
             )
 
             if response.status_code != 201:
@@ -126,12 +138,12 @@ class Judge0Repository:
             return Judge0SubmissionDTO(
                 token=token,
                 status_id=status_id,
-                stdout=data.get("stdout"),
-                stderr=data.get("stderr"),
+                stdout=self._decode_base64(data.get("stdout")),
+                stderr=self._decode_base64(data.get("stderr")),
                 time=data.get("time"),
                 memory=data.get("memory"),
-                compile_output=data.get("compile_output"),
-                message=data.get("message"),
+                compile_output=self._decode_base64(data.get("compile_output")),
+                message=self._decode_base64(data.get("message")),
             )
 
         except (
@@ -174,7 +186,7 @@ class Judge0Repository:
         try:
             response = await client.get(
                 f"/submissions/{token}",
-                params={"base64_encoded": "false"},
+                params={"base64_encoded": "true"},
             )
 
             if response.status_code == 404:
@@ -205,12 +217,12 @@ class Judge0Repository:
             return Judge0SubmissionDTO(
                 token=token,
                 status_id=status_id,
-                stdout=data.get("stdout"),
-                stderr=data.get("stderr"),
+                stdout=self._decode_base64(data.get("stdout")),
+                stderr=self._decode_base64(data.get("stderr")),
                 time=data.get("time"),
                 memory=data.get("memory"),
-                compile_output=data.get("compile_output"),
-                message=data.get("message"),
+                compile_output=self._decode_base64(data.get("compile_output")),
+                message=self._decode_base64(data.get("message")),
             )
 
         except (

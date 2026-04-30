@@ -26,6 +26,7 @@ def build_add_contest_question_dto(
     request: AddContestQuestionRequest,
     contest_id: UUID,
     created_by: UUID,
+    order: int,
 ) -> AddContestQuestionData:
     """
     Map add question request schema to repository DTO.
@@ -34,24 +35,25 @@ def build_add_contest_question_dto(
     adding context like contest_id and created_by timestamp.
 
     Args:
-        request: The API request containing question_id, order, duration, score.
+        request: The API request containing question_id, duration, score.
         contest_id: ID of the contest to add the question to.
         created_by: ID of the user performing the operation.
+        order: The calculated or provided order for this question.
 
     Returns:
         AddContestQuestionData: Repository DTO ready for persistence.
 
     Example:
         >>> request = AddContestQuestionRequest(
-        ...     question_id=UUID(...), order=1, duration=300, score=100
+        ...     question_id=UUID(...), duration=300, score=100
         ... )
-        >>> dto = build_add_contest_question_dto(request, contest_id, user_id)
+        >>> dto = build_add_contest_question_dto(request, contest_id, user_id, order=1)
         >>> assert dto.contest_id == contest_id
     """
     return AddContestQuestionData(
         contest_id=contest_id,
         question_id=request.question_id,
-        order=request.order,
+        order=order,
         duration=request.duration,
         score=request.score,
         created_by=created_by,
