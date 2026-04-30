@@ -306,3 +306,150 @@ async def test_update_single_template_raises_on_duplicate_language(
             payload=UpdateQuestionTemplateRequest(language_id=62),
             user_id=user_id,
         )
+
+
+@pytest.mark.asyncio
+async def test_add_questions_to_contest_automatic_order(
+    contest_service_with_questions: ContestService,
+    mock_contest_repository: AsyncMock,
+    mock_question_repository: AsyncMock,
+    mock_guard: AsyncMock,
+    mock_contest,
+    user_id,
+):
+    """add_questions_to_contest should automatically calculate order if not provided."""
+    from app.schema.contest import AddContestQuestionRequest, AddContestQuestionsRequest
+
+    contest_id = mock_contest.id
+    mock_contest_repository.get_contest_or_raise.return_value = mock_contest
+    mock_contest_repository.get_max_question_order.return_value = 5
+    mock_contest_repository.get_ordered_question_orders_for_contest.return_value = [
+        MagicMock(order=1),
+        MagicMock(order=3),
+        MagicMock(order=5),
+    ]
+    mock_contest_repository.is_question_in_contest.return_value = False
+    mock_question_repository.get_question_or_raise.return_value = MagicMock()
+    mock_contest_repository.add_questions_to_contest.return_value = []
+
+    request = AddContestQuestionsRequest(
+        questions=[
+            AddContestQuestionRequest(
+                question_id=uuid4(),
+                duration=300,
+                score=100,
+                order=10,  # Manual higher than max
+            ),
+            AddContestQuestionRequest(
+                question_id=uuid4(),
+                duration=300,
+                score=100,
+                order=None,  # Automatic
+            ),
+        ]
+    )
+
+    await contest_service_with_questions.add_questions_to_contest(
+        contest_id, request, user_id
+    )
+
+    add_call = mock_contest_repository.add_questions_to_contest.call_args
+    dto_list = add_call[0][0]
+
+    assert len(dto_list) == 2
+    assert dto_list[0].order == 10
+    assert dto_list[1].order == 11  # Should be max(10, 5) + 1 = 11
+
+
+@pytest.mark.asyncio
+async def test_add_questions_to_contest_automatic_order_conflicts(
+    contest_service_with_questions: ContestService,
+    mock_contest_repository: AsyncMock,
+    mock_question_repository: AsyncMock,
+    mock_guard: AsyncMock,
+    mock_contest,
+    user_id,
+):
+    """add_questions_to_contest should avoid order conflicts in batch."""
+    from app.schema.contest import AddContestQuestionRequest, AddContestQuestionsRequest
+
+    contest_id = mock_contest.id
+    mock_contest_repository.get_contest_or_raise.return_value = mock_contest
+    mock_contest_repository.get_max_question_order.return_value = 2
+    mock_contest_repository.get_ordered_question_orders_for_contest.return_value = [
+        MagicMock(order=1),
+        MagicMock(order=2),
+    ]
+    mock_contest_repository.is_question_in_contest.return_value = False
+    mock_question_repository.get_question_or_raise.return_value = MagicMock()
+    mock_contest_repository.add_questions_to_contest.return_value = []
+
+    request = AddContestQuestionsRequest(
+        questions=[
+            AddContestQuestionRequest(
+                question_id=uuid4(),
+                duration=300,
+                score=100,
+                order=3,  # Manual
+            ),
+            AddContestQuestionRequest(
+                question_id=uuid4(),
+                duration=300,
+                score=100,
+                order=None,  # Automatic, should become 4
+            ),
+        ]
+    )
+
+    await contest_service_with_questions.add_questions_to_contest(
+        contest_id, request, user_id
+    )
+
+    add_call = mock_contest_repository.add_questions_to_contest.call_args
+    dto_list = add_call[0][0]
+
+    assert dto_list[0].order == 3
+    assert dto_list[1].order == 4  # Max was 2, manual was 3, so automatic should be 4
+
+
+@pytest.mark.asyncio
+async def test_add_questions_to_contest_optional_fields(
+    contest_service_with_questions: ContestService,
+    mock_contest_repository: AsyncMock,
+    mock_question_repository: AsyncMock,
+    mock_guard: AsyncMock,
+    mock_contest,
+    user_id,
+):
+    """add_questions_to_contest should support optional duration and score."""
+    from app.schema.contest import AddContestQuestionRequest, AddContestQuestionsRequest
+
+    contest_id = mock_contest.id
+    mock_contest_repository.get_contest_or_raise.return_value = mock_contest
+    mock_contest_repository.get_max_question_order.return_value = 0
+    mock_contest_repository.get_ordered_question_orders_for_contest.return_value = []
+    mock_contest_repository.is_question_in_contest.return_value = False
+    mock_question_repository.get_question_or_raise.return_value = MagicMock()
+    mock_contest_repository.add_questions_to_contest.return_value = []
+
+    request = AddContestQuestionsRequest(
+        questions=[
+            AddContestQuestionRequest(
+                question_id=uuid4(),
+                duration=None,  # Optional
+                score=None,  # Optional
+                order=1,
+            )
+        ]
+    )
+
+    await contest_service_with_questions.add_questions_to_contest(
+        contest_id, request, user_id
+    )
+
+    add_call = mock_contest_repository.add_questions_to_contest.call_args
+    dto_list = add_call[0][0]
+
+    assert len(dto_list) == 1
+    assert dto_list[0].duration is None
+    assert dto_list[0].score is None

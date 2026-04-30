@@ -867,6 +867,23 @@ class ContestRepository:
         )
         return list(result.scalars().all())
 
+    async def get_max_question_order(self, contest_id: UUID) -> int:
+        """
+        Get the maximum order of questions in a contest.
+
+        Args:
+            contest_id: Contest ID
+
+        Returns:
+            int: Maximum order value, or 0 if no questions exist.
+        """
+        result = await self.db.execute(
+            select(func.max(ContestQuestion.order)).filter(
+                ContestQuestion.contest_id == contest_id
+            )
+        )
+        return result.scalar() or 0
+
     async def is_question_in_contest(self, contest_id: UUID, question_id: UUID) -> bool:
         """
         Check if a question exists in a contest.

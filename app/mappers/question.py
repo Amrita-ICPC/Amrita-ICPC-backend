@@ -192,7 +192,7 @@ def build_question_entity(data: CreateQuestionData) -> Question:
         memory_limit_mb=data.memory_limit_mb,
         created_by=data.created_by,
         languages=[
-            QuestionLanguage(language_id=language_id)
+            QuestionLanguage(question_id=data.id, language_id=language_id)
             for language_id in data.allowed_language_ids
         ],
         tags=[QuestionTag(tag_id=tag_id) for tag_id in data.tag_ids],
@@ -228,7 +228,8 @@ def apply_question_updates(question: Question, update_data: UpdateQuestionData) 
             continue
         if field == "allowed_languages":
             question.languages = [
-                QuestionLanguage(language_id=language_id) for language_id in value
+                QuestionLanguage(question_id=question.id, language_id=language_id)
+                for language_id in value
             ]
             continue
         if field == "tag_ids":
