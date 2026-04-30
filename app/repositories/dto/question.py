@@ -43,6 +43,7 @@ class CreateQuestionData:
     """
 
     id: UUID
+    title: str
     question_text: str
     difficulty: QuestionDifficulty
     allowed_language_ids: list[int]
@@ -62,6 +63,7 @@ class UpdateQuestionData:
     Relation collections replace existing rows when provided.
     """
 
+    title: str | None = None
     question_text: str | None = None
     difficulty: QuestionDifficulty | None = None
     allowed_languages: list[int] | None = None

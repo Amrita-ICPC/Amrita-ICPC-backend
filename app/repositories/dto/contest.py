@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
+from app.repositories.dto.pagination import PaginatedResult
 from app.utils.enums import (
     ContestMode,
     ContestRunStatus,
@@ -92,3 +93,14 @@ class UpdateContestData:
     scoring_type: str | None | _UnsetType = UNSET
     team_approval_mode: TeamApprovalMode | None | _UnsetType = UNSET
     contest_mode: ContestMode | None | _UnsetType = UNSET
+
+
+@dataclass
+class ContestQuestionsPaginatedResult(PaginatedResult):
+    """
+    Paginated result for contest questions with additional metadata for counts.
+    """
+
+    easy_count: int = 0
+    medium_count: int = 0
+    hard_count: int = 0

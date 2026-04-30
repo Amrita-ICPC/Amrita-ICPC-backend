@@ -9,6 +9,7 @@ from app.exceptions.question import QuestionNotFoundError
 from app.models.bank import Bank, BankQuestion, BankShare
 from app.models.contest import Contest, ContestInstructor, ContestQuestion, ContestTeam
 from app.models.question import Question, QuestionLanguage, QuestionTemplate
+from app.models.tag import QuestionTag
 from app.models.team import TeamUser
 
 
@@ -22,7 +23,7 @@ class QuestionRepository:
     def _question_with_relations_query():
         return select(Question).options(
             selectinload(Question.languages).selectinload(QuestionLanguage.language),
-            selectinload(Question.tags),
+            selectinload(Question.tags).selectinload(QuestionTag.tag),
             selectinload(Question.testcases),
             selectinload(Question.templates).selectinload(QuestionTemplate.language),
         )

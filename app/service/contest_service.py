@@ -62,6 +62,7 @@ from app.schema.question import (
     AddQuestionAllowedLanguagesRequest,
     AddQuestionTemplatesRequest,
     AddQuestionTestCasesRequest,
+    ContestQuestionsListResponse,
     QuestionListSummaryResponse,
     QuestionResponse,
     RemoveQuestionAllowedLanguagesRequest,
@@ -269,7 +270,7 @@ class ContestService:
         tag_id: UUID | None = None,
         skip: int = 0,
         limit: int = 100,
-    ) -> tuple[int, list[QuestionListSummaryResponse]]:
+    ) -> ContestQuestionsListResponse:
         """Get paginated contest questions as overview summaries."""
         contest = await self.repository.get_contest_or_raise(contest_id)
         await self.guard.check_read_contest(user_id=user_id, contest=contest)
@@ -284,10 +285,16 @@ class ContestService:
         result = await self.repository.get_contest_questions_paginated(
             contest_id, pagination, filters
         )
-        return result.total, [
-            QuestionListSummaryResponse.from_question(question)
-            for question in result.items
-        ]
+        return ContestQuestionsListResponse(
+            questions=[
+                QuestionListSummaryResponse.from_question(question)
+                for question in result.items
+            ],
+            easy_count=result.easy_count,
+            medium_count=result.medium_count,
+            hard_count=result.hard_count,
+            total_count=result.total,
+        )
 
     @cache_get(
         key_builder=lambda self,

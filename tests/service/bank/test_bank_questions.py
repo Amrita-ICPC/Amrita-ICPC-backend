@@ -100,6 +100,7 @@ def sample_bank():
 def sample_question():
     question = Question(
         id=uuid4(),
+        title="Sample Question",
         question_text="Sample Test",
         difficulty=QuestionDifficulty.EASY,
         time_limit_ms=1000,
