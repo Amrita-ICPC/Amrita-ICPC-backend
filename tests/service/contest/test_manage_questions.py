@@ -8,7 +8,6 @@ import pytest
 
 from app.exceptions.question import InvalidQuestionError, TemplateAlreadyExistsError
 from app.models.question import Question
-from app.repositories.dto import PaginatedResult
 from app.repositories.question import QuestionRepository
 from app.schema.question import (
     QuestionListSummaryResponse,
@@ -51,6 +50,7 @@ def mock_question(user_id):
     """Mock question with one testcase and one template."""
     question = MagicMock(spec=Question)
     question.id = uuid4()
+    question.title = "Sample Title"
     question.question_text = "Sample question"
     question.difficulty = QuestionDifficulty.EASY
     question.time_limit_ms = 1000
@@ -59,7 +59,12 @@ def mock_question(user_id):
     question.created_at = datetime.now(timezone.utc)
     question.updated_at = datetime.now(timezone.utc)
     question.languages = []
-    question.tags = []
+
+    tag = MagicMock()
+    tag.tag = MagicMock()
+    tag.tag.id = uuid4()
+    tag.tag.name = "Sample Tag"
+    question.tags = [tag]
 
     testcase = MagicMock()
     testcase.id = uuid4()
@@ -91,12 +96,18 @@ async def test_get_contest_questions_returns_paginated_summaries(
     user_id,
 ):
     """get_contest_questions should validate read permission and map summaries."""
+    from app.repositories.dto import ContestQuestionsPaginatedResult
+    from app.schema.question import ContestQuestionsListResponse
+
     contest_id = mock_contest.id
     mock_contest_repository.get_contest_or_raise.return_value = mock_contest
     mock_contest_repository.get_contest_questions_paginated.return_value = (
-        PaginatedResult(
+        ContestQuestionsPaginatedResult(
             total=1,
             items=[mock_question],
+            easy_count=1,
+            medium_count=0,
+            hard_count=0,
         )
     )
 
@@ -106,7 +117,7 @@ async def test_get_contest_questions_returns_paginated_summaries(
         "from_question",
         return_value=mapped_summary,
     ):
-        total, items = await contest_service_with_questions.get_contest_questions(
+        result = await contest_service_with_questions.get_contest_questions(
             contest_id=contest_id,
             user_id=user_id,
             search_term="sample",
@@ -117,8 +128,12 @@ async def test_get_contest_questions_returns_paginated_summaries(
             limit=5,
         )
 
-    assert total == 1
-    assert items == [mapped_summary]
+    assert isinstance(result, ContestQuestionsListResponse)
+    assert result.total_count == 1
+    assert result.questions == [mapped_summary]
+    assert result.easy_count == 1
+    assert result.medium_count == 0
+    assert result.hard_count == 0
     mock_guard.check_read_contest.assert_called_once_with(
         user_id=user_id,
         contest=mock_contest,

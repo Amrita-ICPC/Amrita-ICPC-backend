@@ -4,6 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schema.tag import TagResponse
 from app.utils.enums import QuestionDifficulty
 
 PositiveLanguageId = Annotated[int, Field(gt=0)]
@@ -13,6 +14,7 @@ if TYPE_CHECKING:
 
 
 class QuestionBase(BaseModel):
+    title: str = Field(..., max_length=255, description="The title of the question")
     question_text: str = Field(..., description="The problem statement and description")
     difficulty: QuestionDifficulty = Field(
         ..., description="Difficulty level of the question"
@@ -68,6 +70,7 @@ class QuestionCreate(QuestionBase):
 
 
 class QuestionUpdate(BaseModel):
+    title: Optional[str] = Field(None, max_length=255)
     question_text: Optional[str] = None
     difficulty: Optional[QuestionDifficulty] = None
     allowed_languages: Optional[List[int]] = None
@@ -121,6 +124,7 @@ class UpdateQuestionMetadataRequest(BaseModel):
     All fields are optional for partial updates.
     """
 
+    title: Optional[str] = Field(None, max_length=255, description="Updated title")
     question_text: Optional[str] = Field(
         None, description="Updated problem statement and description"
     )
@@ -207,7 +211,7 @@ class QuestionResponse(QuestionBase):
     testcases: List[QuestionTestCaseResponse] = Field(default_factory=list)
     templates: List[QuestionTemplateResponse] = Field(default_factory=list)
     allowed_languages: List[str] = Field(default_factory=list)
-    tag_ids: List[UUID] = Field(default_factory=list)
+    tags: List[TagResponse] = Field(default_factory=list)
 
     @classmethod
     def from_question(cls, question: "Question") -> "QuestionResponse":
@@ -241,13 +245,15 @@ class QuestionResponse(QuestionBase):
             for template in (getattr(question, "templates", []) or [])
         ]
 
-        tag_ids = [
-            question_tag.tag_id
-            for question_tag in (getattr(question, "tags", []) or [])
+        tag_items = [
+            TagResponse(id=qt.tag.id, name=qt.tag.name)
+            for qt in (getattr(question, "tags", []) or [])
+            if getattr(qt, "tag", None)
         ]
 
         return cls(
             id=question.id,
+            title=getattr(question, "title", "") or "Untitled Question",
             question_text=question.question_text,
             difficulty=question.difficulty,
             time_limit_ms=question.time_limit_ms,
@@ -258,7 +264,7 @@ class QuestionResponse(QuestionBase):
             testcases=testcase_items,
             templates=template_items,
             allowed_languages=list(dict.fromkeys(language_names)),
-            tag_ids=tag_ids,
+            tags=tag_items,
         )
 
 
@@ -266,6 +272,7 @@ class QuestionListSummaryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    title: str = Field(..., max_length=255, description="The title of the question")
     question_text: str = Field(..., description="The problem statement and description")
     difficulty: QuestionDifficulty = Field(
         ..., description="Difficulty level of the question"
@@ -273,7 +280,7 @@ class QuestionListSummaryResponse(BaseModel):
     allowed_languages: List[str] = Field(default_factory=list)
     time_limit_ms: int = Field(..., gt=0, description="Time limit in milliseconds")
     memory_limit_mb: int = Field(..., gt=0, description="Memory limit in megabytes")
-    tag_ids: List[UUID] = Field(default_factory=list)
+    tags: List[TagResponse] = Field(default_factory=list)
     testcase_count: int = Field(0, description="Number of testcases")
     created_by: UUID
     created_at: datetime
@@ -292,19 +299,21 @@ class QuestionListSummaryResponse(BaseModel):
         if testcase_count is None:
             testcase_count = len(getattr(question, "testcases", []) or [])
 
-        tag_ids = [
-            question_tag.tag_id
-            for question_tag in (getattr(question, "tags", []) or [])
+        tag_items = [
+            TagResponse(id=qt.tag.id, name=qt.tag.name)
+            for qt in (getattr(question, "tags", []) or [])
+            if getattr(qt, "tag", None)
         ]
 
         return cls(
             id=question.id,
+            title=getattr(question, "title", "") or "Untitled Question",
             question_text=question.question_text,
             difficulty=question.difficulty,
             time_limit_ms=question.time_limit_ms,
             memory_limit_mb=question.memory_limit_mb,
             allowed_languages=list(dict.fromkeys(language_names)),
-            tag_ids=tag_ids,
+            tags=tag_items,
             testcase_count=testcase_count,
             created_by=question.created_by,
             created_at=question.created_at,
@@ -336,3 +345,18 @@ class PlatformLanguageResponse(BaseModel):
 
 class PlatformLanguageListResponse(BaseModel):
     languages: list[PlatformLanguageResponse]
+
+
+class ContestQuestionsListResponse(BaseModel):
+    """Response model for a paginated list of contest questions with summary statistics.
+
+    Includes counts for each difficulty level to help with UI dashboard rendering.
+    """
+
+    questions: list[QuestionListSummaryResponse]
+    easy_count: int = Field(0, description="Number of easy questions in the contest")
+    medium_count: int = Field(
+        0, description="Number of medium questions in the contest"
+    )
+    hard_count: int = Field(0, description="Number of hard questions in the contest")
+    total_count: int = Field(0, description="Total number of questions in the contest")
