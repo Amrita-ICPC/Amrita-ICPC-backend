@@ -144,7 +144,6 @@ def contest_service(
         guard=mock_guard,
         validator=mock_validator,
         audience_repository=mock_audience_repository,
-        question_repository=mock_question_repository,
     )
 
 

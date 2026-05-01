@@ -37,6 +37,9 @@ class ContestQuestionFilters:
     difficulty: QuestionDifficulty | None = None
     language_id: int | None = None
     tag_id: UUID | None = None
+    tag_name: str | None = None
+    sort_by: str | None = None
+    sort_order: str | None = "asc"
 
 
 @dataclass

@@ -2,7 +2,7 @@ import re
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import and_, case, delete, func, or_, select
+from sqlalchemy import and_, asc, case, delete, desc, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
@@ -25,7 +25,7 @@ from app.models.contest import (
     ContestTeamProgress,
 )
 from app.models.question import Question, QuestionLanguage, Submission
-from app.models.tag import QuestionTag
+from app.models.tag import QuestionTag, Tag
 from app.models.team import Team, TeamUser
 from app.models.user import User
 from app.repositories.dto import (
@@ -784,24 +784,37 @@ class ContestRepository:
                 QuestionLanguage.language_id == filters.language_id
             )
 
-        # Tag filter
-        if filters.tag_id:
-            filter_conditions.append(
-                Question.id.in_(
-                    select(ContestQuestion.question_id)
-                    .join(Question, Question.id == ContestQuestion.question_id)
-                    .where(
-                        and_(
-                            ContestQuestion.contest_id == contest_id,
-                            # Assuming tag relationship exists
-                        )
-                    )
-                )
-            )
+        # Tag filters
+        if filters.tag_id or filters.tag_name:
+            base_query = base_query.join(
+                QuestionTag, QuestionTag.question_id == Question.id
+            ).join(Tag, Tag.id == QuestionTag.tag_id)
+
+            if filters.tag_id:
+                filter_conditions.append(QuestionTag.tag_id == filters.tag_id)
+            if filters.tag_name:
+                filter_conditions.append(Tag.name.ilike(f"%{filters.tag_name}%"))
 
         # Combine with AND
         if filter_conditions:
             base_query = base_query.where(and_(*filter_conditions))
+
+        # Apply sorting
+        order_func = desc if filters.sort_order == "desc" else asc
+
+        if filters.sort_by == "difficulty":
+            difficulty_order = case(
+                {
+                    QuestionDifficulty.EASY: 1,
+                    QuestionDifficulty.MEDIUM: 2,
+                    QuestionDifficulty.HARD: 3,
+                },
+                value=Question.difficulty,
+            )
+            base_query = base_query.order_by(order_func(difficulty_order))
+        else:
+            # Default order by contest_question.order
+            base_query = base_query.order_by(order_func(ContestQuestion.order))
 
         # Get total count
         count_query = (
@@ -813,6 +826,11 @@ class ContestRepository:
             count_query = count_query.join(
                 QuestionLanguage, QuestionLanguage.question_id == Question.id
             )
+        if filters.tag_id or filters.tag_name:
+            count_query = count_query.join(
+                QuestionTag, QuestionTag.question_id == Question.id
+            ).join(Tag, Tag.id == QuestionTag.tag_id)
+
         if filter_conditions:
             count_query = count_query.where(and_(*filter_conditions))
 
@@ -969,6 +987,62 @@ class ContestRepository:
                 ContestQuestion.question_id.in_(question_ids),
             )
         )
+        await self.db.flush()
+
+    async def reorder_questions_in_contest(
+        self,
+        contest_id: UUID,
+        reorders: list[tuple[UUID, int]],
+    ) -> None:
+        """
+        Bulk update the order of multiple questions in a contest using CASE for efficiency.
+        Uses a two-step update to avoid temporary unique constraint violations.
+
+        Args:
+            contest_id: ID of the contest.
+            reorders: List of (question_id, new_order) tuples.
+        """
+        if not reorders:
+            return
+
+        question_ids = [question_id for question_id, _ in reorders]
+
+        # Step 1: Temporarily set orders to high values to avoid unique constraint issues
+        temp_order_case = case(
+            {question_id: 1000 + i for i, (question_id, _) in enumerate(reorders)},
+            value=ContestQuestion.question_id,
+        )
+
+        await self.db.execute(
+            update(ContestQuestion)
+            .where(
+                and_(
+                    ContestQuestion.contest_id == contest_id,
+                    ContestQuestion.question_id.in_(question_ids),
+                )
+            )
+            .values(order=temp_order_case)
+        )
+        await self.db.flush()
+
+        # Step 2: Apply final orders
+        order_case = case(
+            {question_id: order for question_id, order in reorders},
+            value=ContestQuestion.question_id,
+        )
+
+        stmt = (
+            update(ContestQuestion)
+            .where(
+                and_(
+                    ContestQuestion.contest_id == contest_id,
+                    ContestQuestion.question_id.in_(question_ids),
+                )
+            )
+            .values(order=order_case)
+        )
+
+        await self.db.execute(stmt)
         await self.db.flush()
 
     # ============ STUDENT-SPECIFIC METHODS ============
