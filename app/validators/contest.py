@@ -2,9 +2,11 @@ from datetime import datetime
 from uuid import UUID
 
 from app.exceptions.contest import (
+    ContestNotFoundError,
     InstructorAlreadyAssignedError,
     InstructorNotAssignedError,
     InvalidContestError,
+    QuestionNotInContestError,
 )
 from app.models.contest import ContestInstructor
 
@@ -244,3 +246,71 @@ class ContestValidator:
         """
         if duration is not None and duration <= 0:
             raise InvalidContestError("Question duration must be greater than 0")
+
+    @staticmethod
+    def validate_batch_add_limit(count: int, limit: int = 50) -> None:
+        """
+        Validate that the number of questions being added doesn't exceed the batch limit.
+
+        Args:
+            count: Number of questions in the batch request.
+            limit: Maximum allowed questions per batch (default 50).
+
+        Raises:
+            InvalidContestError: If count exceeds the limit.
+        """
+        if count > limit:
+            raise InvalidContestError(f"Cannot add more than {limit} questions at once")
+
+    @staticmethod
+    def validate_not_deleted(is_deleted: bool, contest_id: UUID) -> None:
+        """
+        Validate that the contest is not soft-deleted.
+
+        Args:
+            is_deleted: Soft-deletion flag of the contest.
+            contest_id: ID of the contest for error context.
+
+        Raises:
+            ContestNotFoundError: If the contest is marked as deleted.
+        """
+        if is_deleted:
+            raise ContestNotFoundError(str(contest_id))
+
+    @staticmethod
+    def validate_questions_in_contest(
+        request_q_ids: set[UUID], existing_q_ids: set[UUID], contest_id: UUID
+    ) -> None:
+        """
+        Validate that all requested question IDs belong to the specified contest.
+
+        Args:
+            request_q_ids: Set of question IDs from the request.
+            existing_q_ids: Set of question IDs currently in the contest.
+            contest_id: ID of the contest for error context.
+
+        Raises:
+            QuestionNotInContestError: If any requested ID is missing from the contest.
+        """
+        if not request_q_ids.issubset(existing_q_ids):
+            missing = request_q_ids - existing_q_ids
+            raise QuestionNotInContestError(str(list(missing)[0]), str(contest_id))
+
+    @staticmethod
+    def validate_sequential_ordering(orders: list[int], total_count: int) -> None:
+        """
+        Validate that the provided orders form a sequential 1..N set.
+
+        Args:
+            orders: List of resulting orders after applying changes.
+            total_count: Expected total number of questions.
+
+        Raises:
+            InvalidContestError: If orders are not sequential or contain duplicates.
+        """
+        new_orders = sorted(orders)
+        expected_orders = list(range(1, total_count + 1))
+        if new_orders != expected_orders:
+            raise InvalidContestError(
+                "Question orders must be sequential starting from 1 with no duplicates"
+            )
