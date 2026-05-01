@@ -305,3 +305,26 @@ class ContestQuestionResponse(BaseModel):
     created_by: UUID = Field(..., description="User ID who added the question")
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ReorderContestQuestionItem(BaseModel):
+    """Schema for a single question reorder item."""
+
+    question_id: UUID = Field(..., description="Question ID to reorder")
+    order: int = Field(
+        ..., gt=0, description="New position of the question (1-indexed)"
+    )
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ReorderContestQuestionsRequest(BaseModel):
+    """Schema for reordering multiple questions in a contest."""
+
+    reorders: list[ReorderContestQuestionItem] = Field(
+        ...,
+        min_length=1,
+        description="List of question reorder items",
+    )
+
+    model_config = ConfigDict(from_attributes=True)

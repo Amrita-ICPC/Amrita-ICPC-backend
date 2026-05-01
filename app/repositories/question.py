@@ -1,7 +1,7 @@
 from typing import cast
 from uuid import UUID
 
-from sqlalchemy import delete, or_, select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -111,33 +111,6 @@ class QuestionRepository:
         self.db.add_all(questions)
         await self.db.flush()
         return questions
-
-    async def sync_allowed_languages(
-        self, question_id: UUID, language_ids: list[int]
-    ) -> None:
-        """
-        Synchronize the allowed languages for a question.
-
-        This method explicitly manages the QuestionLanguage join table by removing
-        existing mappings and inserting new ones.
-
-        Args:
-            question_id: ID of the question.
-            language_ids: List of language IDs to associate.
-        """
-
-        # Remove existing languages
-        await self.db.execute(
-            delete(QuestionLanguage).where(QuestionLanguage.question_id == question_id)
-        )
-
-        # Add new languages
-        new_languages = [
-            QuestionLanguage(question_id=question_id, language_id=lang_id)
-            for lang_id in language_ids
-        ]
-        self.db.add_all(new_languages)
-        await self.db.flush()
 
     async def update_question(self, question: Question) -> Question:
         """
