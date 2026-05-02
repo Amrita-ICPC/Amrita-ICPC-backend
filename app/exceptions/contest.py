@@ -13,6 +13,16 @@ class ContestNotFoundError(AppBaseException):
         )
 
 
+class ContestDeletedError(AppBaseException):
+    """Raised when contest is soft-deleted."""
+
+    def __init__(self, contest_id: str):
+        super().__init__(
+            message=f"Contest with ID {contest_id} has been deleted",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+
 class ContestAlreadyExistsError(AppBaseException):
     """Raised when contest with same name already exists."""
 

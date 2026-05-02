@@ -95,6 +95,38 @@ class ContestRunStatus(str, enum.Enum):
     ENDED = "ENDED"
 
 
+class SortOrder(str, enum.Enum):
+    """
+    Enumeration for sorting order.
+
+    Attributes:
+        ASC: Ascending order.
+        DESC: Descending order.
+    """
+
+    ASC = "asc"
+    DESC = "desc"
+
+
+class ContestQuestionSortBy(str, enum.Enum):
+    """
+    Enumeration for contest question sorting options.
+
+    Attributes:
+        TITLE: Sort by question title.
+        DIFFICULTY: Sort by question difficulty.
+        CREATED_AT: Sort by creation timestamp.
+        UPDATED_AT: Sort by last update timestamp.
+        ORDER: Sort by contest-specific order.
+    """
+
+    TITLE = "title"
+    DIFFICULTY = "difficulty"
+    CREATED_AT = "created_at"
+    UPDATED_AT = "updated_at"
+    ORDER = "order"
+
+
 class ScoringType(str, enum.Enum):
     """
     Enumeration of scoring methods for contest evaluation.

@@ -200,7 +200,11 @@ class TeamRepository:
         """
         result = await self.db.execute(
             select(ContestTeam)
-            .options(joinedload(ContestTeam.team))
+            .options(
+                joinedload(ContestTeam.team)
+                .selectinload(Team.members)
+                .selectinload(TeamUser.user)
+            )
             .filter(
                 ContestTeam.contest_id == contest_id,
                 ContestTeam.team_id == team_id,
