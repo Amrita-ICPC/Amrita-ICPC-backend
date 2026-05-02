@@ -110,6 +110,6 @@ def build_contest_question_entity(
         question_id=data.question_id,
         order=data.order,
         duration=data.duration,
-        score=data.score,
+        score=100 if data.score is None else data.score,
         created_by=data.created_by,
     )

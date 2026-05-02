@@ -1007,9 +1007,13 @@ class ContestRepository:
 
         question_ids = [question_id for question_id, _ in reorders]
 
+        max_order = await self.get_max_question_order(contest_id)
         # Step 1: Temporarily set orders to high values to avoid unique constraint issues
         temp_order_case = case(
-            {question_id: 1000 + i for i, (question_id, _) in enumerate(reorders)},
+            {
+                question_id: max_order + i + 1
+                for i, (question_id, _) in enumerate(reorders)
+            },
             value=ContestQuestion.question_id,
         )
 

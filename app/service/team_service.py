@@ -1,3 +1,6 @@
+# TODO: Refactor to split into multiple services (TeamManagementService, TeamMembershipService, TeamApprovalService) to adhere to Single Responsibility Principle and improve maintainability.
+# TODO: Reuse the logics instead of duplicating
+
 from typing import cast
 from uuid import UUID
 
@@ -349,6 +352,9 @@ class TeamService:
         contest_team = await self.repository.get_contest_team_or_raise(
             contest_id, team_id
         )
+
+        if contest.team_approval_mode != TeamApprovalMode.INSTRUCTOR_REVIEW:
+            raise ApprovalNotAllowedError(str(team_id), str(contest_id))
 
         updated_team = await self.repository.update_team_approval_status(
             contest_team, TeamApprovalStatus.REJECTED

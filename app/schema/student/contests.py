@@ -106,7 +106,7 @@ class StudentContestAvailableResponse(BaseModel):
         None, description="Registration end time (UTC)"
     )
     status: ContestStatus = Field(
-        ..., description="Contest status (DRAFT, SCHEDULED, RUNNING, FINISHED)"
+        ..., description="Contest status (DRAFT, PUBLISHED, PAUSED, CANCELLED)"
     )
     is_public: bool = Field(..., description="Whether contest is publicly visible")
     problem_count: int = Field(..., description="Number of problems in contest")

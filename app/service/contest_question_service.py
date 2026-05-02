@@ -6,6 +6,7 @@ from app.core.cache.decorators import cache_delete, cache_get
 from app.core.guards.contest import ContestOperationGuard
 from app.core.logger import logger
 from app.exceptions.contest import (
+    ContestDeletedError,
     ContestNotFoundError,
     DuplicateQuestionOrderError,
     QuestionAlreadyInContestError,
@@ -43,7 +44,11 @@ from app.schema.question import (
     QuestionResponse,
     QuestionUpdate,
 )
-from app.utils.enums import QuestionDifficulty
+from app.utils.enums import (
+    ContestQuestionSortBy,
+    QuestionDifficulty,
+    SortOrder,
+)
 from app.validators.contest import ContestValidator
 from app.validators.question import QuestionValidator
 
@@ -99,8 +104,8 @@ class ContestQuestionService:
         language_id: int | None = None,
         tag_id: Optional[UUID] = None,
         tag_name: Optional[str] = None,
-        sort_by: Optional[str] = None,
-        sort_order: Optional[str] = "asc",
+        sort_by: ContestQuestionSortBy | None = None,
+        sort_order: SortOrder | None = SortOrder.ASC,
         skip: int = 0,
         limit: int = 20,
     ) -> ContestQuestionsListResponse:
@@ -363,6 +368,8 @@ class ContestQuestionService:
             PermissionDeniedError: If the user lacks manage/read permissions.
         """
         contest = await self.repository.get_contest_or_raise(contest_id)
+        if contest.is_deleted:
+            raise ContestDeletedError(str(contest_id))
         await self.guard.check_manage_contest(user_id=user_id, contest=contest)
 
         is_in_contest = await self.repository.is_question_in_contest(

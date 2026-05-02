@@ -163,6 +163,7 @@ class ContestInstructor(Base):
     instructor = relationship("User", foreign_keys=[instructor_id])
 
 
+# TODO: Add a next_question_order field, to behave that field as counter
 class ContestQuestion(Base):
     __tablename__ = "contest_question"
     __table_args__ = (UniqueConstraint("contest_id", "order"),)
