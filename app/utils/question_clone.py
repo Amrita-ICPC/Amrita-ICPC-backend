@@ -67,7 +67,8 @@ def deep_copy_question_for_clone(
         memory_limit_mb=source_question.memory_limit_mb,
         created_by=created_by,
         languages=[
-            QuestionLanguage(language_id=language_id) for language_id in language_ids
+            QuestionLanguage(language_id=language_id, question_id=cloned_question_id)
+            for language_id in language_ids
         ],
         tags=[
             QuestionTag(question_id=cloned_question_id, tag_id=tag_id)
@@ -76,6 +77,7 @@ def deep_copy_question_for_clone(
         testcases=[
             TestCase(
                 input=testcase.input,
+                question_id=cloned_question_id,
                 output=testcase.output,
                 is_hidden=testcase.is_hidden,
                 weight=testcase.weight,
@@ -87,6 +89,7 @@ def deep_copy_question_for_clone(
         templates=[
             QuestionTemplate(
                 id=uuid.uuid4(),
+                question_id=cloned_question_id,
                 language_id=template.language_id,
                 starter_code=template.starter_code,
                 driver_code=template.driver_code,

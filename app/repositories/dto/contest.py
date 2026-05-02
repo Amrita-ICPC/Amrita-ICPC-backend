@@ -5,9 +5,11 @@ from uuid import UUID
 from app.repositories.dto.pagination import PaginatedResult
 from app.utils.enums import (
     ContestMode,
+    ContestQuestionSortBy,
     ContestRunStatus,
     ContestStatus,
     QuestionDifficulty,
+    SortOrder,
     TeamApprovalMode,
 )
 
@@ -38,8 +40,8 @@ class ContestQuestionFilters:
     language_id: int | None = None
     tag_id: UUID | None = None
     tag_name: str | None = None
-    sort_by: str | None = None
-    sort_order: str | None = "asc"
+    sort_by: ContestQuestionSortBy | None = None
+    sort_order: SortOrder | None = SortOrder.ASC
 
 
 @dataclass

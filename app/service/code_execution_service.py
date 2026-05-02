@@ -480,6 +480,11 @@ class CodeExecutionService:
                 pending_tokens = set(remaining_pending)
                 attempts += 1
                 await asyncio.sleep(poll_interval)
+            if pending_tokens and attempts >= max_attempts:
+                elapsed_ms = attempts * self.judge0_repo.POLL_INTERVAL_MS
+                error_msg = f"Draft polling timeout after {elapsed_ms}ms with {len(pending_tokens)} submissions still pending"
+                logger.error(error_msg)
+                raise Judge0TimeoutError(error_msg)
 
             for i, token in enumerate(remaining_tokens, 1):
                 submission_result = batch_results.get(token)

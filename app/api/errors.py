@@ -14,6 +14,7 @@ from app.exceptions.base import AppBaseException
 from app.exceptions.contest import (
     AudienceNotAssignedToContestError,
     ContestAlreadyExistsError,
+    ContestDeletedError,
     ContestNotFoundError,
     ContestOperationError,
     DuplicateQuestionOrderError,
@@ -165,6 +166,17 @@ def setup_exception_handlers(app: FastAPI) -> None:
             status_code=exc.status_code,
             message=exc.message,
             error_code="CONTEST_NOT_FOUND",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(ContestDeletedError)
+    async def contest_deleted_handler(request: Request, exc: ContestDeletedError):
+        logger.warning(f"Contest deleted: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="CONTEST_DELETED",
             details=[exc.detail] if exc.detail else None,
         )
 
