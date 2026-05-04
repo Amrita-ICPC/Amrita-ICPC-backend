@@ -328,3 +328,30 @@ class ReorderContestQuestionsRequest(BaseModel):
     )
 
     model_config = ConfigDict(from_attributes=True)
+class CloneQuestionConfig(BaseModel):
+    """Configuration for a specific question being cloned."""
+
+    question_id: UUID
+    score: Optional[int] = Field(None, gt=0)
+    duration: Optional[int] = Field(None, gt=0)
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ContestBankCloneRequest(BaseModel):
+    """Schema for cloning questions from a bank to a contest."""
+
+    bank_id: UUID = Field(..., description="Source bank ID")
+    copy_all: bool = Field(
+        default=False, description="Whether to copy all questions from the bank"
+    )
+    questions: Optional[list[CloneQuestionConfig]] = Field(
+        None,
+        description="Specific questions to copy with optional overrides (if copy_all is False)",
+    )
+    score: int = Field(100, gt=0, description="Default score for cloned questions")
+    duration: Optional[int] = Field(
+        None, gt=0, description="Default duration for cloned questions in seconds"
+    )
+
+    model_config = ConfigDict(from_attributes=True)

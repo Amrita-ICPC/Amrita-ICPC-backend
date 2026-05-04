@@ -4,7 +4,7 @@ from app.models.bank import Bank
 from app.repositories.dto.bank import BankFilters
 from app.repositories.dto.pagination import PaginationParams
 from app.schema.bank import BankDetailResponse, BankResponse, BankShareBase
-from app.schema.question import QuestionResponse
+from app.utils.enums import QuestionDifficulty
 
 
 def build_bank_query_params(
@@ -31,12 +31,24 @@ def to_bank_response_list(banks: list["Bank"]) -> list[BankResponse]:
 
 def to_bank_detail_response(bank: "Bank") -> BankDetailResponse:
     """Map bank ORM object to detail response schema."""
-    question_items = [
-        QuestionResponse.from_question(link.question)
-        for link in (bank.questions or [])
-        if link.question is not None
-    ]
+    questions = bank.questions or []
+    
+    total_count = len(questions)
+    easy_count = 0
+    medium_count = 0
+    hard_count = 0
+    
+    for link in questions:
+        if link.question:
+            if link.question.difficulty == QuestionDifficulty.EASY:
+                easy_count += 1
+            elif link.question.difficulty == QuestionDifficulty.MEDIUM:
+                medium_count += 1
+            elif link.question.difficulty == QuestionDifficulty.HARD:
+                hard_count += 1
 
+    shares = bank.shares or []
+    
     return BankDetailResponse(
         id=bank.id,
         name=bank.name,
@@ -44,11 +56,11 @@ def to_bank_detail_response(bank: "Bank") -> BankDetailResponse:
         created_by=bank.created_by,
         created_at=bank.created_at,
         updated_at=bank.updated_at,
-        questions=question_items,
-        shares=[
-            BankShareBase(user_id=share.user_id, permission=share.permission)
-            for share in (bank.shares or [])
-        ],
+        total_questions_count=total_count,
+        easy_questions_count=easy_count,
+        medium_questions_count=medium_count,
+        hard_questions_count=hard_count,
+        shared_users_count=len([s for s in shares if s.user_id != bank.created_by]),
     )
 
 

@@ -2,15 +2,22 @@ from datetime import datetime, timezone
 from typing import List
 from uuid import UUID
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
 from app.exceptions.bank import BankNotFoundError
 from app.models.bank import Bank, BankQuestion, BankShare
 from app.models.question import Question, QuestionLanguage, QuestionTemplate, TestCase
-from app.repositories.dto import BankFilters, PaginatedResult, PaginationParams
-from app.utils.enums import BankPermission
+from app.models.tag import QuestionTag, Tag
+from app.models.user import User
+from app.repositories.dto import (
+    BankFilters,
+    BankQuestionFilters,
+    PaginatedResult,
+    PaginationParams,
+)
+from app.utils.enums import BankPermission, SortOrder
 
 
 class BankRepository:
@@ -307,13 +314,34 @@ class BankRepository:
         await self.db.flush()
         return share
 
-    async def remove_share(self, share: BankShare) -> None:
-        """Remove a user's access to a bank.
+    async def remove_share(self, bank_id: UUID, user_id: UUID) -> None:
+        """Remove a specific user's access to a bank.
 
         Args:
-            share (BankShare): The share association to delete.
+            bank_id (UUID): The bank ID.
+            user_id (UUID): The user ID.
         """
-        await self.db.delete(share)
+        await self.db.execute(
+            delete(BankShare).where(
+                BankShare.bank_id == bank_id, BankShare.user_id == user_id
+            )
+        )
+        await self.db.flush()
+
+    async def remove_shares_batch(self, bank_id: UUID, user_ids: List[UUID]) -> None:
+        """Remove multiple shares in a single query.
+
+        Args:
+            bank_id (UUID): The bank ID.
+            user_ids (List[UUID]): The user IDs to unshare.
+        """
+        if not user_ids:
+            return
+        await self.db.execute(
+            delete(BankShare).where(
+                BankShare.bank_id == bank_id, BankShare.user_id.in_(user_ids)
+            )
+        )
         await self.db.flush()
 
     async def update_bank_owner(self, bank: Bank, new_owner_id: UUID) -> None:
@@ -459,15 +487,20 @@ class BankRepository:
         await self.db.flush()
 
     async def get_questions_in_bank(
-        self, bank_id: UUID, pagination: PaginationParams
+        self,
+        bank_id: UUID,
+        pagination: PaginationParams,
+        filters: BankQuestionFilters | None = None,
     ) -> PaginatedResult:
         """Retrieve core subsets evaluated cleanly matching query metrics structurally paginated explicitly properly.
 
         Extract dynamically linked Question records matching the parent origin Bank ID utilizing optimized SQL Join filtering.
+        Supports filtering by title, difficulty, and tags. Supports ordering by title (name) and difficulty.
 
         Args:
             bank_id (UUID): Source bounds restriction targets.
             pagination (PaginationParams): Offset bounds safely passed to underlying slices explicitly cleanly.
+            filters (BankQuestionFilters): Optional filtering and sorting criteria.
 
         Returns:
             PaginatedResult: Dynamic chunk data collection mapped structurally cleanly successfully.
@@ -475,20 +508,53 @@ class BankRepository:
         base_query = (
             select(Question)
             .join(BankQuestion, BankQuestion.question_id == Question.id)
-            .options(
-                selectinload(Question.languages).selectinload(
-                    QuestionLanguage.language
-                ),
-                selectinload(Question.tags),
-                selectinload(Question.templates).selectinload(
-                    QuestionTemplate.language
-                ),
-            )
             .filter(BankQuestion.bank_id == bank_id)
-            .order_by(BankQuestion.created_at, Question.id)
         )
 
-        count_query = select(func.count()).select_from(base_query.subquery())
+        # Apply filters
+        if filters:
+            if filters.title:
+                base_query = base_query.filter(Question.title.ilike(f"%{filters.title}%"))
+            
+            if filters.difficulty:
+                base_query = base_query.filter(Question.difficulty == filters.difficulty)
+            
+            if filters.tag:
+                tag_subquery = (
+                    select(QuestionTag.question_id)
+                    .join(Tag, Tag.id == QuestionTag.tag_id)
+                    .filter(Tag.name.ilike(f"%{filters.tag}%"))
+                )
+                base_query = base_query.filter(Question.id.in_(tag_subquery))
+
+        # Apply sorting
+        if filters and filters.sort_by:
+            sort_attr = None
+            if filters.sort_by == "name":
+                sort_attr = Question.title
+            elif filters.sort_by == "difficulty":
+                sort_attr = Question.difficulty
+            
+            if sort_attr is not None:
+                if filters.sort_order == SortOrder.DESC:
+                    base_query = base_query.order_by(sort_attr.desc())
+                else:
+                    base_query = base_query.order_by(sort_attr.asc())
+        else:
+            base_query = base_query.order_by(BankQuestion.created_at, Question.id)
+
+        base_query = base_query.options(
+            selectinload(Question.languages).selectinload(
+                QuestionLanguage.language
+            ),
+            selectinload(Question.tags).selectinload(QuestionTag.tag),
+            selectinload(Question.templates).selectinload(
+                QuestionTemplate.language
+            ),
+        )
+
+        # Count query doesn't need ORDER BY or DISTINCT now
+        count_query = select(func.count()).select_from(base_query.order_by(None).subquery())
         total = (await self.db.execute(count_query)).scalar() or 0
 
         result = await self.db.execute(
@@ -508,3 +574,65 @@ class BankRepository:
                 setattr(question, "testcase_count", testcase_counts.get(question.id, 0))
 
         return PaginatedResult(total=total, items=questions)
+
+    async def get_bank_shares_with_filters(
+        self,
+        bank_id: UUID,
+        email: str | None = None,
+        username: str | None = None,
+    ) -> tuple[User, List[BankShare]]:
+        """Retrieve bank owner and filtered share list.
+
+        Args:
+            bank_id (UUID): Target bank.
+            email (str | None): Optional email filter for shares.
+            username (str | None): Optional username (user_id) filter for shares.
+
+        Returns:
+            Tuple[User, List[BankShare]]: The bank owner and the list of shares.
+        """
+        # Fetch bank to get owner
+        bank_query = (
+            select(Bank)
+            .options(joinedload(Bank.creator))
+            .filter(Bank.id == bank_id, Bank.is_deleted.is_(False))
+        )
+        bank_result = await self.db.execute(bank_query)
+        bank = bank_result.unique().scalars().first()
+        if not bank:
+            raise BankNotFoundError(str(bank_id))
+
+        # Fetch shares with filters
+        shares_query = (
+            select(BankShare)
+            .join(User, User.id == BankShare.user_id)
+            .options(joinedload(BankShare.user))
+            .filter(BankShare.bank_id == bank_id)
+        )
+
+        if email:
+            shares_query = shares_query.filter(User.email.ilike(f"%{email}%"))
+        if username:
+            shares_query = shares_query.filter(User.user_id.ilike(f"%{username}%"))
+
+        shares_result = await self.db.execute(shares_query)
+        shares = list(shares_result.scalars().all())
+
+        return bank.creator, shares
+
+    async def update_shares_permission(
+        self, bank_id: UUID, user_ids: List[UUID], permission: BankPermission
+    ) -> None:
+        """Update multiple share permissions at once.
+
+        Args:
+            bank_id (UUID): The bank ID.
+            user_ids (List[UUID]): The users to update.
+            permission (BankPermission): The new permission level.
+        """
+        await self.db.execute(
+            update(BankShare)
+            .where(BankShare.bank_id == bank_id, BankShare.user_id.in_(user_ids))
+            .values(permission=permission)
+        )
+        await self.db.flush()

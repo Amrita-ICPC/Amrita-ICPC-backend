@@ -22,6 +22,14 @@ from app.utils.enums import QuestionDifficulty
 
 
 @pytest.fixture
+def mock_bank_repository() -> AsyncMock:
+    """Mock bank repository for contest-question service methods."""
+    from app.repositories.bank import BankRepository
+
+    return AsyncMock(spec=BankRepository)
+
+
+@pytest.fixture
 def mock_question_repository() -> AsyncMock:
     """Mock question repository for contest-question service methods."""
     return AsyncMock(spec=QuestionRepository)
@@ -42,6 +50,7 @@ def contest_service_with_questions(
     mock_validator: AsyncMock,
     mock_question_repository: AsyncMock,
     mock_language_repository: AsyncMock,
+    mock_bank_repository: AsyncMock,
 ) -> ContestQuestionService:
     """ContestQuestionService instance with question repository wired."""
     return ContestQuestionService(
@@ -50,6 +59,7 @@ def contest_service_with_questions(
         validator=mock_validator,
         question_repository=mock_question_repository,
         language_repository=mock_language_repository,
+        bank_repository=mock_bank_repository,
     )
 
 
