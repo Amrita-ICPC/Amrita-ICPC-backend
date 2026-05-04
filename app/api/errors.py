@@ -14,6 +14,7 @@ from app.exceptions.base import AppBaseException
 from app.exceptions.contest import (
     AudienceNotAssignedToContestError,
     ContestAlreadyExistsError,
+    ContestDeletedError,
     ContestNotFoundError,
     ContestOperationError,
     DuplicateQuestionOrderError,
@@ -40,7 +41,12 @@ from app.exceptions.image import (
     InvalidImagePathError,
 )
 from app.exceptions.judge0 import Judge0NotInitializedError
-from app.exceptions.question import QuestionNotFoundError, TemplateAlreadyExistsError
+from app.exceptions.question import (
+    QuestionNotFoundError,
+    TagAlreadyExistsError,
+    TagNotFoundError,
+    TemplateAlreadyExistsError,
+)
 from app.exceptions.team import (
     TeamNotFoundError,
 )
@@ -160,6 +166,17 @@ def setup_exception_handlers(app: FastAPI) -> None:
             status_code=exc.status_code,
             message=exc.message,
             error_code="CONTEST_NOT_FOUND",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(ContestDeletedError)
+    async def contest_deleted_handler(request: Request, exc: ContestDeletedError):
+        logger.warning(f"Contest deleted: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="CONTEST_DELETED",
             details=[exc.detail] if exc.detail else None,
         )
 
@@ -489,6 +506,28 @@ def setup_exception_handlers(app: FastAPI) -> None:
             status_code=exc.status_code,
             message=exc.message,
             error_code="IMAGE_STORAGE_ERROR",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(TagNotFoundError)
+    async def tag_not_found_handler(request: Request, exc: TagNotFoundError):
+        logger.warning(f"Tag not found: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="TAG_NOT_FOUND",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(TagAlreadyExistsError)
+    async def tag_already_exists_handler(request: Request, exc: TagAlreadyExistsError):
+        logger.warning(f"Tag already exists: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="TAG_ALREADY_EXISTS",
             details=[exc.detail] if exc.detail else None,
         )
 

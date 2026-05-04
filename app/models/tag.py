@@ -5,6 +5,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+from app.models.question import Question
 
 
 class Tag(Base):
@@ -15,7 +16,12 @@ class Tag(Base):
     )
     name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
 
-    questions = relationship("QuestionTag", back_populates="tag")
+    questions: Mapped[list["QuestionTag"]] = relationship(
+        "QuestionTag",
+        back_populates="tag",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
 
 class QuestionTag(Base):
@@ -28,5 +34,5 @@ class QuestionTag(Base):
         ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True
     )
 
-    question = relationship("Question", back_populates="tags")
-    tag = relationship("Tag", back_populates="questions")
+    question: Mapped["Question"] = relationship("Question", back_populates="tags")
+    tag: Mapped["Tag"] = relationship("Tag", back_populates="questions")

@@ -27,7 +27,7 @@ from app.utils.enums import ContestStatus, TeamApprovalMode
 class StudentContestRegistrationRequest(BaseModel):
     """
     Schema for registering a student/team to a contest.
-    
+
     Attributes:
         team_id: ID of the team to register with for this contest
     """
@@ -43,12 +43,12 @@ class StudentContestRegistrationRequest(BaseModel):
 class StudentContestProblemResponse(BaseModel):
     """
     Schema for a single problem in a contest from student view.
-    
+
     Shows only student-relevant problem information:
     - Problem metadata (title, difficulty)
     - Time and score constraints
     - Problem order in contest
-    
+
     Attributes:
         id: Problem unique identifier
         order: Position in contest (1-indexed)
@@ -63,7 +63,7 @@ class StudentContestProblemResponse(BaseModel):
     title: str = Field(..., description="Problem title/name")
     difficulty: str = Field(..., description="Problem difficulty (EASY, MEDIUM, HARD)")
     score: int = Field(..., description="Points awarded for solving this problem")
-    duration: int = Field(..., description="Time limit in seconds")
+    duration: Optional[int] = Field(None, description="Time limit in seconds")
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -72,10 +72,10 @@ class StudentContestProblemResponse(BaseModel):
 class StudentContestAvailableResponse(BaseModel):
     """
     Schema for contest summary in availability list.
-    
+
     Used in GET /students/contests/available endpoint.
     Shows high-level contest information for discovery.
-    
+
     Attributes:
         id: Contest unique identifier
         name: Contest name
@@ -105,7 +105,9 @@ class StudentContestAvailableResponse(BaseModel):
     registration_end: Optional[datetime] = Field(
         None, description="Registration end time (UTC)"
     )
-    status: ContestStatus = Field(..., description="Contest status (DRAFT, SCHEDULED, RUNNING, FINISHED)")
+    status: ContestStatus = Field(
+        ..., description="Contest status (DRAFT, PUBLISHED, PAUSED, CANCELLED)"
+    )
     is_public: bool = Field(..., description="Whether contest is publicly visible")
     problem_count: int = Field(..., description="Number of problems in contest")
     team_approval_mode: TeamApprovalMode = Field(
@@ -120,10 +122,10 @@ class StudentContestAvailableResponse(BaseModel):
 class StudentRegisteredContestResponse(BaseModel):
     """
     Schema for registered contest summary.
-    
+
     Used in GET /students/contests/registered endpoint.
     Shows contests student is already registered in.
-    
+
     Attributes:
         id: Contest unique identifier
         name: Contest name
@@ -154,7 +156,9 @@ class StudentRegisteredContestResponse(BaseModel):
     registration_end: Optional[datetime] = Field(
         None, description="Registration end time (UTC)"
     )
-    status: ContestStatus = Field(..., description="Contest status (DRAFT, SCHEDULED, RUNNING, FINISHED)")
+    status: ContestStatus = Field(
+        ..., description="Contest status (DRAFT, SCHEDULED, RUNNING, FINISHED)"
+    )
     is_public: bool = Field(..., description="Whether contest is publicly visible")
     problem_count: int = Field(..., description="Number of problems in contest")
     team_approval_mode: TeamApprovalMode = Field(
@@ -162,10 +166,16 @@ class StudentRegisteredContestResponse(BaseModel):
     )
     min_team_size: int = Field(..., description="Minimum team size required")
     max_team_size: int = Field(..., description="Maximum team size allowed")
-    registered_at: datetime = Field(..., description="When student registered for this contest")
-    registered_as_team: bool = Field(..., description="Whether registered as individual or team")
+    registered_at: datetime = Field(
+        ..., description="When student registered for this contest"
+    )
+    registered_as_team: bool = Field(
+        ..., description="Whether registered as individual or team"
+    )
     team_id: Optional[UUID] = Field(None, description="Team ID if registered with team")
-    team_name: Optional[str] = Field(None, description="Team name if registered with team")
+    team_name: Optional[str] = Field(
+        None, description="Team name if registered with team"
+    )
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -174,10 +184,10 @@ class StudentRegisteredContestResponse(BaseModel):
 class StudentContestDetailsResponse(BaseModel):
     """
     Schema for full contest details with problems.
-    
+
     Used in GET /students/contests/{id}/details endpoint.
     Comprehensive view of contest for registered or known student.
-    
+
     Attributes:
         id: Contest unique identifier
         name: Contest name
@@ -219,7 +229,9 @@ class StudentContestDetailsResponse(BaseModel):
     )
     min_team_size: int = Field(..., description="Minimum team size")
     max_team_size: int = Field(..., description="Maximum team size")
-    show_leaderboard: bool = Field(..., description="Whether leaderboard is visible to students")
+    show_leaderboard: bool = Field(
+        ..., description="Whether leaderboard is visible to students"
+    )
     problems: List[StudentContestProblemResponse] = Field(
         default_factory=list, description="List of problems in contest"
     )
@@ -237,10 +249,10 @@ class StudentContestDetailsResponse(BaseModel):
 class StudentContestRegistrationResponse(BaseModel):
     """
     Schema for contest registration operation response.
-    
+
     Used in POST /students/contests/{id}/register endpoint.
     Confirms registration and provides status.
-    
+
     Attributes:
         message: Registration status message
         contest_id: Contest ID
@@ -249,7 +261,9 @@ class StudentContestRegistrationResponse(BaseModel):
 
     message: str = Field(..., description="Registration status message")
     contest_id: UUID = Field(..., description="Contest ID")
-    status: str = Field(..., description="Registration status (success, pending, already_registered)")
+    status: str = Field(
+        ..., description="Registration status (success, pending, already_registered)"
+    )
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -258,10 +272,10 @@ class StudentContestRegistrationResponse(BaseModel):
 class StudentContestProblemsListResponse(BaseModel):
     """
     Schema for problems list in a specific contest.
-    
+
     Used in GET /students/contests/{id}/problems endpoint.
     Returns all problems for a contest with their details.
-    
+
     Attributes:
         contest_id: Contest ID
         contest_name: Contest name for context
@@ -282,10 +296,10 @@ class StudentContestProblemsListResponse(BaseModel):
 class StudentContestListResponse(BaseModel):
     """
     Schema for paginated list of available contests.
-    
+
     Used in GET /students/contests/available endpoint.
     Returns paginated results with navigation info.
-    
+
     Attributes:
         contests: List of available contests
         total: Total number of available contests
@@ -308,10 +322,10 @@ class StudentContestListResponse(BaseModel):
 class StudentRegisteredContestListResponse(BaseModel):
     """
     Schema for paginated list of registered contests.
-    
+
     Used in GET /students/contests/registered endpoint.
     Returns contests student is already registered in.
-    
+
     Attributes:
         contests: List of registered contests
         total: Total number of registered contests
@@ -329,4 +343,3 @@ class StudentRegisteredContestListResponse(BaseModel):
     has_more: bool = Field(..., description="Whether there are more pages")
 
     model_config = ConfigDict(from_attributes=True)
-

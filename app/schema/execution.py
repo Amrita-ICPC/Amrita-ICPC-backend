@@ -18,9 +18,10 @@ class Language(BaseModel):
 
 # RUN (Practice) SCHEMAS - For running code against test cases
 
+
 class CodeRunRequest(BaseModel):
     """Request to run code against test cases (practice/feedback).
-    
+
     Stdin and expected outputs are fetched from non-hidden test cases.
     User only provides code and language.
     """
@@ -32,12 +33,14 @@ class CodeRunRequest(BaseModel):
         max_length=50000,
         description="The source code to execute",
     )
-    language_id: int = Field(..., gt=0, description="Judge0 language ID (e.g., 71 for Python)")
+    language_id: int = Field(
+        ..., gt=0, description="Judge0 language ID (e.g., 71 for Python)"
+    )
 
 
 class TestCaseRunResult(BaseModel):
     """Result of running code against a single test case.
-    
+
     Only returned when code compiles successfully.
     If compilation fails, use CompilationErrorResponse instead.
     """
@@ -54,17 +57,14 @@ class TestCaseRunResult(BaseModel):
         default=None, description="Actual output from user's code"
     )
     stderr: Optional[str] = Field(
-        default=None, description="Runtime error output (e.g., ZeroDivisionError, IndexError)"
+        default=None,
+        description="Runtime error output (e.g., ZeroDivisionError, IndexError)",
     )
     expected_output: Optional[str] = Field(
         default=None, description="Expected output from test case"
     )
-    time: Optional[float] = Field(
-        default=None, description="Execution time in seconds"
-    )
-    memory: Optional[int] = Field(
-        default=None, description="Memory used in kilobytes"
-    )
+    time: Optional[float] = Field(default=None, description="Execution time in seconds")
+    memory: Optional[int] = Field(default=None, description="Memory used in kilobytes")
 
 
 class CodeRunResponse(BaseModel):
@@ -109,7 +109,7 @@ class CodeRunResponse(BaseModel):
 # ERROR SCHEMAS
 class CompilationErrorResponse(BaseModel):
     """Response when code fails to compile.
-    
+
     When code has syntax/import errors, test case execution is skipped.
     This is returned instead of CodeRunResponse.
     """
@@ -138,7 +138,7 @@ class CompilationErrorResponse(BaseModel):
 
 class ErrorResponse(BaseModel):
     """Standard error response for code run failures.
-    
+
     Used for API-level errors (question not found, language not supported, etc.).
     NOT for code execution errors (use CompilationErrorResponse for compilation errors).
     """
@@ -186,3 +186,26 @@ class ErrorResponse(BaseModel):
                 },
             ]
         }
+
+
+class DraftTestCase(BaseModel):
+    """Ephemeral test case for draft testing."""
+
+    input: str = Field(..., description="Standard input for the test case")
+    expected_output: str = Field(
+        ..., description="Expected standard output for comparison"
+    )
+
+
+class DraftCodeRunRequest(BaseModel):
+    """Request to test a draft question with custom test cases."""
+
+    language_id: int = Field(
+        ..., gt=0, description="Judge0 language ID (e.g., 71 for Python)"
+    )
+    starter_code: str = Field("", description="Initial boilerplate code")
+    solution_code: str = Field(..., description="User-provided solution code")
+    driver_code: str = Field("", description="Boilerplate to execute the solution")
+    test_cases: list[DraftTestCase] = Field(
+        ..., min_length=1, description="List of test cases to run against"
+    )

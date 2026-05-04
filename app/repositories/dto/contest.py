@@ -2,10 +2,14 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
+from app.repositories.dto.pagination import PaginatedResult
 from app.utils.enums import (
     ContestMode,
+    ContestQuestionSortBy,
+    ContestRunStatus,
     ContestStatus,
     QuestionDifficulty,
+    SortOrder,
     TeamApprovalMode,
 )
 
@@ -23,6 +27,7 @@ class ContestFilters:
 
     search_term: str | None = None
     status: ContestStatus | None = None
+    run_status: ContestRunStatus | None = None
     is_public: bool | None = None
 
 
@@ -34,6 +39,9 @@ class ContestQuestionFilters:
     difficulty: QuestionDifficulty | None = None
     language_id: int | None = None
     tag_id: UUID | None = None
+    tag_name: str | None = None
+    sort_by: ContestQuestionSortBy | None = None
+    sort_order: SortOrder | None = SortOrder.ASC
 
 
 @dataclass
@@ -90,3 +98,14 @@ class UpdateContestData:
     scoring_type: str | None | _UnsetType = UNSET
     team_approval_mode: TeamApprovalMode | None | _UnsetType = UNSET
     contest_mode: ContestMode | None | _UnsetType = UNSET
+
+
+@dataclass
+class ContestQuestionsPaginatedResult(PaginatedResult):
+    """
+    Paginated result for contest questions with additional metadata for counts.
+    """
+
+    easy_count: int = 0
+    medium_count: int = 0
+    hard_count: int = 0

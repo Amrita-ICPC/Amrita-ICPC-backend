@@ -1,3 +1,6 @@
+# TODO: Refactor to split into multiple services (TeamManagementService, TeamMembershipService, TeamApprovalService) to adhere to Single Responsibility Principle and improve maintainability.
+# TODO: Reuse the logics instead of duplicating
+
 from typing import cast
 from uuid import UUID
 
@@ -12,7 +15,7 @@ from app.mappers.team import (
     build_team_creation_entities,
     build_update_team_dto,
     to_contest_team_response,
-    to_contest_team_response_list,
+    to_team_list_response,
     to_team_member_responses,
 )
 from app.repositories.dto import PaginationParams, TeamFilters
@@ -20,6 +23,7 @@ from app.repositories.team import TeamRepository
 from app.schema.team import (
     ContestTeamResponse,
     TeamCreate,
+    TeamListResponse,
     TeamMemberAdd,
     TeamMemberRemove,
     TeamMemberResponse,
@@ -341,14 +345,114 @@ class TeamService:
 
         raise ApprovalNotAllowedError(str(team_id), str(contest_id))
 
+    @cache_delete(
+        key_builder=lambda self, contest_id, team_id, *args, **kwargs: [
+            f"contest:{contest_id}:team:{team_id}:*",
+            f"contest:{contest_id}:teams:*",
+        ]
+    )
+    async def reject_team(
+        self, contest_id: UUID, team_id: UUID, rejected_by: UUID
+    ) -> ContestTeamResponse:
+        """
+        Reject a team in a contest.
+
+        Args:
+            contest_id: UUID of the contest containing the team
+            team_id: UUID of the team to reject
+            rejected_by: UUID of the user rejecting the team
+
+        Returns:
+            ContestTeamResponse: Updated team approval state
+        """
+        contest = await self.repository.get_contest_or_raise(contest_id)
+        await self.guard.check_update_team(user_id=rejected_by, contest=contest)
+
+        contest_team = await self.repository.get_contest_team_or_raise(
+            contest_id, team_id
+        )
+
+        if contest.team_approval_mode != TeamApprovalMode.INSTRUCTOR_REVIEW:
+            raise ApprovalNotAllowedError(str(team_id), str(contest_id))
+
+        updated_team = await self.repository.update_team_approval_status(
+            contest_team, TeamApprovalStatus.REJECTED
+        )
+        return to_contest_team_response(updated_team)
+
+    @cache_delete(
+        key_builder=lambda self, contest_id, team_id, *args, **kwargs: [
+            f"contest:{contest_id}:team:{team_id}:*",
+            f"contest:{contest_id}:teams:*",
+        ]
+    )
+    async def confirm_team(
+        self, contest_id: UUID, team_id: UUID, confirmed_by: UUID
+    ) -> ContestTeamResponse:
+        """
+        Confirm a team for contest participation.
+
+        Args:
+            contest_id: UUID of the contest containing the team
+            team_id: UUID of the team to confirm
+            confirmed_by: UUID of the user confirming the team
+
+        Returns:
+            ContestTeamResponse: Updated team status
+        """
+        contest = await self.repository.get_contest_or_raise(contest_id)
+        await self.guard.check_update_team(user_id=confirmed_by, contest=contest)
+
+        contest_team = await self.repository.get_contest_team_or_raise(
+            contest_id, team_id
+        )
+
+        updated_team = await self.repository.update_team_status(
+            contest_team, TeamStatus.CONFIRMED
+        )
+        return to_contest_team_response(updated_team)
+
+    @cache_delete(
+        key_builder=lambda self, contest_id, team_id, *args, **kwargs: [
+            f"contest:{contest_id}:team:{team_id}:*",
+            f"contest:{contest_id}:teams:*",
+        ]
+    )
+    async def disqualify_team(
+        self, contest_id: UUID, team_id: UUID, disqualified_by: UUID
+    ) -> ContestTeamResponse:
+        """
+        Disqualify a team from a contest.
+
+        Args:
+            contest_id: UUID of the contest containing the team
+            team_id: UUID of the team to disqualify
+            disqualified_by: UUID of the user disqualifying the team
+
+        Returns:
+            ContestTeamResponse: Updated team status
+        """
+        contest = await self.repository.get_contest_or_raise(contest_id)
+        await self.guard.check_update_team(user_id=disqualified_by, contest=contest)
+
+        contest_team = await self.repository.get_contest_team_or_raise(
+            contest_id, team_id
+        )
+
+        updated_team = await self.repository.update_team_status(
+            contest_team, TeamStatus.DISQUALIFIED
+        )
+        return to_contest_team_response(updated_team)
+
     @cache_get(
         key_builder=lambda self,
         contest_id,
         user_id,
         search_term=None,
         status=None,
+        approval_status=None,
         skip=0,
-        limit=100: f"contest:{contest_id}:teams:user:{user_id}:search:{search_term}:status:{status}:skip:{skip}:limit:{limit}",
+        limit=100: f"contest:{contest_id}:teams:user:{user_id}:search:{search_term}:status:{status}:approval:{approval_status}:skip:{skip}:limit:{limit}",
         ttl=300,
     )
     async def get_contest_teams(
@@ -357,33 +461,34 @@ class TeamService:
         user_id: UUID,
         search_term: str | None = None,
         status: TeamStatus | None = None,
+        approval_status: TeamApprovalStatus | None = None,
         skip: int = 0,
         limit: int = 100,
-    ) -> tuple[int, list[ContestTeamResponse]]:
+    ) -> TeamListResponse:
         """
         Retrieve all teams in a contest with optional search and filtering.
 
         Uses repository pattern for database queries and guard pattern for
         permission validation. Supports pagination, text search by team name,
-        and status filtering.
+        and status filtering (team status and approval status).
 
         Implementation:
         - Validates read permissions via TeamOperationGuard
         - Delegates query execution to TeamRepository with filters and pagination
-        - Returns paginated results with total count
+        - Fetches team status counts
+        - Returns TeamListResponse with paginated results and counts
 
         Args:
             contest_id: UUID of the contest to get teams from
             user_id: UUID of the user requesting teams (for permission validation)
             search_term: Optional text to search in team names (case-insensitive)
-            status: Optional TeamStatus to filter teams (DRAFT or CONFIRMED)
+            status: Optional TeamStatus to filter teams (DRAFT, CONFIRMED, DISQUALIFIED)
+            approval_status: Optional TeamApprovalStatus to filter teams (WAITING, APPROVED, REJECTED)
             skip: Number of teams to skip for pagination (default: 0)
             limit: Maximum teams to return, capped at 100 (default: 100)
 
         Returns:
-            Tuple containing:
-            - Total count of teams matching the filters
-            - List of ContestTeamResponse objects for the requested page
+            TeamListResponse: Paginated results and status counts
 
         Raises:
             ContestNotFoundError: If the contest does not exist
@@ -394,7 +499,9 @@ class TeamService:
         await self.guard.check_read_team(user_id=user_id, contest=contest)
 
         # Create filter and pagination objects
-        filters = TeamFilters(search_term=search_term, status=status)
+        filters = TeamFilters(
+            search_term=search_term, status=status, approval_status=approval_status
+        )
         pagination = PaginationParams(skip=skip, limit=limit)
 
         # Delegate to repository
@@ -402,7 +509,10 @@ class TeamService:
             contest_id, filters, pagination
         )
 
-        return result.total, to_contest_team_response_list(result.items)
+        # Get status counts
+        status_counts = await self.repository.get_team_status_counts(contest_id)
+
+        return to_team_list_response(result.total, result.items, status_counts)
 
     @cache_get(
         key_builder=lambda self,

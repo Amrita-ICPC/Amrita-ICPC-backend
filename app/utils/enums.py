@@ -66,19 +66,65 @@ class ContestStatus(str, enum.Enum):
 
     Attributes:
         DRAFT: Contest is being configured and not visible to participants.
-        SCHEDULED: Contest is published and scheduled for future start.
-        RUNNING: Contest is currently active and accepting submissions.
+        PUBLISHED: Contest is published and visible to participants.
         PAUSED: Contest is temporarily halted, submissions disabled.
-        FINISHED: Contest has concluded, final results available.
         CANCELLED: Contest has been cancelled and will not proceed.
     """
 
     DRAFT = "DRAFT"
-    SCHEDULED = "SCHEDULED"
-    RUNNING = "RUNNING"
+    PUBLISHED = "PUBLISHED"
     PAUSED = "PAUSED"
-    FINISHED = "FINISHED"
     CANCELLED = "CANCELLED"
+
+
+class ContestRunStatus(str, enum.Enum):
+    """
+    Enumeration of the temporal run-state of a contest.
+
+    Derived at read-time from start_time and end_time relative to the
+    current UTC timestamp. Not persisted to the database.
+
+    Attributes:
+        UPCOMING: Current time is before start_time.
+        LIVE: Current time is between start_time and end_time (inclusive).
+        ENDED: Current time is after end_time.
+    """
+
+    UPCOMING = "UPCOMING"
+    LIVE = "LIVE"
+    ENDED = "ENDED"
+
+
+class SortOrder(str, enum.Enum):
+    """
+    Enumeration for sorting order.
+
+    Attributes:
+        ASC: Ascending order.
+        DESC: Descending order.
+    """
+
+    ASC = "asc"
+    DESC = "desc"
+
+
+class ContestQuestionSortBy(str, enum.Enum):
+    """
+    Enumeration for contest question sorting options.
+
+    Attributes:
+        TITLE: Sort by question title.
+        DIFFICULTY: Sort by question difficulty.
+        CREATED_AT: Sort by creation timestamp.
+        UPDATED_AT: Sort by last update timestamp.
+        ORDER: Sort by contest-specific order.
+    """
+
+    TITLE = "title"
+    DIFFICULTY = "difficulty"
+    CREATED_AT = "created_at"
+    UPDATED_AT = "updated_at"
+    ORDER = "order"
 
 
 class ScoringType(str, enum.Enum):
@@ -147,10 +193,12 @@ class TeamStatus(str, enum.Enum):
     Attributes:
         DRAFT: Team is being formed and can still be modified.
         CONFIRMED: Team is finalized and ready for contest participation.
+        DISQUALIFIED: Team has been disqualified from the contest.
     """
 
     DRAFT = "DRAFT"
     CONFIRMED = "CONFIRMED"
+    DISQUALIFIED = "DISQUALIFIED"
 
 
 class TeamApprovalStatus(str, enum.Enum):
@@ -160,10 +208,12 @@ class TeamApprovalStatus(str, enum.Enum):
     Attributes:
         WAITING: Team is awaiting instructor review.
         APPROVED: Team enrollment is approved.
+        REJECTED: Team enrollment is rejected.
     """
 
     WAITING = "WAITING"
     APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
 
 
 class ContestMode(str, enum.Enum):

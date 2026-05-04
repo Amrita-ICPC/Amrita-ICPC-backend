@@ -200,7 +200,11 @@ class TeamRepository:
         """
         result = await self.db.execute(
             select(ContestTeam)
-            .options(joinedload(ContestTeam.team))
+            .options(
+                joinedload(ContestTeam.team)
+                .selectinload(Team.members)
+                .selectinload(TeamUser.user)
+            )
             .filter(
                 ContestTeam.contest_id == contest_id,
                 ContestTeam.team_id == team_id,
@@ -303,6 +307,39 @@ class TeamRepository:
             .filter(ContestTeam.contest_id == contest_id)
         )
         return int(result.scalar() or 0)
+
+    async def get_team_status_counts(self, contest_id: UUID) -> dict[str, int]:
+        """
+        Get counts of teams by status and approval status in a contest.
+
+        Args:
+            contest_id: ID of the contest
+
+        Returns:
+            Dictionary containing counts for approved, waiting, rejected, and disqualified teams.
+        """
+        # Count by TeamApprovalStatus
+        approval_query = (
+            select(ContestTeam.approval_status, func.count(ContestTeam.team_id))
+            .filter(ContestTeam.contest_id == contest_id)
+            .group_by(ContestTeam.approval_status)
+        )
+        approval_results = await self.db.execute(approval_query)
+        approval_counts = {status: count for status, count in approval_results.all()}
+
+        # Count by TeamStatus.DISQUALIFIED
+        disqualified_query = select(func.count(ContestTeam.team_id)).filter(
+            ContestTeam.contest_id == contest_id,
+            ContestTeam.team_status == TeamStatus.DISQUALIFIED,
+        )
+        disqualified_count = (await self.db.execute(disqualified_query)).scalar() or 0
+
+        return {
+            "approved_count": approval_counts.get(TeamApprovalStatus.APPROVED, 0),
+            "waiting_count": approval_counts.get(TeamApprovalStatus.WAITING, 0),
+            "rejected_count": approval_counts.get(TeamApprovalStatus.REJECTED, 0),
+            "disqualified_count": int(disqualified_count),
+        }
 
     async def get_all_team_members(self, team_id: UUID) -> list[TeamUser]:
         """
@@ -449,10 +486,14 @@ class TeamRepository:
         Returns:
             PaginatedResult containing total count and list of ContestTeam objects
         """
-        # Build base query with eager loading of team relationship
+        # Build base query with eager loading of team and its members
         base_query = (
             select(ContestTeam)
-            .options(joinedload(ContestTeam.team))
+            .options(
+                joinedload(ContestTeam.team)
+                .selectinload(Team.members)
+                .selectinload(TeamUser.user)
+            )
             .join(Team, ContestTeam.team_id == Team.id)
             .filter(ContestTeam.contest_id == contest_id)
         )
@@ -464,6 +505,12 @@ class TeamRepository:
         # Apply status filter if provided
         if filters.status:
             base_query = base_query.filter(ContestTeam.team_status == filters.status)
+
+        # Apply approval status filter if provided
+        if filters.approval_status:
+            base_query = base_query.filter(
+                ContestTeam.approval_status == filters.approval_status
+            )
 
         # Get total count before pagination
         count_query = select(func.count()).select_from(
@@ -498,7 +545,11 @@ class TeamRepository:
         """
         result = await self.db.execute(
             select(ContestTeam)
-            .options(joinedload(ContestTeam.team))
+            .options(
+                joinedload(ContestTeam.team)
+                .selectinload(Team.members)
+                .selectinload(TeamUser.user)
+            )
             .filter(
                 ContestTeam.contest_id == contest_id,
                 ContestTeam.team_id == team_id,
@@ -562,7 +613,11 @@ class TeamRepository:
 
         result = await self.db.execute(
             select(ContestTeam)
-            .options(joinedload(ContestTeam.team))
+            .options(
+                joinedload(ContestTeam.team)
+                .selectinload(Team.members)
+                .selectinload(TeamUser.user)
+            )
             .filter(
                 ContestTeam.team_id == team.id,
                 ContestTeam.contest_id == contest_team.contest_id,
@@ -591,7 +646,46 @@ class TeamRepository:
 
         result = await self.db.execute(
             select(ContestTeam)
-            .options(joinedload(ContestTeam.team))
+            .options(
+                joinedload(ContestTeam.team)
+                .selectinload(Team.members)
+                .selectinload(TeamUser.user)
+            )
+            .filter(
+                ContestTeam.team_id == contest_team.team_id,
+                ContestTeam.contest_id == contest_team.contest_id,
+            )
+        )
+        updated_contest_team: ContestTeam | None = result.scalar_one_or_none()
+        if not updated_contest_team:
+            raise TeamNotFoundError(
+                str(contest_team.team_id), str(contest_team.contest_id)
+            )
+        return updated_contest_team
+
+    async def update_team_status(
+        self, contest_team: ContestTeam, status: TeamStatus
+    ) -> ContestTeam:
+        """
+        Update a team's status (DRAFT, CONFIRMED, DISQUALIFIED) within a contest.
+
+        Args:
+            contest_team: ContestTeam object to update
+            status: New status to persist
+
+        Returns:
+            The updated ContestTeam object with team relationship loaded
+        """
+        contest_team.team_status = status
+        await self.db.flush()
+
+        result = await self.db.execute(
+            select(ContestTeam)
+            .options(
+                joinedload(ContestTeam.team)
+                .selectinload(Team.members)
+                .selectinload(TeamUser.user)
+            )
             .filter(
                 ContestTeam.team_id == contest_team.team_id,
                 ContestTeam.contest_id == contest_team.contest_id,

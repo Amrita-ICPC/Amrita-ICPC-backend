@@ -1,3 +1,4 @@
+from typing import cast
 from uuid import UUID
 
 from app.models.contest import Contest
@@ -9,6 +10,7 @@ from app.schema.contest import (
     ContestSummaryResponse,
     ContestUpdate,
 )
+from app.utils.enums import ContestRunStatus
 from app.utils.image import image_object_key_to_url
 
 
@@ -80,6 +82,7 @@ def build_update_contest_dto(contest_data: ContestUpdate) -> UpdateContestData:
 def to_contest_response(
     contest: Contest,
     *,
+    run_status: ContestRunStatus,
     team_count: int | None = None,
     question_count: int | None = None,
     submission_count: int | None = None,
@@ -89,6 +92,7 @@ def to_contest_response(
 
     Args:
         contest: Contest ORM entity.
+        run_status: Pre-computed temporal run-state (UPCOMING / LIVE / ENDED).
         team_count: Optional number of teams in the contest. When provided, the
             value is populated on the response.
         question_count: Optional number of questions in the contest.
@@ -98,31 +102,67 @@ def to_contest_response(
     Returns:
         Contest detail response schema.
     """
-    response = ContestResponse.model_validate(contest)
-    response.image = image_object_key_to_url(contest.image)
-    if team_count is not None:
-        response.team_count = team_count
-    if question_count is not None:
-        response.question_count = question_count
-    if submission_count is not None:
-        response.submission_count = submission_count
-    if participant_count is not None:
-        response.participant_count = participant_count
+
+    response = ContestResponse(
+        id=contest.id,
+        name=contest.name,
+        description=contest.description,
+        image=image_object_key_to_url(contest.image),
+        is_public=contest.is_public,
+        start_time=contest.start_time,
+        end_time=contest.end_time,
+        registration_start=contest.registration_start,
+        registration_end=contest.registration_end,
+        max_teams=contest.max_teams,
+        min_team_size=contest.min_team_size,
+        max_team_size=contest.max_team_size,
+        team_count=team_count or 0,
+        question_count=question_count or 0,
+        submission_count=submission_count or 0,
+        participant_count=participant_count or 0,
+        rules=contest.rules,
+        scoring_type=contest.scoring_type,
+        team_approval_mode=contest.team_approval_mode,
+        contest_mode=contest.contest_mode,
+        run_status=run_status,
+        status=contest.status,
+        created_by=cast(UUID, contest.created_by),
+        creator=None,
+        created_at=contest.created_at,
+        updated_at=contest.updated_at,
+        updated_by=contest.updated_by,
+        show_leaderboard=contest.show_leaderboard,
+        published_at=contest.published_at,
+        published_by=contest.published_by,
+    )
 
     return response
 
 
-def to_contest_summary_response(contest: Contest) -> ContestSummaryResponse:
+def to_contest_summary_response(
+    contest: Contest, *, run_status: ContestRunStatus
+) -> ContestSummaryResponse:
     """Map contest ORM object to summary response schema."""
-    response = ContestSummaryResponse.model_validate(contest)
-    response.image = image_object_key_to_url(contest.image)
-
-    # Map audience links to response objects if loaded
-    if hasattr(contest, "audience_links") and contest.audience_links:
-        response.audiences = [
+    response = ContestSummaryResponse(
+        id=contest.id,
+        name=contest.name,
+        description=contest.description,
+        image=image_object_key_to_url(contest.image),
+        is_public=contest.is_public,
+        start_time=contest.start_time,
+        end_time=contest.end_time,
+        team_approval_mode=contest.team_approval_mode,
+        contest_mode=contest.contest_mode,
+        run_status=run_status,
+        status=contest.status,
+        created_at=contest.created_at,
+        audiences=[
             ContestAudienceResponse.model_validate(link.audience)
             for link in contest.audience_links
         ]
+        if hasattr(contest, "audience_links")
+        else [],
+    )
 
     return response
 

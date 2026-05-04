@@ -7,8 +7,10 @@ from app.repositories.dto.audience import (
 )
 from app.repositories.dto.bank import BankFilters
 from app.repositories.dto.contest import (
+    UNSET,
     ContestFilters,
     ContestQuestionFilters,
+    ContestQuestionsPaginatedResult,
     CreateContestData,
     UpdateContestData,
 )
@@ -46,6 +48,7 @@ __all__ = [
     "TeamFilters",
     "ContestFilters",
     "ContestQuestionFilters",
+    "ContestQuestionsPaginatedResult",
     "CreateContestData",
     "UpdateContestData",
     "BankFilters",
@@ -67,4 +70,5 @@ __all__ = [
     "StudentTeamJoinData",
     # User DTOs
     "UserListFilters",
+    "UNSET",
 ]

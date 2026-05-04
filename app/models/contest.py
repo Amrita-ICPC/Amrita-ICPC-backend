@@ -163,6 +163,7 @@ class ContestInstructor(Base):
     instructor = relationship("User", foreign_keys=[instructor_id])
 
 
+# TODO: Add a next_question_order field, to behave that field as counter
 class ContestQuestion(Base):
     __tablename__ = "contest_question"
     __table_args__ = (UniqueConstraint("contest_id", "order"),)
@@ -187,8 +188,8 @@ class ContestQuestion(Base):
 
     order: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
 
-    duration: Mapped[int] = mapped_column(Integer, nullable=False)
-    score: Mapped[int] = mapped_column(Integer, nullable=False)
+    duration: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    score: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
 
     contest = relationship("Contest", back_populates="questions")
     question = relationship("Question", back_populates="contests")

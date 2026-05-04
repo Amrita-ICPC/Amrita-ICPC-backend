@@ -2,19 +2,15 @@ from datetime import datetime
 from typing import List, cast
 from uuid import UUID
 
-from app.core.cache.decorators import cache_delete, cache_get, cache_set
+from app.core.cache.decorators import cache_delete, cache_get
 from app.core.guards.contest import ContestOperationGuard
 from app.core.logger import logger
 from app.core.permissions import AudiencePermission
 from app.exceptions.contest import (
     AudienceNotAssignedToContestError,
     ContestNotFoundError,
-    DuplicateQuestionOrderError,
     InvalidContestError,
-    QuestionAlreadyInContestError,
-    QuestionNotInContestError,
 )
-from app.exceptions.question import InvalidQuestionError, TemplateAlreadyExistsError
 from app.mappers.contest import (
     apply_contest_updates,
     build_contest_entity,
@@ -23,58 +19,31 @@ from app.mappers.contest import (
     to_contest_response,
     to_contest_summary_response,
 )
-from app.mappers.contest_question import (
-    build_add_contest_question_dto,
-    to_contest_question_response,
-)
-from app.mappers.question import (
-    apply_question_updates,
-    build_appended_testcase_dtos,
-    build_create_testcase_dtos,
-    build_metadata_update_dto,
-    build_testcase_entities,
-)
-from app.models.question import Question, QuestionTemplate
 from app.repositories.audience import AudienceRepository
 from app.repositories.contest import ContestRepository
 from app.repositories.dto import (
+    UNSET,
     ContestFilters,
     PaginationParams,
 )
-from app.repositories.dto.contest import UNSET, ContestQuestionFilters
-from app.repositories.dto.question import UpdateQuestionData
-from app.repositories.question import QuestionRepository
 from app.repositories.team import TeamRepository
 from app.repositories.user import UserRepository
 from app.schema.contest import (
-    AddContestQuestionsRequest,
     ContestAudienceResponse,
     ContestCreate,
-    ContestQuestionResponse,
     ContestResponse,
     ContestSummaryResponse,
     ContestUpdate,
     InstructorManageRequest,
     InstructorResponse,
-    RemoveContestQuestionRequest,
 )
-from app.schema.question import (
-    AddQuestionAllowedLanguagesRequest,
-    AddQuestionTemplatesRequest,
-    AddQuestionTestCasesRequest,
-    QuestionListSummaryResponse,
-    QuestionResponse,
-    RemoveQuestionAllowedLanguagesRequest,
-    RemoveQuestionTemplatesRequest,
-    RemoveQuestionTestCasesRequest,
-    UpdateQuestionAllowedLanguagesRequest,
-    UpdateQuestionMetadataRequest,
-    UpdateQuestionTemplateRequest,
-    UpdateQuestionTestCaseRequest,
+from app.utils.contest import compute_run_status
+from app.utils.enums import (
+    ContestRunStatus,
+    ContestStatus,
+    UserRole,
 )
-from app.utils.enums import ContestStatus, QuestionDifficulty, UserRole
 from app.validators.contest import ContestValidator
-from app.validators.question import QuestionValidator
 
 
 class ContestService:
@@ -119,7 +88,6 @@ class ContestService:
         guard: ContestOperationGuard,
         validator: ContestValidator,
         audience_repository: AudienceRepository,
-        question_repository: QuestionRepository | None = None,
         team_repository: TeamRepository | None = None,
     ):
         self.repository = repository
@@ -127,16 +95,10 @@ class ContestService:
         self.guard = guard
         self.validator = validator
         self.audience_repository = audience_repository
-        self.question_repository = question_repository
         self.team_repository = team_repository
 
     @cache_delete(
         key_builder=lambda self, contest, created_by: "contests:*",
-    )
-    @cache_set(
-        key_builder=lambda result: f"contest:{result.id}",
-        ttl=300,
-        from_result=True,
     )
     async def create_contest(
         self, contest: ContestCreate, created_by: UUID
@@ -188,7 +150,10 @@ class ContestService:
                 db_contest.id, contest.audience_ids
             )
 
-        return to_contest_response(db_contest)
+        return to_contest_response(
+            db_contest,
+            run_status=compute_run_status(db_contest.start_time, db_contest.end_time),
+        )
 
     @cache_get(
         key_builder=lambda self,
@@ -236,6 +201,7 @@ class ContestService:
 
         return to_contest_response(
             contest,
+            run_status=compute_run_status(contest.start_time, contest.end_time),
             team_count=team_count,
             question_count=question_count,
             submission_count=submission_count,
@@ -244,70 +210,13 @@ class ContestService:
 
     @cache_get(
         key_builder=lambda self,
-        contest_id,
-        user_id,
-        search_term=None,
-        difficulty=None,
-        language_id=None,
-        tag_id=None,
-        skip=0,
-        limit=100: f"contest:{contest_id}:questions:user:{user_id}:search:{search_term}:difficulty:{difficulty}:language:{language_id}:tag:{tag_id}:skip:{skip}:limit:{limit}",
-        ttl=300,
-    )
-    async def get_contest_questions(
-        self,
-        contest_id: UUID,
-        user_id: UUID,
-        search_term: str | None = None,
-        difficulty: QuestionDifficulty | None = None,
-        language_id: int | None = None,
-        tag_id: UUID | None = None,
-        skip: int = 0,
-        limit: int = 100,
-    ) -> tuple[int, list[QuestionListSummaryResponse]]:
-        """Get paginated contest questions as overview summaries."""
-        contest = await self.repository.get_contest_or_raise(contest_id)
-        await self.guard.check_read_contest(user_id=user_id, contest=contest)
-
-        pagination = PaginationParams(skip=skip, limit=limit)
-        filters = ContestQuestionFilters(
-            search_term=search_term,
-            difficulty=difficulty,
-            language_id=language_id,
-            tag_id=tag_id,
-        )
-        result = await self.repository.get_contest_questions_paginated(
-            contest_id, pagination, filters
-        )
-        return result.total, [
-            QuestionListSummaryResponse.from_question(question)
-            for question in result.items
-        ]
-
-    @cache_get(
-        key_builder=lambda self,
-        contest_id,
-        question_id,
-        user_id: f"contest:{contest_id}:questions:item:{question_id}:user:{user_id}",
-        ttl=300,
-    )
-    async def get_contest_question(
-        self, contest_id: UUID, question_id: UUID, user_id: UUID
-    ) -> QuestionResponse:
-        """Get a contest question by ID."""
-        question = await self._get_contest_question_for_update(
-            contest_id, question_id, user_id
-        )
-        return QuestionResponse.from_question(question)
-
-    @cache_get(
-        key_builder=lambda self,
         user_id,
         search_term=None,
         status=None,
+        run_status=None,
         is_public=None,
         skip=0,
-        limit=100: f"contests:user:{user_id}:search:{search_term}:status:{status}:public:{is_public}:skip:{skip}:limit:{limit}",
+        limit=100: f"contests:user:{user_id}:search:{search_term}:status:{status}:run_status:{run_status}:public:{is_public}:skip:{skip}:limit:{limit}",
         ttl=300,
     )
     async def get_all_contests(
@@ -315,6 +224,7 @@ class ContestService:
         user_id: UUID,
         search_term: str | None = None,
         status: ContestStatus | None = None,
+        run_status: ContestRunStatus | None = None,
         is_public: bool | None = None,
         skip: int = 0,
         limit: int = 100,
@@ -325,7 +235,8 @@ class ContestService:
         Args:
             user_id: User ID
             search_term: Optional search term for contest name
-            status: Optional status to filter by
+            status: Optional lifecycle status to filter by (DRAFT/PUBLISHED/etc)
+            run_status: Optional temporal run-state to filter by (UPCOMING/LIVE/ENDED)
             is_public: Optional visibility filter
             skip: Number of records to skip
             limit: Maximum number of records to return
@@ -338,7 +249,10 @@ class ContestService:
         user_is_admin = user.role == UserRole.admin
         # Create filter and pagination objects
         filters = ContestFilters(
-            search_term=search_term, status=status, is_public=is_public
+            search_term=search_term,
+            status=status,
+            run_status=run_status,
+            is_public=is_public,
         )
         pagination = PaginationParams(skip=skip, limit=limit)
 
@@ -348,7 +262,11 @@ class ContestService:
         )
 
         return result.total, [
-            to_contest_summary_response(contest) for contest in result.items
+            to_contest_summary_response(
+                contest,
+                run_status=compute_run_status(contest.start_time, contest.end_time),
+            )
+            for contest in result.items
         ]
 
     @cache_delete(
@@ -418,12 +336,10 @@ class ContestService:
         await self.repository.unlink_audiences_from_contest(contest_id, audience_ids)
 
     @cache_delete(
-        key_builder=lambda self, contest_id, contest_data, user_id: "contests:*",
-    )
-    @cache_set(
-        key_builder=lambda result: f"contest:{result.id}",
-        ttl=300,
-        from_result=True,
+        key_builder=lambda self, contest_id, contest_data, user_id: [
+            f"contest:{contest_id}*",
+            "contests:*",
+        ],
     )
     async def update_contest(
         self, contest_id: UUID, contest_data: ContestUpdate, user_id: UUID
@@ -509,11 +425,16 @@ class ContestService:
 
         # Update contest via repository
         updated_contest = await self.repository.update_contest(contest, user_id)
-        return to_contest_response(updated_contest)
+        return to_contest_response(
+            updated_contest,
+            run_status=compute_run_status(
+                updated_contest.start_time, updated_contest.end_time
+            ),
+        )
 
     @cache_delete(
         key_builder=lambda self, contest_id, user_id: [
-            f"contest:{contest_id}",
+            f"contest:{contest_id}*",
             "contests:*",
         ]
     )
@@ -537,7 +458,10 @@ class ContestService:
         # Check permissions
         await self.guard.check_manage_contest(user_id=user_id, contest=contest)
 
-        response = to_contest_response(contest)
+        response = to_contest_response(
+            contest,
+            run_status=compute_run_status(contest.start_time, contest.end_time),
+        )
         await self.repository.delete_contest(contest)
 
         return response
@@ -681,7 +605,7 @@ class ContestService:
 
     @cache_delete(
         key_builder=lambda self, contest_id, user_id: [
-            f"contest:{contest_id}",
+            f"contest:{contest_id}*",
             "contests:*",
         ]
     )
@@ -712,7 +636,79 @@ class ContestService:
 
     @cache_delete(
         key_builder=lambda self, contest_id, user_id: [
-            f"contest:{contest_id}",
+            f"contest:{contest_id}*",
+            "contests:*",
+        ]
+    )
+    async def pause_contest(self, contest_id: UUID, user_id: UUID) -> None:
+        """Pause a published contest.
+
+        Args:
+            contest_id: Contest ID to pause.
+            user_id: User ID performing the action.
+
+        Raises:
+            ContestNotFoundError: If contest not found or soft-deleted.
+            PermissionDeniedError: If user lacks permission.
+        """
+        contest = await self.repository.get_contest_or_raise(contest_id)
+        if contest.is_deleted:
+            raise ContestNotFoundError(str(contest_id))
+        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
+        await self.repository.pause_contest(contest, user_id)
+        logger.info(f"Contest {contest_id} paused")
+
+    @cache_delete(
+        key_builder=lambda self, contest_id, user_id: [
+            f"contest:{contest_id}*",
+            "contests:*",
+        ]
+    )
+    async def resume_contest(self, contest_id: UUID, user_id: UUID) -> None:
+        """Resume a paused contest.
+
+        Args:
+            contest_id: Contest ID to resume.
+            user_id: User ID performing the action.
+
+        Raises:
+            ContestNotFoundError: If contest not found or soft-deleted.
+            PermissionDeniedError: If user lacks permission.
+        """
+        contest = await self.repository.get_contest_or_raise(contest_id)
+        if contest.is_deleted:
+            raise ContestNotFoundError(str(contest_id))
+        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
+        await self.repository.resume_contest(contest, user_id)
+        logger.info(f"Contest {contest_id} resumed")
+
+    @cache_delete(
+        key_builder=lambda self, contest_id, user_id: [
+            f"contest:{contest_id}*",
+            "contests:*",
+        ]
+    )
+    async def cancel_contest(self, contest_id: UUID, user_id: UUID) -> None:
+        """Cancel a contest.
+
+        Args:
+            contest_id: Contest ID to cancel.
+            user_id: User ID performing the action.
+
+        Raises:
+            ContestNotFoundError: If contest not found or soft-deleted.
+            PermissionDeniedError: If user lacks permission.
+        """
+        contest = await self.repository.get_contest_or_raise(contest_id)
+        if contest.is_deleted:
+            raise ContestNotFoundError(str(contest_id))
+        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
+        await self.repository.cancel_contest(contest, user_id)
+        logger.info(f"Contest {contest_id} cancelled")
+
+    @cache_delete(
+        key_builder=lambda self, contest_id, user_id: [
+            f"contest:{contest_id}*",
             "contests:*",
         ]
     )
@@ -743,7 +739,7 @@ class ContestService:
 
     @cache_delete(
         key_builder=lambda self, contest_id, user_id: [
-            f"contest:{contest_id}",
+            f"contest:{contest_id}*",
             "contests:*",
         ]
     )
@@ -821,680 +817,6 @@ class ContestService:
         return result.total, [
             ContestSummaryResponse.model_validate(contest) for contest in result.items
         ]
-
-    @cache_delete(
-        key_builder=lambda self, contest_id, request, user_id: [
-            f"contest:{contest_id}:questions:*",
-        ]
-    )
-    async def add_questions_to_contest(
-        self,
-        contest_id: UUID,
-        request: AddContestQuestionsRequest,
-        user_id: UUID,
-    ) -> list[ContestQuestionResponse]:
-        """
-        Add multiple questions to a contest in batch.
-
-        This method orchestrates batch addition of questions by performing the same
-        validation steps for each question (permission, existence, duplication checks)
-        and then inserting all valid questions in a single batch operation.
-
-        Permission Check:
-            Only users who can manage the contest can add questions.
-
-        Validation Workflow (for each question):
-            1. Contest existence check (performed once)
-            2. Question existence check
-            3. Question not already in contest check
-            4. Order, duration, and score validation
-
-        Args:
-            contest_id: UUID of the contest to add questions to.
-            request: AddContestQuestionsRequest containing list of questions.
-            user_id: UUID of the authenticated user performing the operation.
-
-        Returns:
-            list[ContestQuestionResponse]: List of newly created contest-question relationships.
-
-        Raises:
-            ContestNotFoundError: If contest does not exist.
-            QuestionNotFoundError: If any question does not exist.
-            QuestionAlreadyInContestError: If any question is already in the contest.
-            InvalidContestQuestionDataError: If any question fails validation.
-            PermissionDeniedError: If user lacks permission to manage the contest.
-        """
-        if not request.questions:
-            return []
-
-        # Step 1: Validate contest exists
-        contest = await self.repository.get_contest_or_raise(contest_id)
-
-        # Step 2: Check user has permission to manage contest
-        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
-
-        # Step 3: Validate all questions and build DTOs
-        if self.question_repository is None:
-            raise InvalidContestError("Question repository not initialized in service")
-
-        dto_list = []
-        seen_question_ids: set[UUID] = set()
-        seen_orders: set[int] = set()
-        existing_orders = await self.repository.get_ordered_question_orders_for_contest(
-            contest_id
-        )
-
-        for question_request in request.questions:
-            if question_request.question_id in seen_question_ids:
-                raise QuestionAlreadyInContestError(
-                    str(question_request.question_id), str(contest_id)
-                )
-            seen_question_ids.add(question_request.question_id)
-
-            # Validate question exists
-            await self.question_repository.get_question_or_raise(
-                question_request.question_id
-            )
-
-            # Validate question not already in contest
-            is_duplicate = await self.repository.is_question_in_contest(
-                contest_id, question_request.question_id
-            )
-            if is_duplicate:
-                raise QuestionAlreadyInContestError(
-                    str(question_request.question_id), str(contest_id)
-                )
-
-            # Validate business rules (order, duration, score)
-            self.validator.validate_question_order(question_request.order)
-
-            if question_request.order in seen_orders:
-                raise DuplicateQuestionOrderError(
-                    question_request.order,
-                    str(contest_id),
-                )
-            if question_request.order in existing_orders:
-                raise DuplicateQuestionOrderError(
-                    question_request.order,
-                    str(contest_id),
-                )
-            seen_orders.add(question_request.order)
-
-            self.validator.validate_question_duration(question_request.duration)
-            self.validator.validate_question_score(question_request.score)
-
-            # Build DTO
-            dto = build_add_contest_question_dto(question_request, contest_id, user_id)
-            dto_list.append(dto)
-
-        # Step 4: Batch add to repository
-        contest_questions = await self.repository.add_questions_to_contest(dto_list)
-
-        logger.info(
-            f"Added {len(request.questions)} questions to contest {contest_id} by user {user_id}"
-        )
-
-        return [to_contest_question_response(cq) for cq in contest_questions]
-
-    @cache_delete(
-        key_builder=lambda self, contest_id, request, user_id: [
-            f"contest:{contest_id}:questions:*",
-        ]
-    )
-    async def remove_questions_from_contest(
-        self,
-        contest_id: UUID,
-        request: RemoveContestQuestionRequest,
-        user_id: UUID,
-    ) -> None:
-        """
-        Remove multiple questions from a contest in batch.
-
-        This method orchestrates batch removal of questions by verifying permissions
-        and checking existence before deletion.
-
-        Permission Check:
-            Only users who can manage the contest can remove questions.
-
-        Validation Workflow:
-            1. Contest existence check
-            2. Permission check
-            3. Remove questions
-
-        Args:
-            contest_id: UUID of the contest.
-            request: RemoveContestQuestionRequest containing list of question_ids.
-            user_id: UUID of the authenticated user performing the operation.
-
-        Returns:
-            None
-
-        Raises:
-            ContestNotFoundError: If contest does not exist.
-            QuestionNotInContestError: If any question is not in the contest.
-            PermissionDeniedError: If user lacks permission to manage the contest.
-        """
-        if not request.question_ids:
-            return
-
-        # Step 1: Validate contest exists
-        contest = await self.repository.get_contest_or_raise(contest_id)
-
-        # Step 2: Check user has permission to manage contest
-        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
-
-        # Step 3: Validate all questions are in contest
-        for question_id in request.question_ids:
-            is_in_contest = await self.repository.is_question_in_contest(
-                contest_id, question_id
-            )
-            if not is_in_contest:
-                raise QuestionNotInContestError(str(question_id), str(contest_id))
-
-        # Step 4: Batch remove from repository
-        await self.repository.remove_questions_from_contest(
-            contest_id, request.question_ids
-        )
-
-        logger.info(
-            f"Removed {len(request.question_ids)} questions from contest {contest_id} by user {user_id}"
-        )
-
-    async def _get_contest_question_for_update(
-        self,
-        contest_id: UUID,
-        question_id: UUID,
-        user_id: UUID,
-    ) -> Question:
-        """Resolve a contest-scoped question after permission and linkage checks."""
-        contest = await self.repository.get_contest_or_raise(contest_id)
-        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
-
-        is_in_contest = await self.repository.is_question_in_contest(
-            contest_id, question_id
-        )
-        if not is_in_contest:
-            raise QuestionNotInContestError(str(question_id), str(contest_id))
-
-        if self.question_repository is None:
-            raise InvalidContestError("Question repository not initialized in service")
-
-        return await self.question_repository.get_question_or_raise(question_id)
-
-    @cache_delete(
-        key_builder=lambda self, contest_id, question_id, *args, **kwargs: [
-            f"contest:{contest_id}:questions:*"
-        ]
-    )
-    async def update_contest_question_metadata(
-        self,
-        contest_id: UUID,
-        question_id: UUID,
-        payload: UpdateQuestionMetadataRequest,
-        user_id: UUID,
-    ) -> QuestionResponse:
-        """Update metadata for a question linked to a contest."""
-        contest = await self.repository.get_contest_or_raise(contest_id)
-        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
-
-        question = await self._get_contest_question_for_update(
-            contest_id, question_id, user_id
-        )
-
-        QuestionValidator.validate_metadata_update(payload)
-        update_dto = build_metadata_update_dto(payload)
-        apply_question_updates(question, update_dto)
-
-        assert self.question_repository is not None
-        updated_question = await self.question_repository.update_question(question)
-        return QuestionResponse.from_question(updated_question)
-
-    @cache_delete(
-        key_builder=lambda self, contest_id, question_id, *args, **kwargs: [
-            f"contest:{contest_id}:questions:*"
-        ]
-    )
-    async def add_testcases_to_contest_question(
-        self,
-        contest_id: UUID,
-        question_id: UUID,
-        payload: AddQuestionTestCasesRequest,
-        user_id: UUID,
-    ) -> QuestionResponse:
-        """Append testcases to a contest question."""
-
-        contest = await self.repository.get_contest_or_raise(contest_id)
-        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
-
-        question = await self._get_contest_question_for_update(
-            contest_id, question_id, user_id
-        )
-
-        QuestionValidator.validate_testcases_format(payload.testcases)
-        testcase_dtos = build_appended_testcase_dtos(
-            payload.testcases,
-            starting_order=len(question.testcases),
-        )
-        question.testcases.extend(
-            build_testcase_entities(testcase_dtos, created_by=user_id)
-        )
-
-        assert self.question_repository is not None
-        updated_question = await self.question_repository.update_question(question)
-        return QuestionResponse.from_question(updated_question)
-
-    @cache_delete(
-        key_builder=lambda self, contest_id, question_id, *args, **kwargs: [
-            f"contest:{contest_id}:questions:*"
-        ]
-    )
-    async def remove_testcases_from_contest_question(
-        self,
-        contest_id: UUID,
-        question_id: UUID,
-        payload: RemoveQuestionTestCasesRequest,
-        user_id: UUID,
-    ) -> QuestionResponse:
-        """Remove testcases from a contest question."""
-
-        contest = await self.repository.get_contest_or_raise(contest_id)
-        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
-
-        question = await self._get_contest_question_for_update(
-            contest_id, question_id, user_id
-        )
-
-        QuestionValidator.validate_unique_testcase_ids(payload.testcase_ids)
-        existing_ids = {testcase.id for testcase in question.testcases}
-        QuestionValidator.validate_question_testcases_exist(
-            existing_ids,
-            payload.testcase_ids,
-        )
-
-        remove_ids = set(payload.testcase_ids)
-        question.testcases = [
-            testcase for testcase in question.testcases if testcase.id not in remove_ids
-        ]
-
-        assert self.question_repository is not None
-        updated_question = await self.question_repository.update_question(question)
-        return QuestionResponse.from_question(updated_question)
-
-    @cache_delete(
-        key_builder=lambda self, contest_id, question_id, *args, **kwargs: [
-            f"contest:{contest_id}:questions:*"
-        ]
-    )
-    async def update_testcases_of_contest_question(
-        self,
-        contest_id: UUID,
-        question_id: UUID,
-        payload: AddQuestionTestCasesRequest,
-        user_id: UUID,
-    ) -> QuestionResponse:
-        """Replace all testcases for a contest question."""
-        contest = await self.repository.get_contest_or_raise(contest_id)
-        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
-
-        question = await self._get_contest_question_for_update(
-            contest_id, question_id, user_id
-        )
-
-        QuestionValidator.validate_testcases_format(payload.testcases)
-        testcase_dtos = build_create_testcase_dtos(payload.testcases)
-        question.testcases = build_testcase_entities(testcase_dtos, created_by=user_id)
-
-        assert self.question_repository is not None
-        updated_question = await self.question_repository.update_question(question)
-        return QuestionResponse.from_question(updated_question)
-
-    @cache_delete(
-        key_builder=lambda self,
-        contest_id,
-        question_id,
-        testcase_id,
-        *args,
-        **kwargs: [f"contest:{contest_id}:questions:*"]
-    )
-    async def update_testcase_of_contest_question(
-        self,
-        contest_id: UUID,
-        question_id: UUID,
-        testcase_id: UUID,
-        payload: UpdateQuestionTestCaseRequest,
-        user_id: UUID,
-    ) -> QuestionResponse:
-        """Update one testcase of a contest question by testcase ID."""
-        question = await self._get_contest_question_for_update(
-            contest_id, question_id, user_id
-        )
-
-        testcase_to_update = next(
-            (testcase for testcase in question.testcases if testcase.id == testcase_id),
-            None,
-        )
-        if testcase_to_update is None:
-            raise InvalidQuestionError(
-                f"Testcase {testcase_id} is not found in question {question_id}"
-            )
-
-        if payload.input is not None:
-            testcase_to_update.input = payload.input
-        if payload.output is not None:
-            testcase_to_update.output = payload.output
-        if payload.is_hidden is not None:
-            testcase_to_update.is_hidden = payload.is_hidden
-        if payload.weight is not None:
-            testcase_to_update.weight = payload.weight
-        if payload.order is not None:
-            testcase_to_update.order = payload.order
-
-        assert self.question_repository is not None
-        updated_question = await self.question_repository.update_question(question)
-        return QuestionResponse.from_question(updated_question)
-
-    @cache_delete(
-        key_builder=lambda self, contest_id, question_id, *args, **kwargs: [
-            f"contest:{contest_id}:questions:*"
-        ]
-    )
-    async def add_templates_to_contest_question(
-        self,
-        contest_id: UUID,
-        question_id: UUID,
-        payload: AddQuestionTemplatesRequest,
-        user_id: UUID,
-    ) -> QuestionResponse:
-        """Append templates to a contest question."""
-        contest = await self.repository.get_contest_or_raise(contest_id)
-        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
-
-        question = await self._get_contest_question_for_update(
-            contest_id, question_id, user_id
-        )
-
-        language_ids = [template.language_id for template in payload.templates]
-        QuestionValidator.validate_unique_template_language_ids(language_ids)
-
-        existing_language_ids = {
-            template.language_id for template in question.templates
-        }
-        for language_id in language_ids:
-            if language_id in existing_language_ids:
-                raise TemplateAlreadyExistsError(question_id, language_id)
-
-        question.templates.extend(
-            [
-                QuestionTemplate(
-                    language_id=template.language_id,
-                    starter_code=template.starter_code,
-                    driver_code=template.driver_code,
-                    solution_code=template.solution_code,
-                )
-                for template in payload.templates
-            ]
-        )
-
-        assert self.question_repository is not None
-        updated_question = await self.question_repository.update_question(question)
-        return QuestionResponse.from_question(updated_question)
-
-    @cache_delete(
-        key_builder=lambda self, contest_id, question_id, *args, **kwargs: [
-            f"contest:{contest_id}:questions:*"
-        ]
-    )
-    async def remove_templates_from_contest_question(
-        self,
-        contest_id: UUID,
-        question_id: UUID,
-        payload: RemoveQuestionTemplatesRequest,
-        user_id: UUID,
-    ) -> QuestionResponse:
-        """Remove templates from a contest question."""
-
-        contest = await self.repository.get_contest_or_raise(contest_id)
-        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
-
-        question = await self._get_contest_question_for_update(
-            contest_id, question_id, user_id
-        )
-
-        QuestionValidator.validate_unique_template_language_ids(payload.language_ids)
-        existing_language_ids = {
-            template.language_id for template in question.templates
-        }
-        QuestionValidator.validate_question_template_languages_exist(
-            existing_language_ids,
-            payload.language_ids,
-        )
-
-        remove_languages = set(payload.language_ids)
-        question.templates = [
-            template
-            for template in question.templates
-            if template.language_id not in remove_languages
-        ]
-
-        assert self.question_repository is not None
-        updated_question = await self.question_repository.update_question(question)
-        return QuestionResponse.from_question(updated_question)
-
-    @cache_delete(
-        key_builder=lambda self, contest_id, question_id, *args, **kwargs: [
-            f"contest:{contest_id}:questions:*"
-        ]
-    )
-    async def update_templates_of_contest_question(
-        self,
-        contest_id: UUID,
-        question_id: UUID,
-        payload: AddQuestionTemplatesRequest,
-        user_id: UUID,
-    ) -> QuestionResponse:
-        """Replace all templates for a contest question."""
-        contest = await self.repository.get_contest_or_raise(contest_id)
-        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
-
-        question = await self._get_contest_question_for_update(
-            contest_id, question_id, user_id
-        )
-
-        language_ids = [template.language_id for template in payload.templates]
-        QuestionValidator.validate_unique_template_language_ids(language_ids)
-
-        question.templates = [
-            QuestionTemplate(
-                language_id=template.language_id,
-                starter_code=template.starter_code,
-                driver_code=template.driver_code,
-                solution_code=template.solution_code,
-            )
-            for template in payload.templates
-        ]
-
-        assert self.question_repository is not None
-        updated_question = await self.question_repository.update_question(question)
-        return QuestionResponse.from_question(updated_question)
-
-    @cache_delete(
-        key_builder=lambda self,
-        contest_id,
-        question_id,
-        template_id,
-        *args,
-        **kwargs: [f"contest:{contest_id}:questions:*"]
-    )
-    async def update_template_of_contest_question(
-        self,
-        contest_id: UUID,
-        question_id: UUID,
-        template_id: UUID,
-        payload: UpdateQuestionTemplateRequest,
-        user_id: UUID,
-    ) -> QuestionResponse:
-        """Update one template of a contest question by template ID."""
-        question = await self._get_contest_question_for_update(
-            contest_id, question_id, user_id
-        )
-
-        template_to_update = next(
-            (template for template in question.templates if template.id == template_id),
-            None,
-        )
-        if template_to_update is None:
-            raise InvalidQuestionError(
-                f"Template {template_id} is not found in question {question_id}"
-            )
-
-        if payload.language_id is not None:
-            duplicate_language = any(
-                template.id != template_id
-                and template.language_id == payload.language_id
-                for template in question.templates
-            )
-            if duplicate_language:
-                raise TemplateAlreadyExistsError(question_id, payload.language_id)
-            template_to_update.language_id = payload.language_id
-
-        if payload.starter_code is not None:
-            template_to_update.starter_code = payload.starter_code
-        if payload.driver_code is not None:
-            template_to_update.driver_code = payload.driver_code
-        if payload.solution_code is not None:
-            template_to_update.solution_code = payload.solution_code
-
-        assert self.question_repository is not None
-        updated_question = await self.question_repository.update_question(question)
-        return QuestionResponse.from_question(updated_question)
-
-    @cache_delete(
-        key_builder=lambda self, contest_id, question_id, *args, **kwargs: [
-            f"contest:{contest_id}:questions:*"
-        ]
-    )
-    async def add_allowed_languages_to_contest_question(
-        self,
-        contest_id: UUID,
-        question_id: UUID,
-        payload: AddQuestionAllowedLanguagesRequest,
-        user_id: UUID,
-    ) -> QuestionResponse:
-        """Add allowed languages to a contest question."""
-        contest = await self.repository.get_contest_or_raise(contest_id)
-        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
-
-        question = await self._get_contest_question_for_update(
-            contest_id, question_id, user_id
-        )
-
-        if len(set(payload.language_ids)) != len(payload.language_ids):
-            raise InvalidQuestionError("Duplicate allowed language IDs are not allowed")
-
-        current_language_ids = [mapping.language_id for mapping in question.languages]
-        duplicates = [
-            language_id
-            for language_id in payload.language_ids
-            if language_id in current_language_ids
-        ]
-        if duplicates:
-            raise InvalidQuestionError(
-                f"Language ID {duplicates[0]} is already in allowed languages"
-            )
-
-        updated_language_ids = current_language_ids + payload.language_ids
-        apply_question_updates(
-            question,
-            UpdateQuestionData(allowed_languages=updated_language_ids),
-        )
-
-        assert self.question_repository is not None
-        updated_question = await self.question_repository.update_question(question)
-        return QuestionResponse.from_question(updated_question)
-
-    @cache_delete(
-        key_builder=lambda self, contest_id, question_id, *args, **kwargs: [
-            f"contest:{contest_id}:questions:*"
-        ]
-    )
-    async def remove_allowed_languages_from_contest_question(
-        self,
-        contest_id: UUID,
-        question_id: UUID,
-        payload: RemoveQuestionAllowedLanguagesRequest,
-        user_id: UUID,
-    ) -> QuestionResponse:
-        """Remove allowed languages from a contest question."""
-        contest = await self.repository.get_contest_or_raise(contest_id)
-        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
-
-        question = await self._get_contest_question_for_update(
-            contest_id, question_id, user_id
-        )
-
-        if len(set(payload.language_ids)) != len(payload.language_ids):
-            raise InvalidQuestionError("Duplicate allowed language IDs are not allowed")
-
-        current_language_ids = [mapping.language_id for mapping in question.languages]
-        missing = [
-            language_id
-            for language_id in payload.language_ids
-            if language_id not in current_language_ids
-        ]
-        if missing:
-            raise InvalidQuestionError(
-                f"Language ID {missing[0]} is not in allowed languages"
-            )
-
-        remove_set = set(payload.language_ids)
-        remaining_language_ids = [
-            language_id
-            for language_id in current_language_ids
-            if language_id not in remove_set
-        ]
-        QuestionValidator.validate_allowed_languages(remaining_language_ids)
-
-        apply_question_updates(
-            question,
-            UpdateQuestionData(allowed_languages=remaining_language_ids),
-        )
-
-        assert self.question_repository is not None
-        updated_question = await self.question_repository.update_question(question)
-        return QuestionResponse.from_question(updated_question)
-
-    @cache_delete(
-        key_builder=lambda self, contest_id, question_id, *args, **kwargs: [
-            f"contest:{contest_id}:questions:*"
-        ]
-    )
-    async def update_allowed_languages_of_contest_question(
-        self,
-        contest_id: UUID,
-        question_id: UUID,
-        payload: UpdateQuestionAllowedLanguagesRequest,
-        user_id: UUID,
-    ) -> QuestionResponse:
-        """Replace allowed languages of a contest question."""
-        contest = await self.repository.get_contest_or_raise(contest_id)
-        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
-
-        question = await self._get_contest_question_for_update(
-            contest_id, question_id, user_id
-        )
-
-        if len(set(payload.language_ids)) != len(payload.language_ids):
-            raise InvalidQuestionError("Duplicate allowed language IDs are not allowed")
-        QuestionValidator.validate_allowed_languages(payload.language_ids)
-
-        apply_question_updates(
-            question,
-            UpdateQuestionData(allowed_languages=payload.language_ids),
-        )
-
-        assert self.question_repository is not None
-        updated_question = await self.question_repository.update_question(question)
-        return QuestionResponse.from_question(updated_question)
 
     async def get_contest_audiences(
         self, contest_id: UUID, user_id: UUID

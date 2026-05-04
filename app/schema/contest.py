@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.utils.enums import (
     AudienceType,
     ContestMode,
+    ContestRunStatus,
     ContestStatus,
     ScoringType,
     TeamApprovalMode,
@@ -145,7 +146,10 @@ class ContestSummaryResponse(BaseModel):
     image: Optional[str] = Field(None, description="Contest image URL")
     start_time: datetime = Field(..., description="Contest start time (UTC)")
     end_time: datetime = Field(..., description="Contest end time (UTC)")
-    status: ContestStatus = Field(..., description="Contest status")
+    status: ContestStatus = Field(..., description="Contest lifecycle status")
+    run_status: ContestRunStatus = Field(
+        ..., description="Contest temporal run-state (UPCOMING / LIVE / ENDED)"
+    )
     created_at: datetime = Field(..., description="Contest creation time (UTC)")
     is_public: bool = Field(..., description="Whether contest is public")
     team_approval_mode: TeamApprovalMode = Field(
@@ -166,7 +170,10 @@ class ContestDetailResponse(ContestBase):
     """Schema for comprehensive contest response (Detail view)."""
 
     id: UUID = Field(..., description="Contest ID")
-    status: ContestStatus = Field(..., description="Contest status")
+    status: ContestStatus = Field(..., description="Contest lifecycle status")
+    run_status: ContestRunStatus = Field(
+        ..., description="Contest temporal run-state (UPCOMING / LIVE / ENDED)"
+    )
     team_count: int = Field(0, ge=0, description="Number of teams in the contest")
     question_count: int = Field(
         0, ge=0, description="Number of questions in the contest"
@@ -241,18 +248,20 @@ class AddContestQuestionRequest(BaseModel):
     """Schema for a single question to add to a contest."""
 
     question_id: UUID = Field(..., description="Question ID to add to contest")
-    order: int = Field(
-        ..., gt=0, description="Position of the question in the contest (1-indexed)"
-    )
-    duration: int = Field(
-        ...,
+    order: Optional[int] = Field(
+        None,
         gt=0,
-        description="Time allocated for this question in seconds",
+        description="Position of the question in the contest (optional, 1-indexed)",
     )
-    score: int = Field(
-        ...,
+    duration: Optional[int] = Field(
+        None,
         gt=0,
-        description="Points awarded for solving this question",
+        description="Time allocated for this question in seconds (optional)",
+    )
+    score: Optional[int] = Field(
+        None,
+        gt=0,
+        description="Points awarded for solving this question (optional, defaults to 100)",
     )
 
     model_config = ConfigDict(from_attributes=True)
@@ -287,11 +296,35 @@ class ContestQuestionResponse(BaseModel):
 
     question_id: UUID = Field(..., description="Question ID")
     order: int = Field(..., description="Position of the question in the contest")
-    duration: int = Field(
-        ..., description="Time allocated for this question in seconds"
+    duration: int | None = Field(
+        ...,
+        description="Time allocated for this question in seconds",
     )
     score: int = Field(..., description="Points awarded for solving this question")
     created_at: datetime = Field(..., description="When question was added to contest")
     created_by: UUID = Field(..., description="User ID who added the question")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ReorderContestQuestionItem(BaseModel):
+    """Schema for a single question reorder item."""
+
+    question_id: UUID = Field(..., description="Question ID to reorder")
+    order: int = Field(
+        ..., gt=0, description="New position of the question (1-indexed)"
+    )
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ReorderContestQuestionsRequest(BaseModel):
+    """Schema for reordering multiple questions in a contest."""
+
+    reorders: list[ReorderContestQuestionItem] = Field(
+        ...,
+        min_length=1,
+        description="List of question reorder items",
+    )
 
     model_config = ConfigDict(from_attributes=True)
