@@ -10,6 +10,7 @@ from app.exceptions.contest import (
     AudienceNotAssignedToContestError,
     ContestNotFoundError,
     InvalidContestError,
+    InvalidContestStateError,
 )
 from app.mappers.contest import (
     apply_contest_updates,
@@ -311,6 +312,9 @@ class ContestService:
             contest_id: ID of the contest
             audience_ids: List of audience IDs to assign
             user_id: ID of the user performing the operation
+
+        Raises:
+            AudienceNotAssignedToContestError: If any audience is already assigned
         """
         can_manage, contest = await self._validate_contest_not_deleted_and_has_permission(
             contest_id, user_id
@@ -322,6 +326,14 @@ class ContestService:
                 self.repository.db, user_id=user_id, audience_ids=audience_ids
             )
         await self.audience_repository.get_audience_by_ids_or_raise(audience_ids)
+
+        # Validate that audiences are NOT already assigned
+        current_ids = await self.repository.get_contest_audience_ids(contest_id)
+        for aid in audience_ids:
+            if aid in current_ids:
+                raise InvalidContestError(
+                    f"Audience {aid} is already assigned to contest {contest_id}"
+                )
 
         await self.repository.link_audiences_to_contest(contest_id, audience_ids)
 
@@ -644,6 +656,7 @@ class ContestService:
 
         Raises:
             ContestNotFoundError: If contest not found
+            InvalidContestStateError: If contest is not in DRAFT status
             PermissionDeniedError: If user doesn't have permission
         """
         contest = await self.repository.get_contest_or_raise(contest_id)
@@ -651,6 +664,9 @@ class ContestService:
         # Check if contest is soft-deleted
         if contest.is_deleted:
             raise ContestNotFoundError(str(contest_id))
+
+        # Validate contest state (must be DRAFT)
+        self.validator.validate_contest_can_be_published(contest.status, contest_id)
 
         # Check permissions
         await self.guard.check_manage_contest(user_id=user_id, contest=contest)
@@ -674,11 +690,16 @@ class ContestService:
 
         Raises:
             ContestNotFoundError: If contest not found or soft-deleted.
+            InvalidContestStateError: If contest is not in PUBLISHED status.
             PermissionDeniedError: If user lacks permission.
         """
         contest = await self.repository.get_contest_or_raise(contest_id)
         if contest.is_deleted:
             raise ContestNotFoundError(str(contest_id))
+
+        # Validate contest state (must be PUBLISHED)
+        self.validator.validate_contest_can_be_paused(contest.status, contest_id)
+
         await self.guard.check_manage_contest(user_id=user_id, contest=contest)
         await self.repository.pause_contest(contest, user_id)
         logger.info(f"Contest {contest_id} paused")
@@ -698,11 +719,16 @@ class ContestService:
 
         Raises:
             ContestNotFoundError: If contest not found or soft-deleted.
+            InvalidContestStateError: If contest is not in PAUSED status.
             PermissionDeniedError: If user lacks permission.
         """
         contest = await self.repository.get_contest_or_raise(contest_id)
         if contest.is_deleted:
             raise ContestNotFoundError(str(contest_id))
+
+        # Validate contest state (must be PAUSED)
+        self.validator.validate_contest_can_be_resumed(contest.status, contest_id)
+
         await self.guard.check_manage_contest(user_id=user_id, contest=contest)
         await self.repository.resume_contest(contest, user_id)
         logger.info(f"Contest {contest_id} resumed")
@@ -722,11 +748,16 @@ class ContestService:
 
         Raises:
             ContestNotFoundError: If contest not found or soft-deleted.
+            InvalidContestStateError: If contest is already CANCELLED.
             PermissionDeniedError: If user lacks permission.
         """
         contest = await self.repository.get_contest_or_raise(contest_id)
         if contest.is_deleted:
             raise ContestNotFoundError(str(contest_id))
+
+        # Validate contest state (must not be CANCELLED)
+        self.validator.validate_contest_can_be_cancelled(contest.status, contest_id)
+
         await self.guard.check_manage_contest(user_id=user_id, contest=contest)
         await self.repository.cancel_contest(contest, user_id)
         logger.info(f"Contest {contest_id} cancelled")
@@ -781,20 +812,21 @@ class ContestService:
 
         Raises:
             ContestNotFoundError: If contest not found (even if deleted)
+            InvalidContestStateError: If contest is not soft-deleted
             PermissionDeniedError: If user doesn't have permission
         """
         contest = await self.repository.get_contest_or_raise(contest_id)
 
+        # Validate contest is actually soft-deleted before restoring
+        self.validator.validate_contest_can_be_restored(contest.is_deleted, contest_id)
+
         # Check permissions
         await self.guard.check_manage_contest(user_id=user_id, contest=contest)
 
-        # Restore contest if it was soft-deleted
-        if contest.is_deleted:
-            restored_contest = await self.repository.restore_contest(contest)
-            logger.info(f"Contest {contest_id} restored")
-            return ContestResponse.model_validate(restored_contest)
-
-        return ContestResponse.model_validate(contest)
+        # Restore contest
+        restored_contest = await self.repository.restore_contest(contest)
+        logger.info(f"Contest {contest_id} restored")
+        return ContestResponse.model_validate(restored_contest)
 
     @cache_get(
         key_builder=lambda self,
