@@ -314,7 +314,9 @@ class ContestService:
             user_id: ID of the user performing the operation
 
         Raises:
-            AudienceNotAssignedToContestError: If any audience is already assigned
+            ContestNotFoundError: If contest not found or is soft-deleted
+            PermissionDeniedError: If user lacks permission to manage contest
+            InvalidContestError: If any audience is already assigned to the contest
         """
         can_manage, contest = await self._validate_contest_not_deleted_and_has_permission(
             contest_id, user_id
@@ -826,7 +828,10 @@ class ContestService:
         # Restore contest
         restored_contest = await self.repository.restore_contest(contest)
         logger.info(f"Contest {contest_id} restored")
-        return ContestResponse.model_validate(restored_contest)
+        return to_contest_response(
+            restored_contest,
+            run_status=compute_run_status(restored_contest.start_time, restored_contest.end_time),
+        )
 
     @cache_get(
         key_builder=lambda self,
