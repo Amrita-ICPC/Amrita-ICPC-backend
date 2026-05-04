@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import Optional
 from uuid import UUID
 
-from app.utils.enums import QuestionDifficulty, SortOrder
+from app.utils.enums import BankQuestionSortBy, QuestionDifficulty, SortOrder
 
 
 @dataclass
@@ -26,5 +26,5 @@ class BankQuestionFilters:
     title: Optional[str] = None
     difficulty: Optional[QuestionDifficulty] = None
     tag: Optional[str] = None
-    sort_by: Optional[str] = None  # "name" or "difficulty"
-    sort_order: Optional[SortOrder] = SortOrder.ASC
+    sort_by: Optional[BankQuestionSortBy] = BankQuestionSortBy.NAME
+    sort_order: SortOrder = SortOrder.ASC

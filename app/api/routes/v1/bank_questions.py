@@ -21,7 +21,7 @@ from app.schema.question import (
     BankQuestionMetadataResponse,
     QuestionUpdate,
 )
-from app.utils.enums import QuestionDifficulty, SortOrder
+from app.utils.enums import BankQuestionSortBy, QuestionDifficulty, SortOrder
 from app.service.bank_question_service import BankQuestionService
 from app.validators.bank import BankValidator
 
@@ -191,7 +191,7 @@ async def get_bank_questions(
     title: str | None = Query(None, description="Filter by question title"),
     difficulty: QuestionDifficulty | None = Query(None, description="Filter by difficulty"),
     tag: str | None = Query(None, description="Filter by tag name"),
-    sort_by: str | None = Query(None, regex="^(name|difficulty)$", description="Sort by field"),
+    sort_by: BankQuestionSortBy = Query(BankQuestionSortBy.NAME, description="Sort by field"),
     sort_order: SortOrder = Query(SortOrder.ASC, description="Sort order"),
     user_id: UUID = Depends(get_current_user_id),
     service: BankQuestionService = Depends(get_bank_question_service),

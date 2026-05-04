@@ -55,6 +55,9 @@ from app.utils.question_clone import deep_copy_question_for_clone
 from app.validators.bank import BankValidator
 from app.validators.contest import ContestValidator
 from app.validators.question import QuestionValidator
+from app.repositories.dto.contest_question import AddContestQuestionData
+from app.schema.contest import AddContestQuestionRequest
+
 
 
 class ContestQuestionService:
@@ -624,10 +627,7 @@ class ContestQuestionService:
 
         config_map = {q.question_id: q for q in (request.questions or [])}
         dtos: list[AddContestQuestionData] = []
-        from app.repositories.dto.contest_question import AddContestQuestionData
-
-        from app.schema.contest import AddContestQuestionRequest
-
+  
         for created_q in created_questions:
             source_id = cloned_to_source_map[created_q]
             config = config_map.get(source_id)
