@@ -278,6 +278,115 @@ class ContestValidator:
             raise ContestNotFoundError(str(contest_id))
 
     @staticmethod
+    def validate_contest_can_be_published(
+        status: str, contest_id: UUID
+    ) -> None:
+        """
+        Validate that contest is in DRAFT status before publishing.
+
+        Args:
+            status: Current contest status
+            contest_id: ID of the contest
+
+        Raises:
+            InvalidContestStateError: If contest is not in DRAFT status
+        """
+        from app.exceptions.contest import InvalidContestStateError
+        from app.utils.enums import ContestStatus
+
+        if status != ContestStatus.DRAFT:
+            raise InvalidContestStateError(
+                str(contest_id), "publish", status, ContestStatus.DRAFT
+            )
+
+    @staticmethod
+    def validate_contest_can_be_paused(
+        status: str, contest_id: UUID
+    ) -> None:
+        """
+        Validate that contest is in PUBLISHED status before pausing.
+
+        Args:
+            status: Current contest status
+            contest_id: ID of the contest
+
+        Raises:
+            InvalidContestStateError: If contest is not in PUBLISHED status
+        """
+        from app.exceptions.contest import InvalidContestStateError
+        from app.utils.enums import ContestStatus
+
+        if status != ContestStatus.PUBLISHED:
+            raise InvalidContestStateError(
+                str(contest_id), "pause", status, ContestStatus.PUBLISHED
+            )
+
+    @staticmethod
+    def validate_contest_can_be_resumed(
+        status: str, contest_id: UUID
+    ) -> None:
+        """
+        Validate that contest is in PAUSED status before resuming.
+
+        Args:
+            status: Current contest status
+            contest_id: ID of the contest
+
+        Raises:
+            InvalidContestStateError: If contest is not in PAUSED status
+        """
+        from app.exceptions.contest import InvalidContestStateError
+        from app.utils.enums import ContestStatus
+
+        if status != ContestStatus.PAUSED:
+            raise InvalidContestStateError(
+                str(contest_id), "resume", status, ContestStatus.PAUSED
+            )
+
+    @staticmethod
+    def validate_contest_can_be_cancelled(
+        status: str, contest_id: UUID
+    ) -> None:
+        """
+        Validate that contest is not already CANCELLED before cancelling.
+
+        Args:
+            status: Current contest status
+            contest_id: ID of the contest
+
+        Raises:
+            InvalidContestStateError: If contest is already CANCELLED
+        """
+        from app.exceptions.contest import InvalidContestStateError
+        from app.utils.enums import ContestStatus
+
+        if status == ContestStatus.CANCELLED:
+            raise InvalidContestStateError(
+                str(contest_id), "cancel", status, f"any status except {ContestStatus.CANCELLED}"
+            )
+
+    @staticmethod
+    def validate_contest_can_be_restored(
+        is_deleted: bool, contest_id: UUID
+    ) -> None:
+        """
+        Validate that contest is soft-deleted before restoring.
+
+        Args:
+            is_deleted: Soft-deletion flag of the contest
+            contest_id: ID of the contest
+
+        Raises:
+            InvalidContestStateError: If contest is not soft-deleted
+        """
+        from app.exceptions.contest import InvalidContestStateError
+
+        if not is_deleted:
+            raise InvalidContestStateError(
+                str(contest_id), "restore", "active", "soft-deleted"
+            )
+
+    @staticmethod
     def validate_questions_in_contest(
         request_q_ids: set[UUID], existing_q_ids: set[UUID], contest_id: UUID
     ) -> None:

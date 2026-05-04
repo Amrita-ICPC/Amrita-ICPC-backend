@@ -141,3 +141,18 @@ class AudienceNotAssignedToContestError(AppBaseException):
             message=f"Audience {audience_id} is not assigned to contest {contest_id}",
             status_code=status.HTTP_404_NOT_FOUND,
         )
+
+
+class InvalidContestStateError(AppBaseException):
+    """Raised when contest is in an invalid state for the requested operation."""
+
+    def __init__(self, contest_id: str, operation: str, current_status: str, required_status: str | list[str]):
+        if isinstance(required_status, list):
+            status_str = " or ".join(required_status)
+        else:
+            status_str = required_status
+        message = f"Cannot {operation} contest {contest_id}. Current status: {current_status}, required: {status_str}"
+        super().__init__(
+            message=message,
+            status_code=status.HTTP_409_CONFLICT,
+        )
