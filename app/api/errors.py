@@ -23,6 +23,7 @@ from app.exceptions.contest import (
     InstructorNotFoundError,
     InvalidContestError,
     InvalidContestQuestionDataError,
+    InvalidContestStateError,
     QuestionAlreadyInContestError,
     QuestionNotInContestError,
 )
@@ -238,6 +239,17 @@ def setup_exception_handlers(app: FastAPI) -> None:
             status_code=exc.status_code,
             message=exc.message,
             error_code="INVALID_CONTEST",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(InvalidContestStateError)
+    async def invalid_contest_state_handler(request: Request, exc: InvalidContestStateError):
+        logger.warning(f"Invalid contest state: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="INVALID_CONTEST_STATE",
             details=[exc.detail] if exc.detail else None,
         )
 
