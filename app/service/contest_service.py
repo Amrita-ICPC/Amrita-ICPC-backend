@@ -97,6 +97,35 @@ class ContestService:
         self.audience_repository = audience_repository
         self.team_repository = team_repository
 
+    async def _validate_contest_not_deleted_and_has_permission(
+        self, contest_id: UUID, user_id: UUID
+    ) -> tuple[bool, object]:
+        """
+        Consolidated validation: Check if contest exists, not deleted, and user has manage permission.
+
+        Eliminates repeated pattern across assign/remove audience methods.
+
+        Args:
+            contest_id: Contest ID to validate
+            user_id: User performing operation
+
+        Returns:
+            Tuple of (can_manage, contest_object)
+
+        Raises:
+            ContestNotFoundError: If contest not found or deleted
+            PermissionDeniedError: If user lacks permission
+        """
+        contest = await self.repository.get_contest_or_raise(contest_id)
+        if contest.is_deleted:
+            raise ContestNotFoundError(str(contest_id))
+        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
+
+        user = await self.user_repository.get_user_or_raise(user_id)
+        can_manage = user.role == UserRole.admin
+
+        return can_manage, contest
+
     @cache_delete(
         key_builder=lambda self, contest, created_by: "contests:*",
     )
@@ -283,14 +312,12 @@ class ContestService:
             audience_ids: List of audience IDs to assign
             user_id: ID of the user performing the operation
         """
-        contest = await self.repository.get_contest_or_raise(contest_id)
-        if contest.is_deleted:
-            raise ContestNotFoundError(str(contest_id))
-        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
+        can_manage, contest = await self._validate_contest_not_deleted_and_has_permission(
+            contest_id, user_id
+        )
 
         # Validate audience membership for non-admins
-        user = await self.user_repository.get_user_or_raise(user_id)
-        if user.role != UserRole.admin:
+        if not can_manage:
             await AudiencePermission.is_user_in_audience(
                 self.repository.db, user_id=user_id, audience_ids=audience_ids
             )
@@ -315,14 +342,12 @@ class ContestService:
         Raises:
             AudienceNotAssignedToContestError: If any audience ID is not currently assigned
         """
-        contest = await self.repository.get_contest_or_raise(contest_id)
-        if contest.is_deleted:
-            raise ContestNotFoundError(str(contest_id))
-        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
+        can_manage, contest = await self._validate_contest_not_deleted_and_has_permission(
+            contest_id, user_id
+        )
 
         # Validate audience membership for non-admins
-        user = await self.user_repository.get_user_or_raise(user_id)
-        if user.role != UserRole.admin:
+        if not can_manage:
             await AudiencePermission.is_user_in_audience(
                 self.repository.db, user_id=user_id, audience_ids=audience_ids
             )

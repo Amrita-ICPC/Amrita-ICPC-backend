@@ -209,6 +209,64 @@ class ContestRepository:
         return int(result.scalar() or 0)
 
     # TODO: Update the filters with factory and builder design pattern
+
+    def _apply_permission_filter(self, query, user_id: UUID, is_admin: bool):
+        """
+        Apply permission-based filtering: admins see all, non-admins see only their own or assigned.
+
+        Consolidates permission logic used by both get_contests_with_filters and get_soft_deleted_contests.
+
+        Args:
+            query: SQLAlchemy select query
+            user_id: User requesting the contests
+            is_admin: Whether user is admin
+
+        Returns:
+            Filtered query
+        """
+        if not is_admin:
+            instructor_exists = (
+                select(1)
+                .select_from(ContestInstructor)
+                .where(
+                    ContestInstructor.contest_id == Contest.id,
+                    ContestInstructor.instructor_id == user_id,
+                )
+                .exists()
+            )
+            query = query.filter(
+                or_(
+                    Contest.created_by == user_id,
+                    instructor_exists,
+                )
+            )
+        return query
+
+    def _apply_search_and_status_filters(
+        self, query, filters: ContestFilters
+    ):
+        """
+        Apply search term and status filters.
+
+        Consolidates filter logic used by both get_contests_with_filters and get_soft_deleted_contests.
+
+        Args:
+            query: SQLAlchemy select query
+            filters: ContestFilters with optional search_term and status
+
+        Returns:
+            Filtered query
+        """
+        if filters.search_term:
+            query = query.filter(
+                Contest.name.ilike(f"%{filters.search_term}%")
+            )
+
+        if filters.status:
+            query = query.filter(Contest.status == filters.status)
+
+        return query
+
     async def get_contests_with_filters(
         self,
         user_id: UUID,
@@ -233,37 +291,14 @@ class ContestRepository:
         """
         base_query = select(Contest)
 
-        # Non-admin users can only see contests they created or are assigned to as instructors
-        if not is_admin:
-            instructor_exists = (
-                select(1)
-                .select_from(ContestInstructor)
-                .where(
-                    ContestInstructor.contest_id == Contest.id,
-                    ContestInstructor.instructor_id == user_id,
-                )
-                .exists()
-            )
-
-            base_query = base_query.filter(
-                or_(
-                    Contest.created_by == user_id,
-                    instructor_exists,
-                )
-            )
+        # Apply permission filter
+        base_query = self._apply_permission_filter(base_query, user_id, is_admin)
 
         # Filter out soft-deleted contests
         base_query = base_query.filter(Contest.is_deleted.is_(False))
 
-        # Apply search filter
-        if filters.search_term:
-            base_query = base_query.filter(
-                Contest.name.ilike(f"%{filters.search_term}%")
-            )
-
-        # Apply status filter
-        if filters.status:
-            base_query = base_query.filter(Contest.status == filters.status)
+        # Apply search and status filters
+        base_query = self._apply_search_and_status_filters(base_query, filters)
 
         # Apply run_status filter using SQL datetime comparisons
         now = datetime.now(timezone.utc)
@@ -317,7 +352,7 @@ class ContestRepository:
         """
         Retrieve soft-deleted contests with optional filtering and pagination.
 
-        Similar to get_contests_with_filters but only returns soft-deleted contests.
+        Uses same filtering logic as get_contests_with_filters but only returns soft-deleted contests.
 
         Args:
             user_id: ID of the user requesting contests
@@ -330,27 +365,14 @@ class ContestRepository:
         """
         base_query = select(Contest)
 
-        # Non-admin users can only see contests they created or are assigned to as instructors
-        if not is_admin:
-            base_query = base_query.outerjoin(ContestInstructor).filter(
-                or_(
-                    Contest.created_by == user_id,
-                    ContestInstructor.instructor_id == user_id,
-                )
-            )
+        # Apply permission filter
+        base_query = self._apply_permission_filter(base_query, user_id, is_admin)
 
         # Filter for soft-deleted contests only
         base_query = base_query.filter(Contest.is_deleted.is_(True))
 
-        # Apply search filter
-        if filters.search_term:
-            base_query = base_query.filter(
-                Contest.name.ilike(f"%{filters.search_term}%")
-            )
-
-        # Apply status filter
-        if filters.status:
-            base_query = base_query.filter(Contest.status == filters.status)
+        # Apply search and status filters
+        base_query = self._apply_search_and_status_filters(base_query, filters)
 
         # Get distinct results
         base_query = base_query.distinct()
