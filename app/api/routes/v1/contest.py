@@ -15,6 +15,7 @@ from app.core.guards.contest import ContestOperationGuard
 from app.core.logger import logger
 from app.core.response import create_api_response
 from app.repositories.audience import AudienceRepository
+from app.repositories.bank import BankRepository
 from app.repositories.contest import ContestRepository
 from app.repositories.language import LanguageRepository
 from app.repositories.question import QuestionRepository
@@ -25,6 +26,7 @@ from app.schema.contest import (
     AddContestQuestionsRequest,
     ContestAudienceManageRequest,
     ContestAudienceResponse,
+    ContestBankCloneRequest,
     ContestCreate,
     ContestQuestionResponse,
     ContestResponse,
@@ -85,6 +87,7 @@ def get_contest_question_service(
     contest_repository = ContestRepository(db)
     question_repository = QuestionRepository(db)
     language_repository = LanguageRepository(db)
+    bank_repository = BankRepository(db)
     guard = ContestOperationGuard(db)
     validator = ContestValidator()
     return ContestQuestionService(
@@ -93,6 +96,7 @@ def get_contest_question_service(
         validator,
         question_repository,
         language_repository,
+        bank_repository,
     )
 
 
@@ -1010,6 +1014,42 @@ async def reorder_contest_questions(
         request,
         data=MessageResponse(message="Contest questions reordered successfully"),
         message="Contest questions reordered successfully",
+    )
+
+
+@router.post(
+    "/{contest_id}/questions/clone-from-bank",
+    response_model=APIResponse[list[ContestQuestionResponse]],
+    status_code=status.HTTP_201_CREATED,
+    summary="Clone questions from a bank into a contest",
+    dependencies=[can_update("contests")],
+)
+async def clone_questions_from_bank(
+    request: Request,
+    contest_id: UUID,
+    clone_request: ContestBankCloneRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    service: ContestQuestionService = Depends(get_contest_question_service),
+) -> APIResponse[list[ContestQuestionResponse]]:
+    """
+    Clone questions from a bank into a contest.
+
+    Args:
+        request: Framework context.
+        contest_id: UUID of the target contest.
+        clone_request: DTO containing bank ID and selection criteria.
+        user_id: Authenticated user ID.
+        service: Injected domain service.
+
+    Returns:
+        APIResponse: Standardized response with list of created contest-question relationships.
+    """
+    results = await service.clone_questions_from_bank(contest_id, clone_request, user_id)
+    return create_api_response(
+        request,
+        data=results,
+        message=f"Successfully cloned {len(results)} questions from bank into contest",
+        status_code=status.HTTP_201_CREATED,
     )
 
 

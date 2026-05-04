@@ -12,6 +12,18 @@ class UserBase(BaseModel):
     name: Optional[str] = None
 
 
+class UserBasicInfo(BaseModel):
+    """Minimal user information for sharing and metadata views."""
+
+    id: UUID
+    user_id: str
+    name: str
+    email: EmailStr
+
+    class Config:
+        from_attributes = True
+
+
 class UserProfile(UserBase):
     id: str
     roles: List[str] = []

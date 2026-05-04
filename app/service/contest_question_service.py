@@ -30,10 +30,12 @@ from app.repositories.dto import (
     PaginationParams,
 )
 from app.repositories.dto.question import CreateQuestionTemplateData
+from app.repositories.bank import BankRepository
 from app.repositories.language import LanguageRepository
 from app.repositories.question import QuestionRepository
 from app.schema.contest import (
     AddContestQuestionsRequest,
+    ContestBankCloneRequest,
     ContestQuestionResponse,
     RemoveContestQuestionRequest,
     ReorderContestQuestionsRequest,
@@ -49,6 +51,8 @@ from app.utils.enums import (
     QuestionDifficulty,
     SortOrder,
 )
+from app.utils.question_clone import deep_copy_question_for_clone
+from app.validators.bank import BankValidator
 from app.validators.contest import ContestValidator
 from app.validators.question import QuestionValidator
 
@@ -63,6 +67,7 @@ class ContestQuestionService:
         validator: ContestValidator,
         question_repository: QuestionRepository,
         language_repository: LanguageRepository,
+        bank_repository: BankRepository,
     ):
         """
         Initialize the ContestQuestionService.
@@ -73,12 +78,14 @@ class ContestQuestionService:
             validator: Validator for contest-specific business rules.
             question_repository: Repository for platform-level question access.
             language_repository: Repository for platform-level language validation.
+            bank_repository: Repository for bank data access.
         """
         self.repository = repository
         self.guard = guard
         self.validator = validator
         self.question_repository = question_repository
         self.language_repository = language_repository
+        self.bank_repository = bank_repository
 
     @cache_get(
         key_builder=lambda self,
@@ -537,3 +544,120 @@ class ContestQuestionService:
         await self.repository.reorder_questions_in_contest(contest_id, reorder_data)
 
         logger.info(f"User {user_id} reordered questions in contest {contest_id}")
+
+    @cache_delete(
+        key_builder=lambda self, contest_id, *args, **kwargs: [
+            f"contest:{contest_id}*",
+            "contests:*",
+        ]
+    )
+    async def clone_questions_from_bank(
+        self,
+        contest_id: UUID,
+        request: ContestBankCloneRequest,
+        user_id: UUID,
+    ) -> list[ContestQuestionResponse]:
+        """
+        Clone questions from a bank into a contest.
+
+        Args:
+            contest_id: UUID of the target contest.
+            request: DTO containing bank ID and selection criteria.
+            user_id: UUID of the authenticated user.
+
+        Returns:
+            list[ContestQuestionResponse]: List of created contest-question relationships.
+
+        Raises:
+            ContestNotFoundError: If the contest does not exist.
+            BankNotFoundError: If the source bank does not exist.
+            PermissionDeniedError: If the user lacks necessary permissions.
+        """
+        # 1. Resolve and validate contest
+        contest = await self.repository.get_contest_or_raise(contest_id)
+        if contest.is_deleted:
+            raise ContestNotFoundError(str(contest_id))
+        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
+
+        # 2. Resolve and validate bank
+        bank = await self.bank_repository.get_bank_or_raise(
+            request.bank_id, load_relations=True
+        )
+        BankValidator.check_read_bank(user_id, bank)
+
+        # 3. Retrieve source questions
+        if request.copy_all:
+            source_questions = (
+                await self.bank_repository.get_all_question_entities_in_bank(
+                    request.bank_id
+                )
+            )
+        elif request.questions:
+            question_ids = [q.question_id for q in request.questions]
+            source_questions = (
+                await self.bank_repository.get_question_entities_in_bank_by_ids(
+                    request.bank_id, question_ids
+                )
+            )
+        else:
+            return []
+
+        if not source_questions:
+            return []
+
+        # 4. Deep copy questions and track source mapping
+        cloned_to_source_map = {}
+        cloned_questions: list[Question] = []
+        for src_q in source_questions:
+            cloned_q = deep_copy_question_for_clone(src_q, created_by=user_id)
+            cloned_questions.append(cloned_q)
+            cloned_to_source_map[cloned_q] = src_q.id
+
+        # 5. Bulk create cloned questions
+        created_questions = await self.question_repository.bulk_create_questions(
+            cloned_questions
+        )
+
+        # 6. Prepare contest-question links
+        max_order = await self.repository.get_max_question_order(contest_id)
+        next_order = max_order + 1
+
+        config_map = {q.question_id: q for q in (request.questions or [])}
+        dtos: list[AddContestQuestionData] = []
+        from app.repositories.dto.contest_question import AddContestQuestionData
+
+        from app.schema.contest import AddContestQuestionRequest
+
+        for created_q in created_questions:
+            source_id = cloned_to_source_map[created_q]
+            config = config_map.get(source_id)
+
+            score = (
+                config.score if config and config.score is not None else request.score
+            )
+            duration = (
+                config.duration
+                if config and config.duration is not None
+                else request.duration
+            )
+
+            q_req = AddContestQuestionRequest(
+                question_id=created_q.id,
+                order=next_order,
+                score=score,
+                duration=duration,
+            )
+            dto = build_add_contest_question_dto(
+                q_req, contest_id=contest_id, created_by=user_id, order=next_order
+            )
+            dtos.append(dto)
+            next_order += 1
+
+        # 7. Batch insert into contest
+        results = await self.repository.add_questions_to_contest(dtos)
+
+        # 8. Log and return
+        logger.info(
+            f"Cloned {len(results)} questions from bank {request.bank_id} to contest {contest_id} by user {user_id}"
+        )
+        return [to_contest_question_response(cq) for cq in results]

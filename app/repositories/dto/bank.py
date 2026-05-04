@@ -1,5 +1,8 @@
 from dataclasses import dataclass
 from typing import Optional
+from uuid import UUID
+
+from app.utils.enums import QuestionDifficulty, SortOrder
 
 
 @dataclass
@@ -14,3 +17,14 @@ class BankFilters:
     """
 
     search_term: Optional[str] = None
+
+
+@dataclass
+class BankQuestionFilters:
+    """Filters for querying questions inside a bank."""
+
+    title: Optional[str] = None
+    difficulty: Optional[QuestionDifficulty] = None
+    tag: Optional[str] = None
+    sort_by: Optional[str] = None  # "name" or "difficulty"
+    sort_order: Optional[SortOrder] = SortOrder.ASC

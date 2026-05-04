@@ -360,3 +360,17 @@ class ContestQuestionsListResponse(BaseModel):
     )
     hard_count: int = Field(0, description="Number of hard questions in the contest")
     total_count: int = Field(0, description="Total number of questions in the contest")
+
+
+class BankQuestionMetadataResponse(BaseModel):
+    """Response model for a bank question metadata.
+
+    Provides a slimmed-down view of a question with only core attributes.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID = Field(..., description="The unique identifier of the question")
+    title: str = Field(..., description="The title of the question")
+    difficulty: QuestionDifficulty = Field(..., description="The difficulty level")
+    tags: List[TagResponse] = Field(default_factory=list, description="Associated tags")
