@@ -21,7 +21,7 @@ def to_bank_question_metadata_responses(
     return [
         BankQuestionMetadataResponse(
             id=question.id,
-            title=question.title,
+            title=question.title or "Untitled Question",
             difficulty=question.difficulty,
             tags=[
                 TagResponse(id=qt.tag.id, name=qt.tag.name)

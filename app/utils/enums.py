@@ -127,6 +127,19 @@ class ContestQuestionSortBy(str, enum.Enum):
     ORDER = "order"
 
 
+class BankQuestionSortBy(str, enum.Enum):
+    """
+    Enumeration for bank question sorting options.
+
+    Attributes:
+        NAME = "name"
+        DIFFICULTY = "difficulty"
+    """
+
+    NAME = "name"
+    DIFFICULTY = "difficulty"
+
+
 class ScoringType(str, enum.Enum):
     """
     Enumeration of scoring methods for contest evaluation.
