@@ -355,3 +355,13 @@ class ContestBankCloneRequest(BaseModel):
     )
 
     model_config = ConfigDict(from_attributes=True)
+    @model_validator(mode="after")
+    def validate_clone_selection(self) -> "ContestBankCloneRequest":
+        if self.copy_all:
+            if self.questions:
+                raise ValueError("questions must be omitted when copy_all is true")
+        elif not self.questions:
+            raise ValueError(
+                "questions must contain at least one item when copy_all is false"
+            )
+        return self

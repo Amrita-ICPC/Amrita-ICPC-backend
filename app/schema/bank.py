@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.schema.question import QuestionResponse
 from app.schema.user import UserBasicInfo, UserResponse
-from app.utils.enums import BankPermission, QuestionDifficulty, SortOrder
+from app.utils.enums import BankPermission, BankQuestionSortBy, QuestionDifficulty, SortOrder
 
 
 class BankBase(BaseModel):
@@ -156,8 +156,8 @@ class BankQuestionFilters(BaseModel):
     title: Optional[str] = None
     difficulty: Optional[QuestionDifficulty] = None
     tag: Optional[str] = None
-    sort_by: Optional[str] = None
-    sort_order: Optional[SortOrder] = SortOrder.ASC
+    sort_by: Optional[BankQuestionSortBy] = BankQuestionSortBy.NAME
+    sort_order: SortOrder = SortOrder.ASC
 
 
 class BankShareUserResponse(UserBasicInfo):

@@ -1045,6 +1045,9 @@ async def clone_questions_from_bank(
         APIResponse: Standardized response with list of created contest-question relationships.
     """
     results = await service.clone_questions_from_bank(contest_id, clone_request, user_id)
+    logger.info(
+        f"Cloned {len(results)} questions from bank {clone_request.bank_id} to contest {contest_id} (actor=REDACTED)"
+   )
     return create_api_response(
         request,
         data=results,

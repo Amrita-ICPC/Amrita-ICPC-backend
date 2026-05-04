@@ -17,7 +17,7 @@ from app.repositories.dto import (
     PaginatedResult,
     PaginationParams,
 )
-from app.utils.enums import BankPermission, SortOrder
+from app.utils.enums import BankPermission, BankQuestionSortBy, SortOrder
 
 
 class BankRepository:
@@ -530,16 +530,16 @@ class BankRepository:
         # Apply sorting
         if filters and filters.sort_by:
             sort_attr = None
-            if filters.sort_by == "name":
+            if filters.sort_by == BankQuestionSortBy.NAME:
                 sort_attr = Question.title
-            elif filters.sort_by == "difficulty":
+            elif filters.sort_by == BankQuestionSortBy.DIFFICULTY:
                 sort_attr = Question.difficulty
             
             if sort_attr is not None:
                 if filters.sort_order == SortOrder.DESC:
-                    base_query = base_query.order_by(sort_attr.desc())
+                   base_query = base_query.order_by(sort_attr.desc(), Question.id.asc())
                 else:
-                    base_query = base_query.order_by(sort_attr.asc())
+                    base_query = base_query.order_by(sort_attr.asc(), Question.id.asc())
         else:
             base_query = base_query.order_by(BankQuestion.created_at, Question.id)
 
