@@ -5,7 +5,7 @@ from app.repositories.dto.audience import (
     CreateAudienceData,
     UpdateAudienceData,
 )
-from app.repositories.dto.bank import BankFilters
+from app.repositories.dto.bank import BankFilters, BankQuestionFilters
 from app.repositories.dto.contest import (
     UNSET,
     ContestFilters,
@@ -32,6 +32,12 @@ from app.repositories.dto.student import (
     StudentTeamRegistrationData,
     StudentTestCaseRunResultDTO,
 )
+from app.repositories.dto.question import (
+    CreateQuestionData,
+    CreateQuestionTemplateData,
+    CreateQuestionTestCaseData,
+    UpdateQuestionData,
+)
 from app.repositories.dto.team import CreateTeamData, TeamFilters, UpdateTeamData
 from app.repositories.dto.user import UserListFilters
 
@@ -52,6 +58,12 @@ __all__ = [
     "CreateContestData",
     "UpdateContestData",
     "BankFilters",
+    "BankQuestionFilters",
+    # Question DTOs
+    "CreateQuestionData",
+    "CreateQuestionTemplateData",
+    "CreateQuestionTestCaseData",
+    "UpdateQuestionData",
     # Student DTOs
     "StudentContestFilters",
     "StudentAvailableContestData",

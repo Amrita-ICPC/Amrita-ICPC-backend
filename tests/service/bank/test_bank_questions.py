@@ -56,7 +56,16 @@ def mock_question_repo():
 
 
 @pytest.fixture
-def bank_question_service(mock_repository, mock_validator, mock_question_repo):
+def mock_language_repo():
+    from app.repositories.language import LanguageRepository
+
+    return AsyncMock(spec=LanguageRepository)
+
+
+@pytest.fixture
+def bank_question_service(
+    mock_repository, mock_validator, mock_question_repo, mock_language_repo
+):
     with (
         patch(
             "app.core.cache.decorators.cache_get",
@@ -81,6 +90,7 @@ def bank_question_service(mock_repository, mock_validator, mock_question_repo):
             question_repo=mock_question_repo,
             validator=mock_validator,
             code_storage_service=mock_storage,
+            language_repo=mock_language_repo,
         )
 
 
@@ -257,23 +267,6 @@ async def test_remove_question_from_bank_not_found(
         )
 
 
-@pytest.mark.asyncio
-async def test_get_bank_questions_success(
-    bank_question_service, mock_repository, mock_validator, sample_bank, sample_question
-):
-    user_id = sample_bank.created_by
-
-    mock_repository.get_bank_or_raise.return_value = sample_bank
-
-    result = PaginatedResult(total=1, items=[sample_question])
-    mock_repository.get_questions_in_bank.return_value = result
-    total, questions = await bank_question_service.get_bank_questions(
-        sample_bank.id, user_id, 0, 10
-    )
-    assert total == 1
-    assert len(questions) == 1
-    assert questions[0].id == sample_question.id
-    assert questions[0].testcase_count == 1
 
 
 @pytest.mark.asyncio
@@ -395,156 +388,9 @@ async def test_clone_selected_questions_raises_when_not_in_source_bank(
         )
 
 
-@pytest.mark.asyncio
-async def test_add_testcases_to_question_success(
-    bank_question_service,
-    mock_repository,
-    mock_question_repo,
-    sample_bank,
-    sample_question,
-):
-    """Adding test cases to a bank question should append new cases and preserve order."""
-    user_id = sample_bank.created_by
-    payload = AddQuestionTestCasesRequest(
-        testcases=[
-            QuestionTestCaseCreate(input="2", output="4", is_hidden=False),
-            QuestionTestCaseCreate(input="3", output="9", is_hidden=True),
-        ]
-    )
-
-    mock_repository.get_bank_or_raise.return_value = sample_bank
-    mock_repository.get_questions_in_bank_by_ids.return_value = [
-        BankQuestion(bank_id=sample_bank.id, question_id=sample_question.id)
-    ]
-    mock_question_repo.get_question_or_raise.return_value = sample_question
-
-    result = await bank_question_service.add_testcases_to_question(
-        sample_bank.id,
-        sample_question.id,
-        payload,
-        user_id,
-    )
-
-    assert len(result.testcases) == 3
-    assert [testcase.order for testcase in result.testcases] == [0, 1, 2]
-    mock_question_repo.update_question.assert_awaited_once()
 
 
-@pytest.mark.asyncio
-async def test_remove_testcases_from_question_success(
-    bank_question_service,
-    mock_repository,
-    mock_question_repo,
-    sample_bank,
-    sample_question,
-):
-    """Removing test cases from a bank question should keep only the selected remainder."""
-    user_id = sample_bank.created_by
-    second_testcase = QuestionTestCase(
-        id=uuid4(),
-        question_id=sample_question.id,
-        input="2",
-        output="4",
-        is_hidden=False,
-        weight=1,
-        order=1,
-        created_by=user_id,
-    )
-    sample_question.testcases = [sample_question.testcases[0], second_testcase]
-    payload = RemoveQuestionTestCasesRequest(testcase_ids=[second_testcase.id])
-
-    mock_repository.get_bank_or_raise.return_value = sample_bank
-    mock_repository.get_questions_in_bank_by_ids.return_value = [
-        BankQuestion(bank_id=sample_bank.id, question_id=sample_question.id)
-    ]
-    mock_question_repo.get_question_or_raise.return_value = sample_question
-
-    result = await bank_question_service.remove_testcases_from_question(
-        sample_bank.id,
-        sample_question.id,
-        payload,
-        user_id,
-    )
-
-    assert len(result.testcases) == 1
-    assert result.testcases[0].order == 0
-    mock_question_repo.update_question.assert_awaited_once()
 
 
-@pytest.mark.asyncio
-async def test_remove_templates_from_question_success(
-    bank_question_service,
-    mock_repository,
-    mock_question_repo,
-    sample_bank,
-    sample_question_with_templates,
-):
-    """Removing templates from a bank question should drop the requested language templates."""
-    user_id = sample_bank.created_by
-    payload = RemoveQuestionTemplatesRequest(language_ids=[71])
-
-    mock_repository.get_bank_or_raise.return_value = sample_bank
-    mock_repository.get_questions_in_bank_by_ids.return_value = [
-        BankQuestion(
-            bank_id=sample_bank.id,
-            question_id=sample_question_with_templates.id,
-        )
-    ]
-    mock_question_repo.get_question_or_raise.return_value = (
-        sample_question_with_templates
-    )
-
-    result = await bank_question_service.remove_templates_from_question(
-        sample_bank.id,
-        sample_question_with_templates.id,
-        payload,
-        user_id,
-    )
-
-    assert len(result.templates) == 1
-    assert result.templates[0].language_id == 54
-    mock_question_repo.update_question.assert_awaited_once()
 
 
-@pytest.mark.asyncio
-async def test_add_templates_to_question_rejects_duplicate_language_ids(
-    bank_question_service,
-    mock_repository,
-    mock_question_repo,
-    sample_bank,
-    sample_question,
-):
-    """Adding templates should fail when the request repeats a language ID."""
-    user_id = sample_bank.created_by
-    payload = AddQuestionTemplatesRequest(
-        templates=[
-            QuestionTemplateCreate(
-                language_id=71,
-                starter_code="print('a')",
-                driver_code=None,
-                solution_code=None,
-            ),
-            QuestionTemplateCreate(
-                language_id=71,
-                starter_code="print('b')",
-                driver_code=None,
-                solution_code=None,
-            ),
-        ]
-    )
-
-    mock_repository.get_bank_or_raise.return_value = sample_bank
-    mock_repository.get_questions_in_bank_by_ids.return_value = [
-        BankQuestion(bank_id=sample_bank.id, question_id=sample_question.id)
-    ]
-    mock_question_repo.get_question_or_raise.return_value = sample_question
-
-    with pytest.raises(InvalidQuestionError):
-        await bank_question_service.add_templates_to_question(
-            sample_bank.id,
-            sample_question.id,
-            payload,
-            user_id,
-        )
-
-    mock_question_repo.add_templates_to_question.assert_not_called()

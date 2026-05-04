@@ -2,13 +2,35 @@ from typing import TYPE_CHECKING
 
 from app.models.question import QuestionTemplate
 from app.schema.question import (
+    BankQuestionMetadataResponse,
     QuestionListSummaryResponse,
     QuestionResponse,
     QuestionTemplateCreate,
 )
+from app.schema.tag import TagResponse
+
 
 if TYPE_CHECKING:
     from app.models.question import Question
+
+
+def to_bank_question_metadata_responses(
+    questions: list["Question"],
+) -> list[BankQuestionMetadataResponse]:
+    """Map question ORM list to metadata response schemas."""
+    return [
+        BankQuestionMetadataResponse(
+            id=question.id,
+            title=question.title,
+            difficulty=question.difficulty,
+            tags=[
+                TagResponse(id=qt.tag.id, name=qt.tag.name)
+                for qt in (question.tags or [])
+                if qt.tag
+            ],
+        )
+        for question in questions
+    ]
 
 
 def to_bank_question_response(question: "Question") -> QuestionResponse:

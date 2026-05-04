@@ -1,3 +1,4 @@
+from app.schema.bank import BankShareItem
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, status
@@ -20,7 +21,7 @@ from app.schema.bank import (
     BankDetailResponse,
     BankResponse,
     BankShareRequest,
-    BankUnshareRequest,
+    BankSharesResponse,
     BankUpdate,
 )
 from app.schema.base import APIResponse
@@ -327,7 +328,7 @@ async def restore_bank(
 
 
 @router.post(
-    "/{bank_id}/share",
+    "/{bank_id}/shares",
     response_model=APIResponse,
     summary="Share bank with users",
     dependencies=[Depends(check_permission("banks", "share"))],
@@ -362,39 +363,110 @@ async def share_bank(
     return create_api_response(request, data=None, message="Bank shared successfully")
 
 
-@router.post(
-    "/{bank_id}/unshare",
+@router.delete(
+    "/{bank_id}/shares/{target_user_id}",
     response_model=APIResponse,
-    summary="Remove users from bank share",
+    summary="Remove a user from bank share",
     dependencies=[Depends(check_permission("banks", "share"))],
 )
 async def unshare_bank(
     request: Request,
     bank_id: UUID,
-    unshare_data: BankUnshareRequest,
+    target_user_id: UUID,
     user_id: UUID = Depends(get_current_user_id),
     service: BankService = Depends(get_bank_service),
 ):
     """
-    Remove users from bank share.
+    Remove a user from bank share.
 
-    Only the owner can remove users.
+    Only the owner or an editor can remove users.
 
     Args:
         request (Request): Framework context.
         bank_id (UUID): The unique identifier of the bank.
-        unshare_data (BankUnshareRequest): The list of users to remove.
+        target_user_id (UUID): The user to remove.
         user_id (UUID): Authenticated user ID.
         service (BankService): Injected domain service.
 
     Returns:
         APIResponse: Explicit success confirmation.
     """
-    await service.unshare_bank(bank_id, unshare_data.user_ids, user_id)
+    await service.unshare_bank(bank_id, target_user_id, user_id)
 
     logger.info(
-        f"Bank with ID {bank_id} access removed for {len(unshare_data.user_ids)} users by user {user_id}"
+        f"Bank with ID {bank_id} access removed for user {target_user_id} by user {user_id}"
     )
     return create_api_response(
-        request, data=None, message="Users removed from bank share successfully"
+        request, data=None, message="User removed from bank share successfully"
+    )
+
+
+@router.get(
+    "/{bank_id}/shares",
+    response_model=APIResponse[BankSharesResponse],
+    summary="Get bank shares",
+    dependencies=[can_read("banks")],
+)
+async def get_bank_shares(
+    request: Request,
+    bank_id: UUID,
+    email: str | None = Query(None, description="Filter by user email"),
+    username: str | None = Query(None, description="Filter by username (user_id)"),
+    user_id: UUID = Depends(get_current_user_id),
+    service: BankService = Depends(get_bank_service),
+):
+    """
+    Get bank shares including owner and shared users.
+
+    Args:
+        request (Request): Framework context.
+        bank_id (UUID): The unique identifier of the bank.
+        email (str): Optional email filter.
+        username (str): Optional username filter.
+        user_id (UUID): Authenticated user ID.
+        service (BankService): Injected domain service.
+
+    Returns:
+        APIResponse: Ownership and share breakdown.
+    """
+    shares = await service.get_bank_shares(bank_id, user_id, email, username)
+
+    return create_api_response(
+        request, data=shares, message="Bank shares fetched successfully"
+    )
+
+
+@router.patch(
+    "/{bank_id}/shares",
+    response_model=APIResponse,
+    summary="Update bank share permissions",
+    dependencies=[Depends(check_permission("banks", "share"))],
+)
+async def update_bank_shares(
+    request: Request,
+    bank_id: UUID,
+    updates: list[BankShareItem],
+    user_id: UUID = Depends(get_current_user_id),
+    service: BankService = Depends(get_bank_service),
+):
+    """
+    Update permissions for multiple users shared on a bank.
+
+    Args:
+        request (Request): Framework context.
+        bank_id (UUID): The unique identifier of the bank.
+        updates (List[BankShareItem]): The list of users and their new permission levels.
+        user_id (UUID): Authenticated user ID.
+        service (BankService): Injected domain service.
+
+    Returns:
+        APIResponse: Success confirmation.
+    """
+    await service.update_bank_shares(bank_id, updates, user_id)
+
+    logger.info(
+        f"Permissions updated for {len(updates)} users on bank {bank_id} by user {user_id}"
+    )
+    return create_api_response(
+        request, data=None, message="Bank share permissions updated successfully"
     )

@@ -61,6 +61,7 @@ def deep_copy_question_for_clone(
 
     return Question(
         id=cloned_question_id,
+        title=source_question.title,
         question_text=source_question.question_text,
         difficulty=source_question.difficulty,
         time_limit_ms=source_question.time_limit_ms,

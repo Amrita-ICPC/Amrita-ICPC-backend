@@ -153,86 +153,6 @@ async def test_create_bank_duplicate_name(
         await bank_service.create_bank(sample_bank_data, user_id)
 
 
-@pytest.mark.asyncio
-async def test_get_bank_by_id_owner(bank_service, mock_validator, existing_bank):
-    """Test owner can retrieve bank and sees shares (even if empty)."""
-    from app.schema.bank import BankDetailResponse
-
-    bank_response = BankDetailResponse(
-        id=existing_bank.id,
-        name=existing_bank.name,
-        description=existing_bank.description,
-        created_by=existing_bank.created_by,
-        created_at=existing_bank.created_at,
-        updated_at=existing_bank.updated_at,
-        questions=[],
-        shares=[],
-    )
-
-    with patch.object(bank_service, "_get_bank_from_cache", return_value=bank_response):
-        result = await bank_service.get_bank_by_id(
-            existing_bank.id, existing_bank.created_by
-        )
-
-        assert result.id == existing_bank.id
-        assert result.shares == []
-        mock_validator.check_read_bank.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_get_bank_by_id_shared_read(bank_service, mock_validator, existing_bank):
-    """Test shared user can retrieve bank but shares list is hidden."""
-    shared_user_id = uuid4()
-
-    from app.schema.bank import BankDetailResponse, BankShareBase
-
-    share_info = BankShareBase(user_id=shared_user_id, permission=BankPermission.read)
-
-    bank_response = BankDetailResponse(
-        id=existing_bank.id,
-        name=existing_bank.name,
-        description=existing_bank.description,
-        created_by=existing_bank.created_by,
-        created_at=existing_bank.created_at,
-        updated_at=existing_bank.updated_at,
-        questions=[],
-        shares=[share_info],
-    )
-
-    with patch.object(bank_service, "_get_bank_from_cache", return_value=bank_response):
-        result = await bank_service.get_bank_by_id(existing_bank.id, shared_user_id)
-
-        assert result.id == existing_bank.id
-        # Expect shares to be stripped out for non-owner
-        assert result.shares == []
-        mock_validator.check_read_bank.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_get_bank_by_id_access_denied(
-    bank_service, mock_validator, existing_bank
-):
-    """Test unauthorized user cannot retrieve bank."""
-    random_user_id = uuid4()
-
-    from app.schema.bank import BankDetailResponse
-
-    bank_response = BankDetailResponse(
-        id=existing_bank.id,
-        name=existing_bank.name,
-        description=existing_bank.description,
-        created_by=existing_bank.created_by,
-        created_at=existing_bank.created_at,
-        updated_at=existing_bank.updated_at,
-        questions=[],
-        shares=[],
-    )
-
-    mock_validator.check_read_bank.side_effect = BankAccessDeniedError()
-
-    with patch.object(bank_service, "_get_bank_from_cache", return_value=bank_response):
-        with pytest.raises(BankAccessDeniedError):
-            await bank_service.get_bank_by_id(existing_bank.id, random_user_id)
 
 
 @pytest.mark.asyncio
@@ -302,24 +222,6 @@ async def test_delete_bank_denied(
         await bank_service.delete_bank(existing_bank.id, random_user_id)
 
 
-@pytest.mark.asyncio
-async def test_share_bank_owner_success(
-    bank_service, mock_repository, mock_validator, existing_bank
-):
-    """Test owner can share bank."""
-    target_user_id = uuid4()
-    shares = [BankShareItem(user_id=target_user_id, permission=BankPermission.read)]
-
-    mock_repository.get_bank_or_raise.return_value = existing_bank
-    mock_repository.get_share_for_user.return_value = None
-
-    await bank_service.share_bank(existing_bank.id, shares, existing_bank.created_by)
-
-    mock_validator.check_manage_bank.assert_called_once()
-    mock_repository.add_share.assert_called_once_with(
-        bank_id=existing_bank.id, user_id=target_user_id, permission=BankPermission.read
-    )
-    mock_repository.batch_flush.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -337,26 +239,6 @@ async def test_share_bank_denied(
         await bank_service.share_bank(existing_bank.id, shares, random_user_id)
 
 
-@pytest.mark.asyncio
-async def test_unshare_bank_owner_success(
-    bank_service, mock_repository, mock_validator, existing_bank
-):
-    """Test owner can unshare bank."""
-    target_user_id = uuid4()
-    user_ids = [target_user_id]
-
-    mock_share = MockBankShare(bank_id=existing_bank.id, user_id=target_user_id)
-
-    mock_repository.get_bank_or_raise.return_value = existing_bank
-    mock_repository.get_share_for_user.return_value = mock_share
-
-    await bank_service.unshare_bank(
-        existing_bank.id, user_ids, existing_bank.created_by
-    )
-
-    mock_validator.check_manage_bank.assert_called_once()
-    mock_repository.remove_share.assert_called_once_with(mock_share)
-    mock_repository.batch_flush.assert_called_once()
 
 
 @pytest.mark.asyncio

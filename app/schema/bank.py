@@ -5,7 +5,8 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schema.question import QuestionResponse
-from app.utils.enums import BankPermission
+from app.schema.user import UserBasicInfo, UserResponse
+from app.utils.enums import BankPermission, QuestionDifficulty, SortOrder
 
 
 class BankBase(BaseModel):
@@ -72,15 +73,24 @@ class BankShareBase(BaseModel):
 class BankDetailResponse(BankResponse):
     """Schema for detailed bank responses.
 
-    Includes the standard bank response and extends it significantly by loading
-    related entities like associated questions and share configurations.
+    Includes the standard bank response and extends it by providing
+    aggregated counts of associated questions and share configurations.
     """
 
-    questions: List[QuestionResponse] = Field(
-        default=[], description="List of questions in the bank"
+    total_questions_count: int = Field(
+        default=0, description="Total number of questions in the bank"
     )
-    shares: List[BankShareBase] = Field(
-        default=[], description="List of users the bank is shared with"
+    easy_questions_count: int = Field(
+        default=0, description="Number of easy questions"
+    )
+    medium_questions_count: int = Field(
+        default=0, description="Number of medium questions"
+    )
+    hard_questions_count: int = Field(
+        default=0, description="Number of hard questions"
+    )
+    shared_users_count: int = Field(
+        default=0, description="Number of users the bank is shared with"
     )
 
 
@@ -105,15 +115,7 @@ class BankShareRequest(BaseModel):
     shares: List[BankShareItem] = Field(..., description="List of users to share with")
 
 
-class BankUnshareRequest(BaseModel):
-    """Schema for processing a bulk unshare request.
 
-    Contains a list of users whose access should be revoked from the bank.
-    """
-
-    user_ids: List[UUID] = Field(
-        ..., description="List of user IDs to remove access for"
-    )
 
 
 class BankQuestionBulk(BaseModel):
@@ -146,3 +148,26 @@ class BankQuestionCloneRequest(BaseModel):
         default=None,
         description="Source question IDs to clone; required when copy_all is false",
     )
+
+
+class BankQuestionFilters(BaseModel):
+    """Schema for bank question filtering and sorting parameters."""
+
+    title: Optional[str] = None
+    difficulty: Optional[QuestionDifficulty] = None
+    tag: Optional[str] = None
+    sort_by: Optional[str] = None
+    sort_order: Optional[SortOrder] = SortOrder.ASC
+
+
+class BankShareUserResponse(UserBasicInfo):
+    """User detail response with associated bank permission."""
+
+    permission: BankPermission
+
+
+class BankSharesResponse(BaseModel):
+    """Comprehensive bank access list including owner and explicit shares."""
+
+    owner: UserBasicInfo
+    shares: List[BankShareUserResponse]
