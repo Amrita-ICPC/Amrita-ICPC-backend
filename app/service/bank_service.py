@@ -107,25 +107,24 @@ class BankService:
     #     return to_bank_detail_response(bank)
 
     async def get_bank_by_id(
-        self, bank_id: UUID, user_id: UUID, check_access: bool = True
+        self, bank_id: UUID, user_id: UUID
     ) -> BankDetailResponse:
-        """Fetch bank specific details including relationships, heavily guarded.
+        """Fetch bank details with full relationships and access validation.
 
         Args:
-            bank_id (UUID): Focus entity ID.
-            user_id (UUID): Requesting agent ID.
-            check_access (bool): Whether to enforce READ constraints.
+            bank_id: The bank ID to retrieve.
+            user_id: User ID requesting the bank (for permission check).
 
         Returns:
-            BankDetailResponse: A complete detail breakdown of structure.
+            BankDetailResponse: Complete bank details with all relationships.
+
+        Raises:
+            BankNotFoundError: If bank not found.
+            PermissionDeniedError: If user lacks read access.
         """
         bank = await self.repository.get_bank_or_raise(bank_id, load_relations=True)
-        bank_dto = to_bank_detail_response(bank)
-
-        if check_access:
-            self.validator.check_read_bank(user_id=user_id, bank=bank)
-
-        return bank_dto
+        self.validator.check_read_bank(user_id=user_id, bank=bank)
+        return to_bank_detail_response(bank)
 
     @cache_get(
         key_builder=lambda self,
@@ -137,15 +136,17 @@ class BankService:
     async def get_all_banks(
         self, user_id: UUID, skip: int = 0, limit: int = 100
     ) -> tuple[int, List[BankResponse]]:
-        """Fetch a paginated block of available banks scoped to the caller.
+        """Fetch paginated list of banks accessible to the user.
+
+        Includes banks created by user and banks shared with user.
 
         Args:
-            user_id (UUID): Target entity fetching list.
-            skip (int): Records to advance before streaming.
-            limit (int): Max records back-streamed.
+            user_id: User ID filtering accessible banks.
+            skip: Pagination offset.
+            limit: Maximum results to return.
 
         Returns:
-            tuple[int, List[BankResponse]]: Total row size available globally vs fetched subset.
+            Tuple of (total count, paginated bank responses).
         """
         filters, pagination = build_bank_query_params(skip=skip, limit=limit)
 
@@ -170,15 +171,19 @@ class BankService:
     async def update_bank(
         self, bank_id: UUID, bank_update: BankUpdate, user_id: UUID
     ) -> BankResponse:
-        """Partially update internal specifications regarding a bank entity.
+        """Update bank metadata (name, description, etc.).
 
         Args:
-            bank_id (UUID): Selection block targeting specific bank.
-            bank_update (BankUpdate): Safe schema input wrapping possible modifications.
-            user_id (UUID): Identity handling the patch.
+            bank_id: Bank ID to update.
+            bank_update: Update payload with desired changes.
+            user_id: User ID performing update (must have edit permission).
 
         Returns:
-            BankResponse: Serialized modified entity mapping to DB.
+            BankResponse: Updated bank details.
+
+        Raises:
+            BankNotFoundError: If bank not found.
+            PermissionDeniedError: If user lacks edit permission.
         """
         bank = await self.repository.get_bank_or_raise(bank_id, load_relations=True)
         self.validator.check_edit_bank(user_id=user_id, bank=bank)
@@ -284,41 +289,61 @@ class BankService:
         return to_bank_response(restored_bank)
 
     @cache_delete(
-        key_builder=lambda self, bank_id, shares, current_user_id: [
+        key_builder=lambda self, bank_id, current_user_id: [
             f"bank:{bank_id}",
+            f"banks:user:{current_user_id}:*",
         ]
     )
-    async def share_bank(
-        self, bank_id: UUID, shares: List[BankShareItem], current_user_id: UUID
+    async def manage_bank_shares(
+        self,
+        bank_id: UUID,
+        shares: List[BankShareItem],
+        current_user_id: UUID,
+        allow_ownership_transfer: bool = False,
     ) -> None:
-        """Grant additional members explicit roles configuring access levels within bank scopes."""
+        """Unified share management for add, update, and optional ownership transfer.
+
+        Args:
+            bank_id: Bank ID to share.
+            shares: List of share items with user IDs and permissions.
+            current_user_id: User ID performing the share operation.
+            allow_ownership_transfer: Whether to allow ownership transfer (default: False).
+
+        Raises:
+            BankNotFoundError: If bank not found.
+            PermissionDeniedError: If user lacks manage permission.
+        """
         bank = await self.repository.get_bank_or_raise(bank_id, load_relations=True)
         self.validator.check_manage_bank(user_id=current_user_id, bank=bank)
 
-        # Create a lookup map for existing shares
+        # Create lookup map for efficient updates
         existing_shares = {s.user_id: s for s in bank.shares}
 
         for share_item in shares:
             target_user_id = share_item.user_id
             permission = share_item.permission
 
+            # Handle ownership transfer only if explicitly allowed
             if permission == BankPermission.owner:
-                # Handle ownership transfer
+                if not allow_ownership_transfer:
+                    continue
+
+                # Transfer ownership
                 await self.repository.update_bank_owner(bank, target_user_id)
 
-                # Update old owner to edit
+                # Downgrade current owner to edit
                 if current_user_id in existing_shares:
                     existing_shares[current_user_id].permission = BankPermission.edit
                 else:
                     await self.repository.add_share(bank_id, current_user_id, BankPermission.edit)
 
-                # Update new owner share
+                # Set new owner
                 if target_user_id in existing_shares:
                     existing_shares[target_user_id].permission = BankPermission.owner
                 else:
                     await self.repository.add_share(bank_id, target_user_id, BankPermission.owner)
             else:
-                # Normal share update or add
+                # Regular read/edit permission
                 if target_user_id in existing_shares:
                     existing_shares[target_user_id].permission = permission
                 else:
@@ -326,19 +351,50 @@ class BankService:
 
         await self.repository.batch_flush()
 
+    async def share_bank(
+        self,
+        bank_id: UUID,
+        shares: List[BankShareItem],
+        current_user_id: UUID,
+    ) -> None:
+        """Grant users access to a bank (without ownership transfer).
+
+        Args:
+            bank_id: Bank ID to share.
+            shares: List of shares to add/update.
+            current_user_id: User performing the action.
+        """
+        await self.manage_bank_shares(
+            bank_id=bank_id,
+            shares=shares,
+            current_user_id=current_user_id,
+            allow_ownership_transfer=False,
+        )
+
     @cache_delete(
-        key_builder=lambda self, bank_id, target_user_id, current_user_id: [
+        key_builder=lambda self, bank_id, current_user_id: [
             f"bank:{bank_id}",
+            f"banks:user:{current_user_id}:*",
         ]
     )
     async def unshare_bank(
         self, bank_id: UUID, target_user_id: UUID, current_user_id: UUID
     ) -> None:
-        """Strip read/edit rights from a target user against a specific bank."""
+        """Remove a user's access to a bank.
+
+        Args:
+            bank_id: Bank ID to unshare.
+            target_user_id: User ID to remove access from.
+            current_user_id: User performing the action (must have manage permission).
+
+        Raises:
+            BankNotFoundError: If bank not found.
+            PermissionDeniedError: If user lacks manage permission.
+        """
         bank = await self.repository.get_bank_or_raise(bank_id)
         self.validator.check_manage_bank(user_id=current_user_id, bank=bank)
 
-        # Cannot unshare the owner
+        # Cannot unshare the bank owner
         if target_user_id == bank.created_by:
             return
 
@@ -351,16 +407,20 @@ class BankService:
         email: str | None = None,
         username: str | None = None,
     ) -> BankSharesResponse:
-        """Fetch bank shares with optional filtering.
+        """Fetch bank shares with optional user filtering.
 
         Args:
-            bank_id (UUID): Focus entity ID.
-            user_id (UUID): Requesting agent ID.
-            email (str | None): Optional email filter.
-            username (str | None): Optional username filter.
+            bank_id: Bank ID to get shares for.
+            user_id: User ID requesting shares (must have read access).
+            email: Optional email filter for shared users.
+            username: Optional username filter for shared users.
 
         Returns:
-            BankSharesResponse: Ownership and share breakdown.
+            BankSharesResponse: Owner info and list of shared users with permissions.
+
+        Raises:
+            BankNotFoundError: If bank not found.
+            PermissionDeniedError: If user lacks read access.
         """
         # We use a read check to ensure the user can even see this bank's meta-structure
         bank = await self.repository.get_bank_or_raise(bank_id)
@@ -381,34 +441,35 @@ class BankService:
             ],
         )
 
-    @cache_delete(
-        key_builder=lambda self, bank_id, updates, current_user_id: [
-            f"bank:{bank_id}",
-        ]
-    )
     async def update_bank_shares(
         self,
         bank_id: UUID,
         updates: List[BankShareItem],
         current_user_id: UUID,
     ) -> None:
-        """Update multiple user permissions on a bank individually."""
-        bank = await self.repository.get_bank_or_raise(bank_id, load_relations=True)
-        self.validator.check_manage_bank(user_id=current_user_id, bank=bank)
+        """Update share permissions for existing shared users (no ownership transfer).
 
-        # Create a lookup map for existing shares
-        existing_shares = {s.user_id: s for s in bank.shares}
+        Args:
+            bank_id: Bank ID to update shares for.
+            updates: List of share updates (read/edit only, no ownership).
+            current_user_id: User ID performing the update.
 
-        for update_item in updates:
-            # Skip owner as they cannot be updated here
-            if update_item.user_id == bank.created_by:
-                continue
-            
-            # We only allow updating to read/edit here.
-            if update_item.permission == BankPermission.owner:
-                continue
-
-            if update_item.user_id in existing_shares:
-                existing_shares[update_item.user_id].permission = update_item.permission
-
-        await self.repository.batch_flush()
+        Raises:
+            BankNotFoundError: If bank not found.
+            PermissionDeniedError: If user lacks manage permission.
+        """
+        bank = await self.repository.get_bank_or_raise(bank_id)
+        
+        # Filter out owner and ownership attempts
+        filtered_updates = [
+            BankShareItem(user_id=u.user_id, permission=u.permission)
+            for u in updates
+            if u.user_id != bank.created_by and u.permission != BankPermission.owner
+        ]
+        
+        await self.manage_bank_shares(
+            bank_id=bank_id,
+            shares=filtered_updates,
+            current_user_id=current_user_id,
+            allow_ownership_transfer=False,
+        )
