@@ -21,41 +21,39 @@ from app.utils.enums import BankPermission, BankQuestionSortBy, SortOrder
 
 
 class BankRepository:
-    """Repository for bank-related database operations.
+    """Repository for bank database operations.
 
-    This class encapsulates all direct SQLAlchemy calls and query logic
-    for the bank domain.
-
+    Encapsulates all SQLAlchemy queries and persistence logic for the bank domain.
     Responsibilities:
-        - Handle CRUD for banks.
-        - Manage bank sharing and permissions relationships.
-        - Fetch banks with proper filters for pagination.
-        - Hide ORM details from the service layer.
+        - CRUD operations for banks and bank-question associations
+        - Bank sharing and permission management
+        - Filtered pagination and soft-delete recovery
+        - ORM abstraction from service layer
     """
 
     def __init__(self, db: AsyncSession):
         """Initialize the repository with a database session.
 
         Args:
-            db (AsyncSession): The active SQLAlchemy database session.
+            db: Active AsyncSession for database operations.
         """
         self.db = db
 
     async def get_bank_or_raise(
         self, bank_id: UUID, load_relations: bool = False
     ) -> Bank:
-        """Retrieve a bank by its ID or raise a custom exception if missing.
+        """Retrieve a bank by ID, raising exception if not found.
 
         Args:
-            bank_id (UUID): The unique ID of the bank to fetch.
-            load_relations (bool): Whether to eagerly load associated questions and shares.
-                Defaults to False for lightweight queries.
+            bank_id: The bank ID to fetch.
+            load_relations: Whether to eagerly load questions, shares, and related data.
+                Set to True for detail views, False for lightweight lookups.
 
         Returns:
-            Bank: The corresponding bank model object.
+            The bank model object.
 
         Raises:
-            BankNotFoundError: If the bank cannot be found.
+            BankNotFoundError: If the bank does not exist or is soft-deleted.
         """
         query = select(Bank)
 
@@ -88,16 +86,16 @@ class BankRepository:
         return bank
 
     async def get_deleted_bank_or_raise(self, bank_id: UUID) -> Bank:
-        """Retrieve a softly deleted bank by its ID or raise a custom exception if missing.
+        """Retrieve a soft-deleted bank by ID, raising exception if not found.
 
         Args:
-            bank_id (UUID): The unique ID of the bank to fetch.
+            bank_id: The bank ID to fetch.
 
         Returns:
-            Bank: The corresponding bank model object.
+            The soft-deleted bank model object.
 
         Raises:
-            BankNotFoundError: If the bank cannot be found or is not deleted.
+            BankNotFoundError: If the bank does not exist or is not soft-deleted.
         """
         result = await self.db.execute(
             select(Bank).filter(Bank.id == bank_id, Bank.is_deleted.is_(True))
@@ -114,17 +112,17 @@ class BankRepository:
         filters: BankFilters,
         pagination: PaginationParams,
     ) -> PaginatedResult:
-        """Retrieve a paginated list of banks accessible to a specific user.
+        """Fetch paginated list of banks accessible to a user.
 
-        A user has access to banks they created or banks shared with them.
+        Includes banks created by user and banks shared with user.
 
         Args:
-            user_id (UUID): The user ID requesting the list.
-            filters (BankFilters): Filter criteria (e.g., search term).
-            pagination (PaginationParams): Pagination definition (skip and limit).
+            user_id: The user ID requesting the list.
+            filters: Filter criteria (e.g., search term).
+            pagination: Pagination definition (skip and limit).
 
         Returns:
-            PaginatedResult: Object containing the total element count and the data slice.
+            PaginatedResult with total count and paginated bank records.
         """
         base_query = (
             select(Bank)
@@ -174,11 +172,10 @@ class BankRepository:
         """Create a new bank in the database.
 
         Args:
-            bank_data (BankCreate): The data needed to create the bank.
-            user_id (UUID): The ID of the user creating the bank.
+            bank: The bank model instance to persist (already populated with creator and metadata).
 
         Returns:
-            Bank: The newly created bank instance populated with default values.
+            The newly created bank instance with ID and timestamps populated.
         """
         self.db.add(bank)
         await self.db.flush()
@@ -373,16 +370,14 @@ class BankRepository:
     async def get_questions_in_bank_by_ids(
         self, bank_id: UUID, question_ids: List[UUID]
     ) -> List[BankQuestion]:
-        """Fetch associative objects matching an array of specific question inputs sequentially.
-
-        Efficiently verifies association linkage utilizing robust SQL targeting vectors exclusively.
+        """Fetch bank-question associations for specific questions.
 
         Args:
-            bank_id (UUID): Originating structure context bounds checking actively.
-            question_ids (List[UUID]): Vector subsets checked across association sets cleanly explicitly.
+            bank_id: The bank ID to filter by.
+            question_ids: List of question IDs to retrieve associations for.
 
         Returns:
-            List[BankQuestion]: Found associative objects cleanly extracted efficiently directly correctly.
+            List of BankQuestion associations matching the criteria.
         """
         result = await self.db.execute(
             select(BankQuestion).filter(
@@ -456,14 +451,12 @@ class BankRepository:
     async def add_questions_to_bank(
         self, bank_id: UUID, question_ids: List[UUID], user_id: UUID
     ) -> None:
-        """Bind bulk collections mapping independent questions locally referencing specific structures seamlessly natively structurally explicitly securely.
-
-        Leverages flush queues injecting batched structures implicitly enforcing schema bindings consistently synchronously properly cleanly.
+        """Add multiple questions to a bank in a single operation.
 
         Args:
-            bank_id (UUID): Central structural context bindings capturing queries uniquely dynamically.
-            question_ids (List[UUID]): Unique target constraints globally appending collections natively.
-            user_id (UUID): Originator tracking metric explicit log attributes dynamically.
+            bank_id: The bank ID to add questions to.
+            question_ids: List of question IDs to add.
+            user_id: User ID performing the operation (for audit trail).
         """
         bqs = [
             BankQuestion(bank_id=bank_id, question_id=q_id, created_by=user_id)
@@ -473,12 +466,10 @@ class BankRepository:
         await self.db.flush()
 
     async def remove_questions_from_bank(self, bqs: List[BankQuestion]) -> None:
-        """Sunder explicit tracked associations dynamically natively mapped targeting lists sequentially evaluating strictly.
-
-        Deploys vectorized SQL filtering implicitly evaluating criteria globally destroying relational nodes securely.
+        """Remove multiple questions from a bank in a single operation.
 
         Args:
-            bqs (List[BankQuestion]): List of verified associative DB elements to detach completely.
+            bqs: List of BankQuestion associations to remove.
         """
         if not bqs:
             return
@@ -492,18 +483,18 @@ class BankRepository:
         pagination: PaginationParams,
         filters: BankQuestionFilters | None = None,
     ) -> PaginatedResult:
-        """Retrieve core subsets evaluated cleanly matching query metrics structurally paginated explicitly properly.
+        """Fetch paginated questions from a bank with optional filtering and sorting.
 
-        Extract dynamically linked Question records matching the parent origin Bank ID utilizing optimized SQL Join filtering.
-        Supports filtering by title, difficulty, and tags. Supports ordering by title (name) and difficulty.
+        Supports filtering by title, difficulty, and tags. Supports ordering by title and difficulty.
+        Eagerly loads all question metadata (languages, test cases, templates, tags).
 
         Args:
-            bank_id (UUID): Source bounds restriction targets.
-            pagination (PaginationParams): Offset bounds safely passed to underlying slices explicitly cleanly.
-            filters (BankQuestionFilters): Optional filtering and sorting criteria.
+            bank_id: The bank ID to fetch questions from.
+            pagination: Pagination parameters (skip and limit).
+            filters: Optional filtering and sorting criteria.
 
         Returns:
-            PaginatedResult: Dynamic chunk data collection mapped structurally cleanly successfully.
+            PaginatedResult: Total count and paginated list of questions with metadata.
         """
         base_query = (
             select(Question)
@@ -581,15 +572,18 @@ class BankRepository:
         email: str | None = None,
         username: str | None = None,
     ) -> tuple[User, List[BankShare]]:
-        """Retrieve bank owner and filtered share list.
+        """Fetch bank owner and shares with optional filtering.
 
         Args:
-            bank_id (UUID): Target bank.
-            email (str | None): Optional email filter for shares.
-            username (str | None): Optional username (user_id) filter for shares.
+            bank_id: The bank ID to get shares for.
+            email: Optional email filter for shared users.
+            username: Optional username filter for shared users.
 
         Returns:
-            Tuple[User, List[BankShare]]: The bank owner and the list of shares.
+            Tuple of (bank owner user, list of share records).
+
+        Raises:
+            BankNotFoundError: If the bank does not exist.
         """
         # Fetch bank to get owner
         bank_query = (
