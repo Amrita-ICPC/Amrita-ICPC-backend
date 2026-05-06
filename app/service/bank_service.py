@@ -3,6 +3,7 @@ from typing import List
 from uuid import UUID
 
 from app.core.cache.decorators import cache_delete, cache_get, cache_set
+from app.exceptions.bank import BankOwnerUnshareError
 from app.mappers.bank import (
     build_bank_entity,
     build_bank_query_params,
@@ -289,9 +290,11 @@ class BankService:
         return to_bank_response(restored_bank)
 
     @cache_delete(
-        key_builder=lambda self, bank_id, current_user_id: [
+        key_builder=lambda self, bank_id, shares, current_user_id, allow_ownership_transfer=False: [
             f"bank:{bank_id}",
             f"banks:user:{current_user_id}:*",
+            # Invalidate cache for all users being shared with
+            *[f"banks:user:{s.user_id}:*" for s in shares],
         ]
     )
     async def manage_bank_shares(
@@ -372,9 +375,10 @@ class BankService:
         )
 
     @cache_delete(
-        key_builder=lambda self, bank_id, current_user_id: [
+        key_builder=lambda self, bank_id, target_user_id, current_user_id: [
             f"bank:{bank_id}",
             f"banks:user:{current_user_id}:*",
+            f"banks:user:{target_user_id}:*",
         ]
     )
     async def unshare_bank(
@@ -389,6 +393,7 @@ class BankService:
 
         Raises:
             BankNotFoundError: If bank not found.
+            BankOwnerUnshareError: If attempting to unshare the bank owner.
             PermissionDeniedError: If user lacks manage permission.
         """
         bank = await self.repository.get_bank_or_raise(bank_id)
@@ -396,7 +401,7 @@ class BankService:
 
         # Cannot unshare the bank owner
         if target_user_id == bank.created_by:
-            return
+            raise BankOwnerUnshareError(str(bank_id), str(target_user_id))
 
         await self.repository.remove_share(bank_id, target_user_id)
 
