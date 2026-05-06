@@ -9,6 +9,13 @@ from app.core.logger import logger
 from app.exceptions.audience import (
     UserNotInAudienceError,
 )
+from app.exceptions.bank import (
+    BankAccessDeniedError,
+    BankAlreadyExistsError,
+    BankNotFoundError,
+    BankOwnerUnshareError,
+    BankPermissionError,
+)
 from app.exceptions.bank_validation import BankValidationError
 from app.exceptions.base import AppBaseException
 from app.exceptions.contest import (

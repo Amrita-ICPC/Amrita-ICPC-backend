@@ -73,6 +73,26 @@ class BankPermissionError(AppBaseException):
         )
 
 
+class BankOwnerUnshareError(AppBaseException):
+    """Exception raised when attempting to unshare a bank from its owner.
+
+    This error is thrown when a user attempts to remove the owner's access to their own bank.
+    The bank owner cannot be unshared from the bank.
+    """
+
+    def __init__(self, bank_id: str, owner_id: str):
+        """Initialize the exception with the bank and owner IDs.
+
+        Args:
+            bank_id: The bank ID.
+            owner_id: The owner's user ID.
+        """
+        super().__init__(
+            message=f"Cannot remove access for bank owner. Bank ID: {bank_id}, Owner ID: {owner_id}",
+            status_code=status.HTTP_409_CONFLICT,
+        )
+
+
 class BankQuestionNotFoundError(AppBaseException):
     """Exception raised when a requested question is not found in a bank.
 
