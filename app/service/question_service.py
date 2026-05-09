@@ -637,4 +637,4 @@ class QuestionService:
                     f"Failed to delete solution code payload from storage: {error}"
                 ) from error
 
-        await self.repository.delete_question(question)
+        await self.repository.delete_question(question.id)

@@ -21,7 +21,6 @@ from app.exceptions.base import AppBaseException
 from app.exceptions.contest import (
     AudienceNotAssignedToContestError,
     ContestAlreadyExistsError,
-    ContestDeletedError,
     ContestNotFoundError,
     ContestOperationError,
     DuplicateQuestionOrderError,
@@ -177,17 +176,6 @@ def setup_exception_handlers(app: FastAPI) -> None:
             details=[exc.detail] if exc.detail else None,
         )
 
-    @app.exception_handler(ContestDeletedError)
-    async def contest_deleted_handler(request: Request, exc: ContestDeletedError):
-        logger.warning(f"Contest deleted: {exc.message}")
-        return _create_error_response(
-            request=request,
-            status_code=exc.status_code,
-            message=exc.message,
-            error_code="CONTEST_DELETED",
-            details=[exc.detail] if exc.detail else None,
-        )
-
     @app.exception_handler(AudienceNotAssignedToContestError)
     async def audience_not_assigned_to_contest_handler(
         request: Request, exc: AudienceNotAssignedToContestError
@@ -235,6 +223,61 @@ def setup_exception_handlers(app: FastAPI) -> None:
             status_code=exc.status_code,
             message=exc.message,
             error_code="BANK_VALIDATION_ERROR",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(BankAccessDeniedError)
+    async def bank_access_denied_handler(request: Request, exc: BankAccessDeniedError):
+        logger.warning(f"Bank access denied: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="BANK_ACCESS_DENIED",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(BankAlreadyExistsError)
+    async def bank_already_exists_handler(request: Request, exc: BankAlreadyExistsError):
+        logger.warning(f"Bank already exists: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="BANK_ALREADY_EXISTS",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(BankNotFoundError)
+    async def bank_not_found_handler(request: Request, exc: BankNotFoundError):
+        logger.warning(f"Bank not found: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="BANK_NOT_FOUND",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(BankOwnerUnshareError)
+    async def bank_owner_unshare_error_handler(request: Request, exc: BankOwnerUnshareError):
+        logger.warning(f"Cannot unshare bank: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="BANK_OWNER_UNSHARE_ERROR",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(BankPermissionError)
+    async def bank_permission_error_handler(request: Request, exc: BankPermissionError):
+        logger.warning(f"Bank permission error: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="BANK_PERMISSION_ERROR",
             details=[exc.detail] if exc.detail else None,
         )
 

@@ -1,5 +1,5 @@
 import uuid
-from typing import Optional
+from typing import Literal, Optional
 from uuid import UUID
 
 from app.core.cache.decorators import cache_delete, cache_get
@@ -89,7 +89,7 @@ class ContestQuestionService:
         self.bank_repository = bank_repository
 
     async def _verify_contest_access(
-        self, contest_id: UUID, user_id: UUID, permission_level: str = "read"
+        self, contest_id: UUID, user_id: UUID, permission_level: Literal["read", "manage"] = "read"
     ) -> None:
         """
         Verify contest exists, not deleted, and user has appropriate access.
@@ -97,7 +97,7 @@ class ContestQuestionService:
         Args:
             contest_id: UUID of the contest.
             user_id: UUID of the user requesting access.
-            permission_level: Either "read" or "manage".
+            permission_level: Either "read" or "manage". Defaults to "read".
 
         Raises:
             ContestNotFoundError: If contest doesn't exist or is deleted.
@@ -132,7 +132,7 @@ class ContestQuestionService:
             raise QuestionNotInContestError(str(question_id), str(contest_id))
 
     @cache_get(
-        key_builder=lambda self, contest_id, user_id, search_term=None, difficulty=None, language_id=None, tag_id=None, tag_name=None, sort_by=None, sort_order="asc", skip=0, limit=20: f"contest:{contest_id}:questions:user:{user_id}:skip:{skip}:limit:{limit}",
+        key_builder=lambda self, contest_id, user_id, search_term=None, difficulty=None, language_id=None, tag_id=None, tag_name=None, sort_by=None, sort_order="asc", skip=0, limit=20: f"contest:{contest_id}:questions:user:{user_id}:search:{search_term}:difficulty:{difficulty}:language:{language_id}:tag_id:{tag_id}:tag_name:{tag_name}:sort_by:{sort_by}:sort_order:{sort_order}:skip:{skip}:limit:{limit}",
         ttl=300,
     )
     async def get_contest_questions(
