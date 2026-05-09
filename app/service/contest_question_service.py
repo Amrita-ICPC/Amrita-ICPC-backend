@@ -6,7 +6,6 @@ from app.core.cache.decorators import cache_delete, cache_get
 from app.core.guards.contest import ContestOperationGuard
 from app.core.logger import logger
 from app.exceptions.contest import (
-    ContestDeletedError,
     ContestNotFoundError,
     DuplicateQuestionOrderError,
     QuestionAlreadyInContestError,
@@ -59,7 +58,6 @@ from app.repositories.dto.contest_question import AddContestQuestionData
 from app.schema.contest import AddContestQuestionRequest
 
 
-
 class ContestQuestionService:
     """Service layer for contest question management operations."""
 
@@ -90,19 +88,51 @@ class ContestQuestionService:
         self.language_repository = language_repository
         self.bank_repository = bank_repository
 
+    async def _verify_contest_access(
+        self, contest_id: UUID, user_id: UUID, permission_level: str = "read"
+    ) -> None:
+        """
+        Verify contest exists, not deleted, and user has appropriate access.
+
+        Args:
+            contest_id: UUID of the contest.
+            user_id: UUID of the user requesting access.
+            permission_level: Either "read" or "manage".
+
+        Raises:
+            ContestNotFoundError: If contest doesn't exist or is deleted.
+            PermissionDeniedError: If user lacks required permission.
+        """
+        contest = await self.repository.get_contest_or_raise(contest_id)
+        if contest.is_deleted:
+            raise ContestNotFoundError(str(contest_id))
+
+        if permission_level == "manage":
+            await self.guard.check_manage_contest(user_id=user_id, contest=contest)
+        else:
+            await self.guard.check_read_contest(user_id=user_id, contest=contest)
+
+    async def _verify_question_in_contest(
+        self, contest_id: UUID, question_id: UUID
+    ) -> None:
+        """
+        Verify that a question is linked to a contest.
+
+        Args:
+            contest_id: UUID of the contest.
+            question_id: UUID of the question.
+
+        Raises:
+            QuestionNotInContestError: If question is not in contest.
+        """
+        is_in_contest = await self.repository.is_question_in_contest(
+            contest_id, question_id
+        )
+        if not is_in_contest:
+            raise QuestionNotInContestError(str(question_id), str(contest_id))
+
     @cache_get(
-        key_builder=lambda self,
-        contest_id,
-        user_id,
-        search_term=None,
-        difficulty=None,
-        language_id=None,
-        tag_id=None,
-        tag_name=None,
-        sort_by=None,
-        sort_order="asc",
-        skip=0,
-        limit=20: f"contest:{contest_id}:questions:user:{user_id}:search:{search_term}:difficulty:{difficulty}:language:{language_id}:tag:{tag_id}:tag_name:{tag_name}:sort_by:{sort_by}:sort_order:{sort_order}:skip:{skip}:limit:{limit}",
+        key_builder=lambda self, contest_id, user_id, search_term=None, difficulty=None, language_id=None, tag_id=None, tag_name=None, sort_by=None, sort_order="asc", skip=0, limit=20: f"contest:{contest_id}:questions:user:{user_id}:skip:{skip}:limit:{limit}",
         ttl=300,
     )
     async def get_contest_questions(
@@ -139,10 +169,7 @@ class ContestQuestionService:
             ContestNotFoundError: If the contest does not exist or is deleted.
             PermissionDeniedError: If the user lacks read permission for the contest.
         """
-        contest = await self.repository.get_contest_or_raise(contest_id)
-        if contest.is_deleted:
-            raise ContestNotFoundError(str(contest_id))
-        await self.guard.check_read_contest(user_id=user_id, contest=contest)
+        await self._verify_contest_access(contest_id, user_id, "read")
 
         filters = ContestQuestionFilters(
             search_term=search_term,
@@ -170,10 +197,7 @@ class ContestQuestionService:
         )
 
     @cache_get(
-        key_builder=lambda self,
-        contest_id,
-        question_id,
-        user_id: f"contest:{contest_id}:questions:item:{question_id}:user:{user_id}",
+        key_builder=lambda self, contest_id, question_id, user_id: f"contest:{contest_id}:questions:item:{question_id}:user:{user_id}",
         ttl=300,
     )
     async def get_contest_question(
@@ -191,13 +215,14 @@ class ContestQuestionService:
             QuestionResponse: Detailed question data.
 
         Raises:
-            ContestNotFoundError: If the contest does not exist.
+            ContestNotFoundError: If the contest does not exist or is deleted.
             QuestionNotInContestError: If the question is not linked to the specified contest.
-            PermissionDeniedError: If the user lacks manage/read permission.
+            PermissionDeniedError: If the user lacks read permission.
         """
-        question = await self._get_contest_question_for_update(
-            contest_id, question_id, user_id
-        )
+        await self._verify_contest_access(contest_id, user_id, "read")
+        await self._verify_question_in_contest(contest_id, question_id)
+
+        question = await self.question_repository.get_question_or_raise(question_id)
         return QuestionResponse.from_question(question)
 
     @cache_delete(
@@ -232,29 +257,24 @@ class ContestQuestionService:
             DuplicateQuestionOrderError: If the specified order conflicts with existing ones.
             PermissionDeniedError: If the user lacks management permissions for the contest.
         """
-        # Step 1: Resolve and validate contest
-        contest = await self.repository.get_contest_or_raise(contest_id)
-        if contest.is_deleted:
-            raise ContestNotFoundError(str(contest_id))
-        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
+        await self._verify_contest_access(contest_id, user_id, "manage")
 
         if not request.questions:
             return []
 
-        # Step 2: Validate batch size
+        # Step 1: Validate batch size
         self.validator.validate_batch_add_limit(len(request.questions))
 
-        # Step 3: Validate all questions and build DTOs
-        dtos = []
-        seen_question_ids: set[UUID] = set()
-
+        # Step 2: Fetch existing contest questions
         existing_contest_questions = (
             await self.repository.get_ordered_question_orders_for_contest(contest_id)
         )
         existing_ids = {cq.question_id for cq in existing_contest_questions}
         existing_orders = {cq.order for cq in existing_contest_questions}
 
-        # Calculate base order for new questions if not provided
+        # Step 3: Calculate base order and validate all questions
+        dtos = []
+        seen_question_ids: set[UUID] = set()
         max_order = await self.repository.get_max_question_order(contest_id)
         next_order = max_order + 1
 
@@ -329,22 +349,14 @@ class ContestQuestionService:
             QuestionNotInContestError: If any of the specified questions are not in the contest.
             PermissionDeniedError: If the user lacks management permissions for the contest.
         """
-        # Resolve and validate contest
-        contest = await self.repository.get_contest_or_raise(contest_id)
-        if contest.is_deleted:
-            raise ContestNotFoundError(str(contest_id))
-        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
+        await self._verify_contest_access(contest_id, user_id, "manage")
 
         if not request.question_ids:
             return
 
-        # Check existence of linkages
+        # Verify all questions are linked to the contest
         for question_id in request.question_ids:
-            is_linked = await self.repository.is_question_in_contest(
-                contest_id, question_id
-            )
-            if not is_linked:
-                raise QuestionNotInContestError(str(question_id), str(contest_id))
+            await self._verify_question_in_contest(contest_id, question_id)
 
         # Perform batch removal
         await self.repository.remove_questions_from_contest(
@@ -362,7 +374,7 @@ class ContestQuestionService:
         user_id: UUID,
     ) -> Question:
         """
-        Resolve a contest-linked question after security and linkage validation.
+        Resolve a contest-linked question after permission and linkage validation.
 
         Args:
             contest_id: UUID of the contest.
@@ -373,20 +385,12 @@ class ContestQuestionService:
             Question: The validated ORM question entity.
 
         Raises:
-            ContestNotFoundError: If the contest does not exist.
+            ContestNotFoundError: If the contest does not exist or is deleted.
             QuestionNotInContestError: If the question is not linked to the contest.
-            PermissionDeniedError: If the user lacks manage/read permissions.
+            PermissionDeniedError: If the user lacks management permissions.
         """
-        contest = await self.repository.get_contest_or_raise(contest_id)
-        if contest.is_deleted:
-            raise ContestDeletedError(str(contest_id))
-        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
-
-        is_in_contest = await self.repository.is_question_in_contest(
-            contest_id, question_id
-        )
-        if not is_in_contest:
-            raise QuestionNotInContestError(str(question_id), str(contest_id))
+        await self._verify_contest_access(contest_id, user_id, "manage")
+        await self._verify_question_in_contest(contest_id, question_id)
 
         return await self.question_repository.get_question_or_raise(question_id)
 
@@ -419,14 +423,11 @@ class ContestQuestionService:
             QuestionResponse: The fully updated question data.
 
         Raises:
-            ContestNotFoundError: If the contest does not exist.
+            ContestNotFoundError: If the contest does not exist or is deleted.
             QuestionNotInContestError: If the question is not linked to the contest.
             PermissionDeniedError: If the user lacks management permissions.
             InvalidQuestionError: If any of the update fields fail domain validation rules.
         """
-        contest = await self.repository.get_contest_or_raise(contest_id)
-        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
-
         question = await self._get_contest_question_for_update(
             contest_id, question_id, user_id
         )
@@ -503,15 +504,12 @@ class ContestQuestionService:
             user_id: UUID of the authenticated user.
 
         Raises:
-            ContestNotFoundError: If the contest does not exist.
+            ContestNotFoundError: If the contest does not exist or is deleted.
             QuestionNotInContestError: If any of the questions are not in the contest.
             PermissionDeniedError: If the user lacks management permissions.
             InvalidContestError: If the reorder request results in invalid ordering.
         """
-        # Resolve and validate contest
-        contest = await self.repository.get_contest_or_raise(contest_id)
-        self.validator.validate_not_deleted(contest.is_deleted, contest_id)
-        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
+        await self._verify_contest_access(contest_id, user_id, "manage")
 
         if not request.reorders:
             return
@@ -572,23 +570,19 @@ class ContestQuestionService:
             list[ContestQuestionResponse]: List of created contest-question relationships.
 
         Raises:
-            ContestNotFoundError: If the contest does not exist.
+            ContestNotFoundError: If the contest does not exist or is deleted.
             BankNotFoundError: If the source bank does not exist.
             PermissionDeniedError: If the user lacks necessary permissions.
         """
-        # 1. Resolve and validate contest
-        contest = await self.repository.get_contest_or_raise(contest_id)
-        if contest.is_deleted:
-            raise ContestNotFoundError(str(contest_id))
-        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
+        await self._verify_contest_access(contest_id, user_id, "manage")
 
-        # 2. Resolve and validate bank
+        # Resolve and validate bank
         bank = await self.bank_repository.get_bank_or_raise(
             request.bank_id, load_relations=True
         )
         BankValidator.check_read_bank(user_id, bank)
 
-        # 3. Retrieve source questions
+        # Retrieve source questions
         if request.copy_all:
             source_questions = (
                 await self.bank_repository.get_all_question_entities_in_bank(
@@ -608,7 +602,7 @@ class ContestQuestionService:
         if not source_questions:
             return []
 
-        # 4. Deep copy questions and track source mapping
+        # Deep copy questions and track source mapping
         cloned_to_source_map = {}
         cloned_questions: list[Question] = []
         for src_q in source_questions:
@@ -616,18 +610,18 @@ class ContestQuestionService:
             cloned_questions.append(cloned_q)
             cloned_to_source_map[cloned_q] = src_q.id
 
-        # 5. Bulk create cloned questions
+        # Bulk create cloned questions
         created_questions = await self.question_repository.bulk_create_questions(
             cloned_questions
         )
 
-        # 6. Prepare contest-question links
+        # Prepare contest-question links
         max_order = await self.repository.get_max_question_order(contest_id)
         next_order = max_order + 1
 
         config_map = {q.question_id: q for q in (request.questions or [])}
         dtos: list[AddContestQuestionData] = []
-  
+
         for created_q in created_questions:
             source_id = cloned_to_source_map[created_q]
             config = config_map.get(source_id)
@@ -653,10 +647,10 @@ class ContestQuestionService:
             dtos.append(dto)
             next_order += 1
 
-        # 7. Batch insert into contest
+        # Batch insert into contest
         results = await self.repository.add_questions_to_contest(dtos)
 
-        # 8. Log and return
+        # Log and return
         logger.info(
             f"Cloned {len(results)} questions from bank {request.bank_id} to contest {contest_id} by user {user_id}"
         )
