@@ -1,7 +1,7 @@
 from typing import cast
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -85,7 +85,7 @@ class QuestionRepository:
         Create a new question in the database.
 
         Args:
-            data: CreateQuestionData object containing all question creation data.
+            question: Question ORM object to persist.
 
         Returns:
             The created Question object with ID and timestamps populated.
@@ -99,8 +99,7 @@ class QuestionRepository:
         Create multiple questions in the database.
 
         Args:
-            question_data_list: List of CreateQuestionData objects containing question
-                creation data.
+            questions: List of Question ORM objects to persist.
 
         Returns:
             List of created Question objects with IDs and timestamps populated.
@@ -114,26 +113,27 @@ class QuestionRepository:
 
     async def update_question(self, question: Question) -> Question:
         """
-        Update an existing question in the database.
+        Persist updates to an existing question in the database.
 
         Args:
-            question: Question object to update.
-            update_data: UpdateQuestionData object with fields to update.
+            question: Question ORM object with updated fields.
 
         Returns:
-            The updated Question object.
+            The updated Question object with relations loaded.
         """
         await self.db.flush()
         return await self._fetch_question_or_raise(question.id)
 
-    async def delete_question(self, question: Question) -> None:
+    async def delete_question(self, question_id: UUID) -> None:
         """
         Delete a question from the database.
 
         Args:
-            question: Question object to delete.
+            question_id: ID of the question to delete.
         """
-        await self.db.delete(question)
+        await self.db.execute(
+            delete(Question).where(Question.id == question_id)
+        )
         await self.db.flush()
 
     async def rollback(self) -> None:
@@ -143,6 +143,18 @@ class QuestionRepository:
     async def user_has_access_to_question_via_bank(
         self, user_id: UUID, question_id: UUID
     ) -> bool:
+        """
+        Check if user has access to a question through a bank.
+
+        User has access if they are the bank owner or have a share.
+
+        Args:
+            user_id: ID of the user to check.
+            question_id: ID of the question.
+
+        Returns:
+            True if user has access via bank, False otherwise.
+        """
         result = await self.db.execute(
             select(BankQuestion.question_id)
             .join(Bank, Bank.id == BankQuestion.bank_id)
@@ -158,6 +170,19 @@ class QuestionRepository:
     async def user_has_access_to_question_via_contest(
         self, user_id: UUID, question_id: UUID
     ) -> bool:
+        """
+        Check if user has access to a question through a contest.
+
+        User has access if they created the contest, are an instructor, 
+        are on a participating team, or contest is public.
+
+        Args:
+            user_id: ID of the user to check.
+            question_id: ID of the question.
+
+        Returns:
+            True if user has access via contest, False otherwise.
+        """
         result = await self.db.execute(
             select(ContestQuestion.question_id)
             .join(Contest, Contest.id == ContestQuestion.contest_id)
