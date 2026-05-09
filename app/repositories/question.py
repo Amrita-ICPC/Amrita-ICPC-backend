@@ -128,12 +128,18 @@ class QuestionRepository:
         """
         Delete a question from the database.
 
+        Deletes the question and all related records via ORM cascade semantics.
+        This ensures proper handling of cascading deletes for related entities
+        like testcases, templates, and language assignments.
+
         Args:
             question_id: ID of the question to delete.
+
+        Raises:
+            QuestionNotFoundError: If question does not exist.
         """
-        await self.db.execute(
-            delete(Question).where(Question.id == question_id)
-        )
+        question = await self._fetch_question_or_raise(question_id)
+        await self.db.delete(question)
         await self.db.flush()
 
     async def rollback(self) -> None:
