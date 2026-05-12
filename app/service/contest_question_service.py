@@ -395,7 +395,7 @@ class ContestQuestionService:
         return await self.question_repository.get_question_or_raise(question_id)
 
     @cache_delete(
-        key_builder=lambda self, contest_id, question_id, *args, **kwargs: [
+        key_builder=lambda self, contest_id, question_id, update_data, user_id: [
             f"contest:{contest_id}*",
             "contests:*",
         ]

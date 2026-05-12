@@ -342,6 +342,8 @@ async def get_contest_questions(
         APIResponse: Standardized response with list of questions and pagination state.
     """
     skip = (page - 1) * page_size
+    # Convert sort_order string to SortOrder enum
+    sort_order_enum = SortOrder(sort_order) if sort_order else SortOrder.ASC
     result = await service.get_contest_questions(
         contest_id=contest_id,
         user_id=user_id,
@@ -351,7 +353,7 @@ async def get_contest_questions(
         tag_id=tag_id,
         tag_name=tag_name,
         sort_by=sort_by,
-        sort_order=sort_order,
+        sort_order=sort_order_enum,
         skip=skip,
         limit=page_size,
     )
@@ -371,7 +373,7 @@ async def get_contest_questions(
     "/{contest_id}/questions/{question_id}",
     response_model=APIResponse[QuestionResponse],
     summary="Get contest question by ID",
-    dependencies=[can_update("contests")],
+    dependencies=[can_read("contests")],
 )
 async def get_contest_question(
     request: Request,
@@ -399,7 +401,7 @@ async def get_contest_question(
     )
     return create_api_response(
         request,
-        data=question.model_dump(),
+        data=question,
         message="Contest question fetched successfully",
     )
 
@@ -1047,7 +1049,7 @@ async def clone_questions_from_bank(
     results = await service.clone_questions_from_bank(contest_id, clone_request, user_id)
     logger.info(
         f"Cloned {len(results)} questions from bank {clone_request.bank_id} to contest {contest_id} (actor=REDACTED)"
-   )
+    )
     return create_api_response(
         request,
         data=results,
@@ -1173,13 +1175,6 @@ async def get_contest_audiences(
 
 
 @router.patch(
-    "/{contest_id}/questions/{question_id}/metadata",
-    response_model=APIResponse[QuestionResponse],
-    status_code=status.HTTP_200_OK,
-    summary="Update contest question metadata",
-    dependencies=[can_update("contests")],
-)
-@router.patch(
     "/{contest_id}/questions/{question_id}",
     response_model=APIResponse[QuestionResponse],
     status_code=status.HTTP_200_OK,
@@ -1219,6 +1214,6 @@ async def update_contest_question(
     )
     return create_api_response(
         request,
-        data=question.model_dump(),
+        data=question,
         message="Contest question updated successfully",
     )
