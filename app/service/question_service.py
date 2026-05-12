@@ -95,6 +95,10 @@ class QuestionService:
             f"question:{question_id}:*",
             f"bank:question:*:{question_id}:*",
             "banks:questions:*",
+            f"contest:*:questions:item:{question_id}:*",
+            "contest:*:questions:user:*",
+            "student:contest:*",
+            "student:contests:*",
         ]
 
     @staticmethod
@@ -381,6 +385,8 @@ class QuestionService:
     @cache_delete(
         key_builder=lambda self,
         question_id,
+        update_data,
+        user_id,
         *args,
         **kwargs: self._get_question_cache_keys(question_id)
     )
@@ -467,6 +473,8 @@ class QuestionService:
     @cache_delete(
         key_builder=lambda self,
         question_id,
+        payload,
+        user_id,
         *args,
         **kwargs: self._get_question_cache_keys(question_id)
     )
@@ -510,6 +518,8 @@ class QuestionService:
     @cache_delete(
         key_builder=lambda self,
         question_id,
+        payload,
+        user_id,
         *args,
         **kwargs: self._get_question_cache_keys(question_id)
     )
@@ -554,6 +564,8 @@ class QuestionService:
     @cache_delete(
         key_builder=lambda self,
         question_id,
+        payload,
+        user_id,
         *args,
         **kwargs: self._get_question_cache_keys(question_id)
     )
@@ -600,12 +612,7 @@ class QuestionService:
         response = QuestionResponse.from_question(updated_question)
         return await self._hydrate_question_template_codes(response)
 
-    @cache_delete(
-        key_builder=lambda self,
-        question_id,
-        *args,
-        **kwargs: self._get_question_cache_keys(question_id)
-    )
+    @cache_delete(key_builder=lambda self, question_id, user_id, *args, **kwargs: self._get_question_cache_keys(question_id))
     async def delete_question(self, question_id: UUID, user_id: UUID) -> None:
         """Delete a question and invalidate related cache keys.
 
