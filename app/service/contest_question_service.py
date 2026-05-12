@@ -547,7 +547,7 @@ class ContestQuestionService:
         logger.info(f"User {user_id} reordered questions in contest {contest_id}")
 
     @cache_delete(
-        key_builder=lambda self, contest_id, *args, **kwargs: [
+        key_builder=lambda self, contest_id,request,user_id: [
             f"contest:{contest_id}*",
             "contests:*",
         ]
