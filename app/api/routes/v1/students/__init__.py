@@ -12,8 +12,8 @@ from app.api.routes.v1.students import contests, teams, run
 
 # Combined router for all student endpoints
 router = APIRouter()
-router.include_router(contests.router)
-router.include_router(teams.router)
-router.include_router(run.router)
+router.include_router(contests.router, prefix="/contests")
+router.include_router(teams.router, prefix="/teams")
+router.include_router(run.router, prefix="/run")
 
 __all__ = ["router"]

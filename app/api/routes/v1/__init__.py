@@ -12,7 +12,8 @@ from . import (
     team,
     user,
 )
-from .students.contests import router as students_router
+from .students import router as students_router
+
 
 api_v1_router = APIRouter()
 
@@ -29,7 +30,7 @@ api_v1_router.include_router(
     prefix="/audiences",
     tags=["Audiences"],
 )
-api_v1_router.include_router(students_router, tags=["Students"])
+api_v1_router.include_router(students_router, prefix="/students", tags=["Students"])
 api_v1_router.include_router(execution.router)
 api_v1_router.include_router(image.router, tags=["Images"])
 api_v1_router.include_router(health.router, prefix="/health", tags=["Health"])

@@ -1,11 +1,7 @@
 """Student-facing DTOs for contests, teams, and code execution."""
 
 from app.repositories.dto.student.contests import (
-    StudentAvailableContestData,
-    StudentContestDetailData,
     StudentContestFilters,
-    StudentContestProblemData,
-    StudentRegisteredContestData,
 )
 from app.repositories.dto.student.run import (
     StudentCodeRunRequestDTO,
@@ -25,10 +21,6 @@ from app.repositories.dto.student.teams import (
 __all__ = [
     # Contest DTOs
     "StudentContestFilters",
-    "StudentAvailableContestData",
-    "StudentRegisteredContestData",
-    "StudentContestDetailData",
-    "StudentContestProblemData",
     # Run DTOs
     "StudentCodeRunRequestDTO",
     "StudentCodeRunResponseDTO",

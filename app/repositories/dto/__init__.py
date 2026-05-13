@@ -15,23 +15,7 @@ from app.repositories.dto.contest import (
     UpdateContestData,
 )
 from app.repositories.dto.pagination import PaginatedResult, PaginationParams
-from app.repositories.dto.student import (
-    StudentAvailableContestData,
-    StudentAvailableTeamData,
-    StudentCodeRunRequestDTO,
-    StudentCodeRunResponseDTO,
-    StudentContestDetailData,
-    StudentContestFilters,
-    StudentContestProblemData,
-    StudentCreateTeamData,
-    StudentRegisteredContestData,
-    StudentTeamData,
-    StudentTeamFilters,
-    StudentTeamJoinData,
-    StudentTeamMemberData,
-    StudentTeamRegistrationData,
-    StudentTestCaseRunResultDTO,
-)
+
 from app.repositories.dto.question import (
     CreateQuestionData,
     CreateQuestionTemplateData,
@@ -40,6 +24,19 @@ from app.repositories.dto.question import (
 )
 from app.repositories.dto.team import CreateTeamData, TeamFilters, UpdateTeamData
 from app.repositories.dto.user import UserListFilters
+from app.repositories.dto.student import (
+    StudentAvailableTeamData,
+    StudentCodeRunRequestDTO,
+    StudentCodeRunResponseDTO,
+    StudentContestFilters,
+    StudentCreateTeamData,
+    StudentTeamData,
+    StudentTeamFilters,
+    StudentTeamJoinData,
+    StudentTeamMemberData,
+    StudentTeamRegistrationData,
+    StudentTestCaseRunResultDTO,
+)
 
 __all__ = [
     "PaginationParams",
@@ -66,10 +63,6 @@ __all__ = [
     "UpdateQuestionData",
     # Student DTOs
     "StudentContestFilters",
-    "StudentAvailableContestData",
-    "StudentRegisteredContestData",
-    "StudentContestDetailData",
-    "StudentContestProblemData",
     "StudentCodeRunRequestDTO",
     "StudentCodeRunResponseDTO",
     "StudentTestCaseRunResultDTO",
