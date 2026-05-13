@@ -60,7 +60,6 @@ __all__ = [
     # Team schemas - Member management
     "StudentTeamAddMemberRequest",
     "StudentTeamAddMemberResponse",
-    "StudentTeamRemoveMemberRequest",
     "StudentTeamRemoveMemberResponse",
     "StudentLeaveTeamResponse",
     "StudentTeamListResponse",

@@ -128,7 +128,10 @@ class ContestService:
         return can_manage, contest
 
     @cache_delete(
-        key_builder=lambda self, contest, created_by: "contests:*",
+        key_builder=lambda self, contest, created_by: [
+            "contests:*",
+            "student:contests:user:*",
+        ],
     )
     async def create_contest(
         self, contest: ContestCreate, created_by: UUID
@@ -300,7 +303,10 @@ class ContestService:
         ]
 
     @cache_delete(
-        key_builder=lambda self, contest_id, audience_ids, user_id: "contests:*",
+        key_builder=lambda self, contest_id, audience_ids, user_id: [
+            "contests:*",
+            "student:contests:user:*",
+        ],
     )
     async def assign_audiences_to_contest(
         self, contest_id: UUID, audience_ids: list[UUID], user_id: UUID
@@ -340,7 +346,10 @@ class ContestService:
         await self.repository.link_audiences_to_contest(contest_id, audience_ids)
 
     @cache_delete(
-        key_builder=lambda self, contest_id, audience_ids, user_id: "contests:*",
+        key_builder=lambda self, contest_id, audience_ids, user_id: [
+            "contests:*",
+            "student:contests:user:*",
+        ],
     )
     async def remove_audiences_from_contest(
         self, contest_id: UUID, audience_ids: list[UUID], user_id: UUID
@@ -378,6 +387,7 @@ class ContestService:
         key_builder=lambda self, contest_id, contest_data, user_id: [
             f"contest:{contest_id}*",
             "contests:*",
+            "student:contests:user:*",
         ],
     )
     async def update_contest(
@@ -475,7 +485,8 @@ class ContestService:
         key_builder=lambda self, contest_id, user_id: [
             f"contest:{contest_id}*",
             "contests:*",
-        ]
+            "student:contests:user:*",
+        ],
     )
     async def delete_contest(self, contest_id: UUID, user_id: UUID) -> ContestResponse:
         """
@@ -646,7 +657,8 @@ class ContestService:
         key_builder=lambda self, contest_id, user_id: [
             f"contest:{contest_id}*",
             "contests:*",
-        ]
+            "student:contests:user:*",
+        ],
     )
     async def publish_contest(self, contest_id: UUID, user_id: UUID) -> None:
         """
@@ -681,7 +693,8 @@ class ContestService:
         key_builder=lambda self, contest_id, user_id: [
             f"contest:{contest_id}*",
             "contests:*",
-        ]
+            "student:contests:user:*",
+        ],
     )
     async def pause_contest(self, contest_id: UUID, user_id: UUID) -> None:
         """Pause a published contest.
@@ -710,7 +723,8 @@ class ContestService:
         key_builder=lambda self, contest_id, user_id: [
             f"contest:{contest_id}*",
             "contests:*",
-        ]
+            "student:contests:user:*",
+        ],
     )
     async def resume_contest(self, contest_id: UUID, user_id: UUID) -> None:
         """Resume a paused contest.
@@ -739,7 +753,8 @@ class ContestService:
         key_builder=lambda self, contest_id, user_id: [
             f"contest:{contest_id}*",
             "contests:*",
-        ]
+            "student:contests:user:*",
+        ],
     )
     async def cancel_contest(self, contest_id: UUID, user_id: UUID) -> None:
         """Cancel a contest.
@@ -768,7 +783,8 @@ class ContestService:
         key_builder=lambda self, contest_id, user_id: [
             f"contest:{contest_id}*",
             "contests:*",
-        ]
+            "student:contests:user:*",
+        ],
     )
     async def soft_delete_contest(self, contest_id: UUID, user_id: UUID) -> None:
         """
@@ -799,7 +815,8 @@ class ContestService:
         key_builder=lambda self, contest_id, user_id: [
             f"contest:{contest_id}*",
             "contests:*",
-        ]
+            "student:contests:user:*",
+        ],
     )
     async def restore_contest(self, contest_id: UUID, user_id: UUID) -> ContestResponse:
         """

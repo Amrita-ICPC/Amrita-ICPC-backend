@@ -1,251 +1,60 @@
-"""Student contest endpoints.
-
-Routes for:
-- Contest discovery and listing
-- Contest details and problems
-- Contest registration for teams
-"""
-
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import can_read, get_current_user_id
+from app.auth.dependencies import get_current_user_id
 from app.core.clients.database import get_db
-from app.core.logger import logger
-from app.repositories.contest import ContestRepository
-from app.repositories.team import TeamRepository
-from app.schema.student.contests import (
-    StudentContestDetailsResponse,
-    StudentContestListResponse,
-    StudentContestProblemsListResponse,
-    StudentContestRegistrationRequest,
-    StudentContestRegistrationResponse,
-    StudentRegisteredContestListResponse,
-)
+from app.core.response import create_api_response
+from app.repositories.student.contest import StudentContestRepository
+from app.repositories.dto.pagination import PaginationParams
+from app.schema.base import APIResponse
+from app.schema.student.contests import StudentContestRegistrationRequest, StudentContestListResponse
 from app.service.student.contests import StudentContestService
+from app.utils.pagination import get_pagination
 
-router = APIRouter(prefix="/students/contests", tags=["Student - Contests"])
+router = APIRouter()
 
 
 def get_student_contest_service(
     db: AsyncSession = Depends(get_db),
 ) -> StudentContestService:
-    """Provide StudentContestService instance."""
-    contest_repo = ContestRepository(db)
-    team_repo = TeamRepository(db)
-    return StudentContestService(contest_repo, team_repo)
+    repository = StudentContestRepository(db)
+    return StudentContestService(repository)
 
 
 @router.get(
-    "",
-    response_model=StudentContestListResponse,
-    status_code=status.HTTP_200_OK,
-    summary="List available contests",
-    dependencies=[can_read("contests")],
+    "/",
+    response_model=APIResponse[StudentContestListResponse],
+    summary="Get available contests for student",
 )
-async def get_available_contests(
-    user_id: UUID = Depends(get_current_user_id),
-    service: StudentContestService = Depends(get_student_contest_service),
-    difficulty: str | None = Query(
-        None, description="Filter by difficulty: EASY, MEDIUM, HARD"
-    ),
-    limit: int = Query(10, ge=1, le=100),
-    offset: int = Query(0, ge=0),
-) -> StudentContestListResponse:
-    """
-    Get all available public contests.
-
-    Optionally filter by difficulty level.
-
-    Args:
-        user_id: Current authenticated user
-        service: StudentContestService instance
-        difficulty: Optional difficulty filter
-        limit: Pagination limit (1-100)
-        offset: Pagination offset
-
-    Returns:
-        List of available contests with pagination
-    """
-    if difficulty:
-        result = await service.get_contests_by_difficulty(
-            user_id=user_id,
-            difficulty=difficulty,
-            skip=offset,
-            limit=limit,
-        )
-    else:
-        result = await service.get_available_contests(
-            user_id=user_id,
-            skip=offset,
-            limit=limit,
-        )
-
-    logger.info(f"User {user_id} retrieved available contests")
-    return result
-
-
-@router.get(
-    "/registered",
-    response_model=StudentRegisteredContestListResponse,
-    status_code=status.HTTP_200_OK,
-    summary="List registered contests",
-    dependencies=[can_read("contests")],
-)
-async def get_registered_contests(
-    user_id: UUID = Depends(get_current_user_id),
-    service: StudentContestService = Depends(get_student_contest_service),
-    limit: int = Query(10, ge=1, le=100),
-    offset: int = Query(0, ge=0),
-) -> StudentRegisteredContestListResponse:
-    """
-    Get contests student is registered in.
-
-    Args:
-        user_id: Current authenticated user
-        service: StudentContestService instance
-        limit: Pagination limit
-        offset: Pagination offset
-
-    Returns:
-        List of registered contests
-    """
-    result = await service.get_registered_contests(
-        user_id=user_id,
-        skip=offset,
-        limit=limit,
-    )
-    return result
-
-
-@router.get(
-    "/past",
-    response_model=StudentRegisteredContestListResponse,
-    status_code=status.HTTP_200_OK,
-    summary="List past contests",
-    dependencies=[can_read("contests")],
-)
-async def get_past_contests(
-    user_id: UUID = Depends(get_current_user_id),
-    service: StudentContestService = Depends(get_student_contest_service),
-    limit: int = Query(10, ge=1, le=100),
-    offset: int = Query(0, ge=0),
-) -> StudentRegisteredContestListResponse:
-    """
-    Get contests that student participated in (finished).
-
-    Args:
-        user_id: Current authenticated user
-        service: StudentContestService instance
-        limit: Pagination limit
-        offset: Pagination offset
-
-    Returns:
-        List of past contests
-    """
-    result = await service.get_past_contests(
-        user_id=user_id,
-        skip=offset,
-        limit=limit,
-    )
-    return result
-
-
-@router.get(
-    "/{contest_id}",
-    response_model=StudentContestDetailsResponse,
-    status_code=status.HTTP_200_OK,
-    summary="Get contest details",
-    dependencies=[can_read("contests")],
-)
-async def get_contest_details(
-    contest_id: UUID,
-    user_id: UUID = Depends(get_current_user_id),
-    service: StudentContestService = Depends(get_student_contest_service),
-) -> StudentContestDetailsResponse:
-    """
-    Get full details of a contest.
-
-    Args:
-        contest_id: Contest UUID
-        user_id: Current authenticated user
-        service: StudentContestService instance
-
-    Returns:
-        Full contest details
-    """
-    result = await service.get_contest_by_id(
-        contest_id=contest_id,
-        user_id=user_id,
-    )
-    return result
-
-
-@router.get(
-    "/{contest_id}/problems",
-    response_model=StudentContestProblemsListResponse,
-    status_code=status.HTTP_200_OK,
-    summary="Get contest problems",
-    dependencies=[can_read("contests")],
-)
-async def get_contest_problems(
-    contest_id: UUID,
+async def get_student_contests(
+    request: Request,
+    filters: StudentContestRegistrationRequest = Depends(),
+    search: str | None = Query(None, description="Search by contest name"),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(10, ge=1, le=100, description="Items per page"),
     user_id: UUID = Depends(get_current_user_id),
     service: StudentContestService = Depends(get_student_contest_service),
 ):
     """
-    Get list of problems in a contest.
-
-    Args:
-        contest_id: Contest UUID
-        user_id: Current authenticated user
-        service: StudentContestService instance
-
-    Returns:
-        List of problems with metadata
+    Get all published contests available to the student.
+    Filter by registration status and contest run status.
     """
-    result = await service.get_contest_problems(
+    pagination_params = PaginationParams(
+        skip=(page - 1) * page_size,
+        limit=page_size,
+    )
+
+    result = await service.get_all_contests(
         user_id=user_id,
-        contest_id=contest_id,
+        request=filters,
+        search=search,
+        pagination=pagination_params,
     )
-    return result
 
-
-@router.post(
-    "/{contest_id}/register",
-    response_model=StudentContestRegistrationResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Register team for contest",
-    dependencies=[can_read("contests")],
-)
-async def register_for_contest(
-    contest_id: UUID,
-    request: StudentContestRegistrationRequest,
-    user_id: UUID = Depends(get_current_user_id),
-    service: StudentContestService = Depends(get_student_contest_service),
-) -> StudentContestRegistrationResponse:
-    """
-    Register a team for a contest.
-
-    Student must be a member of the team.
-
-    Args:
-        contest_id: Contest UUID
-        request: Registration request with team_id
-        user_id: Current authenticated user
-        service: StudentContestService instance
-
-    Returns:
-        Registration confirmation
-    """
-    result = await service.register_team_for_contest(
-        contest_id=contest_id,
-        team_id=request.team_id,
-        user_id=user_id,
+    return create_api_response(
+        request,
+        data=result,
+        message="Student contests fetched successfully",
     )
-    logger.info(
-        f"User {user_id} registered team {request.team_id} for contest {contest_id}"
-    )
-    return result
