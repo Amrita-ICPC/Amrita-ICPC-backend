@@ -304,6 +304,7 @@ class ContestService:
 
     @cache_delete(
         key_builder=lambda self, contest_id, audience_ids, user_id: [
+            f"contest:{contest_id}*",
             "contests:*",
             "student:contests:user:*",
         ],

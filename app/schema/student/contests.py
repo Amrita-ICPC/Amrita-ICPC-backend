@@ -1,15 +1,25 @@
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from app.utils.enums import ContestMode, ContestRunStatus, ContestStatus, TeamApprovalMode
 from app.schema.contest import ContestAudienceResponse
 
 class StudentContestRegistrationRequest(BaseModel):
     registered: bool | None = None
     status: list[ContestRunStatus] | None = None
-    min_team_size: int | None = None
-    max_team_size: int | None = None
+    min_team_size: int | None = Field(None, ge=1)
+    max_team_size: int | None = Field(None, ge=1)
+
+    @model_validator(mode="after")
+    def validate_team_size_range(self) -> "StudentContestRegistrationRequest":
+        if (
+            self.min_team_size is not None
+            and self.max_team_size is not None
+            and self.min_team_size > self.max_team_size
+        ):
+            raise ValueError("min_team_size cannot be greater than max_team_size")
+        return self
 
     @field_validator("status", mode="before")
     @classmethod

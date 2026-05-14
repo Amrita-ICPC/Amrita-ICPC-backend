@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models import Contest, ContestQuestion, Question, QuestionTag, TeamUser, ContestTeam
+from app.models import Contest, TeamUser, ContestTeam
 from sqlalchemy import and_, case, func, or_, select
 from app.utils.enums import ContestRunStatus, ContestStatus, TeamApprovalStatus
 from uuid import UUID
@@ -30,7 +30,6 @@ class StudentContestRepository:
         base_query = (
             select(Contest)
             .options(
-                selectinload(Contest.questions).joinedload(ContestQuestion.question),
                 selectinload(Contest.audience_links).joinedload(ContestAudience.audience)
             )
             .filter(
@@ -136,7 +135,10 @@ class StudentContestRepository:
             # Count registered teams
             count_result = await self.db.execute(
                 select(ContestTeam.contest_id, func.count(ContestTeam.team_id))
-                .filter(ContestTeam.contest_id.in_(contest_ids))
+                .filter(
+                    ContestTeam.contest_id.in_(contest_ids),
+                    ContestTeam.approval_status == TeamApprovalStatus.APPROVED
+                )
                 .group_by(ContestTeam.contest_id)
             )
             teams_count_dict = {cid: count for cid, count in count_result.all()}
