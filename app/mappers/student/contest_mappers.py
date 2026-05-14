@@ -1,4 +1,3 @@
-# type: ignore
 """
 Mapper functions for student contest operations and responses.
 
@@ -22,9 +21,8 @@ Key Principles:
     - Reusability: Share common transformation logic
 """
 
-from __future__ import annotations
-
 from datetime import datetime
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -85,7 +83,7 @@ def to_student_available_contests_list_response(
     skip: int,
     limit: int,
     teams_count_dict: dict[UUID, int],
-    run_status_calculator: callable
+    run_status_calculator: Callable[[datetime, datetime], ContestRunStatus],
 ) -> StudentContestListResponse:
     """
     Map paginated Contest results and team counts to paginated list response.
