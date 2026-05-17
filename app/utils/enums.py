@@ -320,3 +320,32 @@ class AudienceType(str, enum.Enum):
     DEPARTMENT = "department"
     BATCH = "batch"
     CAMPUS = "campus"
+
+class ContestTeamMemberStatus(str, enum.Enum):
+    """
+    Enumeration of contest team registration statuses.
+
+    Attributes:
+        PENDING: Team registration is pending.
+        APPROVED: Team registration is approved.
+        REJECTED: Team registration is rejected.
+    """
+
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+
+
+class TeamMemberRole(str, enum.Enum):
+    """
+    Enumeration of team member roles in a contest.
+
+    Attributes:
+        LEADER: The leader of the team.
+        MEMBER: A regular member of the team.
+    """
+
+    LEADER = "LEADER"
+    MEMBER = "MEMBER"
+    
+

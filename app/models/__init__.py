@@ -5,6 +5,7 @@ from app.models.contest import (
     ContestInstructor,
     ContestQuestion,
     ContestTeam,
+    ContestTeamMember,
     ContestTeamProgress,
     ContestTeamViolation,
 )
@@ -24,6 +25,7 @@ __all__ = [
     "ContestInstructor",
     "ContestQuestion",
     "ContestTeam",
+    "ContestTeamMember",
     "ContestTeamProgress",
     "ContestTeamViolation",
     "Language",

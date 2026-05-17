@@ -156,7 +156,9 @@ class ContestRepository:
         Raises:
             ContestNotFoundError: If the contest with the given ID does not exist.
         """
-        result = await self.db.execute(select(Contest).filter(Contest.id == contest_id))
+        result = await self.db.execute(select(Contest).filter(Contest.id == contest_id).options(
+            selectinload(Contest.audience_links).selectinload(ContestAudience.audience)
+            ))
         contest = result.scalars().first()
         if not contest:
             raise ContestNotFoundError(str(contest_id))

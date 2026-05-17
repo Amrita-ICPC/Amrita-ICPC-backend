@@ -32,6 +32,7 @@ from app.exceptions.contest import (
     InvalidContestStateError,
     QuestionAlreadyInContestError,
     QuestionNotInContestError,
+    StudentNotEligibleForContestError,
 )
 from app.exceptions.execution import (
     CodeExecutionError,
@@ -199,6 +200,19 @@ def setup_exception_handlers(app: FastAPI) -> None:
             status_code=exc.status_code,
             message=exc.message,
             error_code="USER_NOT_IN_AUDIENCE",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(StudentNotEligibleForContestError)
+    async def student_not_eligible_for_contest_handler(
+        request: Request, exc: StudentNotEligibleForContestError
+    ):
+        logger.warning(f"Student not eligible for contest: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="STUDENT_NOT_ELIGIBLE_FOR_CONTEST",
             details=[exc.detail] if exc.detail else None,
         )
 
