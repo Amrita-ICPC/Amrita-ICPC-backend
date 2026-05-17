@@ -54,60 +54,35 @@ class TeamRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    # contest team related operations
-    async def get_contest_or_raise(self, contest_id: UUID) -> Contest:
+
+    async def get_contest_teams_count(self, contest_id: UUID) -> int:
         """
-        Retrieve a contest by its ID or raise an exception if not found.
+        Retrieve the number of teams in a specific contest.
 
         Args:
-            contest_id: ID of the contest to retrieve.
+            contest_id: ID of the contest to retrieve the team count for.
         Returns:
-            The Contest object if found.
-        Raises:
-            ContestNotFoundError: If the contest with the given ID does not exist.
+            The number of teams in the contest.
         """
-        result = await self.db.execute(select(Contest).filter(Contest.id == contest_id))
-        contest = result.scalars().first()
-        if not contest:
-            raise ContestNotFoundError(str(contest_id))
-        return contest
+        result = await self.db.execute(
+            select(func.count(ContestTeam.team_id)).filter(ContestTeam.contest_id == contest_id)
+        )
+        return result.scalars().first() or 0
 
-    async def get_user_or_raise(self, user_id: UUID) -> User:
+    async def get_contest_team_by_id(self, contest_id: UUID, team_id: UUID) -> ContestTeam | None:
         """
-        Retrieve a user by their ID or raise an exception if not found.
+        Retrieve the team details for a specific contest.
 
         Args:
-            user_id: ID of the user to retrieve.
+            contest_id: ID of the contest to retrieve the team details for.
+            team_id: ID of the team to retrieve the team details for.
         Returns:
-            The User object if found.
-        Raises:
-            UserNotFoundError: If the user with the given ID does not exist.
+            The Team object if found, otherwise None.
         """
-        result = await self.db.execute(select(User).filter(User.id == user_id))
-        user = result.scalars().first()
-        if not user:
-            raise UserNotFoundError(str(user_id))
-        return user
-
-    async def get_users_or_raise(self, user_ids: list[UUID]) -> list[User]:
-        """
-        Retrieve multiple users by their IDs or raise an exception if any are not found.
-
-        Args:
-            user_ids: List of user IDs to retrieve.
-        Returns:
-            List of User objects corresponding to the provided IDs.
-        Raises:
-            UserNotFoundError: If any user with the given IDs does not exist.
-        """
-        unique_ids = set(user_ids)
-        result = await self.db.execute(select(User).filter(User.id.in_(unique_ids)))
-        users = list(result.scalars().all())
-        if len(users) != len(user_ids):
-            found_user_ids = {user.id for user in users}
-            missing_user_ids = unique_ids - found_user_ids
-            raise UserNotFoundError(str(next(iter(missing_user_ids))))
-        return users
+        result = await self.db.execute(
+            select(ContestTeam).filter(ContestTeam.team_id == team_id, ContestTeam.contest_id == contest_id)
+        )
+        return result.scalars().first()
 
     async def find_team_by_name(self, contest_id: UUID, team_name: str) -> Team | None:
         """

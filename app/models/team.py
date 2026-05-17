@@ -59,6 +59,5 @@ class TeamUser(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
-
     team = relationship("Team", back_populates="members")
     user = relationship("User", back_populates="teams")

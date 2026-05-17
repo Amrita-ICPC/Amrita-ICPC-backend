@@ -1,3 +1,7 @@
+from app.utils.enums import ContestTeamMemberStatus
+from app.models.contest import ContestTeamMember
+from app.models import ContestAudience
+from app.models import Audience
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import Contest, TeamUser, ContestTeam
 from sqlalchemy import and_, case, func, or_, select
@@ -143,4 +147,34 @@ class StudentContestRepository:
             )
             teams_count_dict = {cid: count for cid, count in count_result.all()}
 
-        return PaginatedResult(total=total, items=contests), teams_count_dict    
+        return PaginatedResult(total=total, items=contests), teams_count_dict  
+
+    async def get_contest_team_member(self, contest_id: UUID, user_id: UUID)->ContestTeamMember | None:
+        # Check if the user is in contest_team_member table
+        query = select(ContestTeamMember).where(
+            ContestTeamMember.contest_id == contest_id,
+            ContestTeamMember.user_id == user_id,
+            ContestTeamMember.status == TeamApprovalStatus.APPROVED
+        ).options(
+          selectinload(ContestTeamMember.contest_team)
+
+        )
+        result = await self.db.execute(query)
+        return result.scalars().first()
+
+
+    # async def get_team_members_in_contest(self, contest_id: UUID, team_id: UUID) -> list[ContestTeamMember]:
+    #     """
+    #     Retrieve all members of a team for a specific contest.
+    #     """
+    #     from app.models.user import User
+    #     query = (
+    #         select(ContestTeamMember)
+    #         .options(joinedload(ContestTeamMember.user))
+    #         .where(
+    #             ContestTeamMember.contest_id == contest_id,
+    #             ContestTeamMember.team_id == team_id
+    #         )
+    #     )
+    #     result = await self.db.execute(query)
+    #     return list(result.scalars().all())

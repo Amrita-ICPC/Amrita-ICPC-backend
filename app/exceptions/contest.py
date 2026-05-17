@@ -156,3 +156,13 @@ class InvalidContestStateError(AppBaseException):
             message=message,
             status_code=status.HTTP_409_CONFLICT,
         )
+
+
+class StudentNotEligibleForContestError(AppBaseException):
+    """Raised when student is not eligible for the contest."""
+
+    def __init__(self, user_id: str, contest_id: str):
+        super().__init__(
+            message=f"Student {user_id} is not eligible for contest {contest_id}",
+            status_code=status.HTTP_403_FORBIDDEN,
+        )

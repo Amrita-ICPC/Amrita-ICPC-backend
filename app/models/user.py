@@ -48,6 +48,9 @@ class User(Base):
     deleted_banks = relationship(
         "Bank", back_populates="deleter", foreign_keys="[Bank.deleted_by]"
     )
+    team_registration_members = relationship(
+        "ContestTeamMember", back_populates="user", cascade="all, delete-orphan"
+    )
 
     audience_links: Mapped[list["UserAudience"]] = relationship(
         "UserAudience",

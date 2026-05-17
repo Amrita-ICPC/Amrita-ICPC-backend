@@ -1,3 +1,4 @@
+from app.utils.enums import TeamMemberRole
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
@@ -73,9 +74,14 @@ class StudentContestListResponse(BaseModel):
     page_size: int
     has_more: bool
 
-class StudentContestDetailsResponse(BaseModel):
+class StudentContestDetailsResponse(StudentContestAvailableResponse):
     """Placeholder for contest details response."""
-    pass
+    rules: Optional[str] = Field(None, description="Contest rules")
+    team_approval_mode: TeamApprovalMode = Field(
+        ...,
+        description="How teams are approved in this contest",
+    )
+    status: ContestStatus = Field(..., description="Contest lifecycle status")
 
 
 class StudentContestProblemResponse(BaseModel):
@@ -92,3 +98,38 @@ class StudentRegisteredContestListResponse(BaseModel):
 
 class StudentRegisteredContestResponse(BaseModel):
     pass
+
+class RegistrationStatus(BaseModel):
+    """Schema for student registration status in a contest."""
+    registered: bool = Field(..., description="Whether the student is registered for the contest")
+    approved: bool = Field(..., description="Whether the registration is approved")
+    status: str = Field(..., description="Combined registration status (e.g., REGISTERED, PENDING, NOT_REGISTERED)")
+
+class ReadinessStatus(BaseModel):
+    """Schema for student readiness to start a contest."""
+    can_start: bool = Field(..., description="Whether the student/team can start the contest")
+    reason: Optional[str] = Field(None, description="Reason if the student/team cannot start")
+
+class TeamMemberStatus(BaseModel):
+    """Schema for team member status in participation view."""
+    id: UUID = Field(..., description="User ID of the member")
+    name: str = Field(..., description="Name of the member")
+    role: TeamMemberRole = Field(..., description="Role in the team (LEADER / MEMBER)")
+    joined: bool = Field(..., description="Whether the user has joined the team")
+    confirmed: bool = Field(..., description="Whether the user has confirmed participation")
+
+class TeamParticipationStatus(BaseModel):
+    """Schema for team participation status in a contest."""
+    id: UUID = Field(..., description="Team ID")
+    name: str = Field(..., description="Team name")
+    members: list[TeamMemberStatus] = Field(..., description="List of team members and their status")
+    member_count: int = Field(..., description="Current number of members")
+    min_team_size: int = Field(..., description="Minimum team size")
+    max_team_size: int = Field(..., description="Maximum team size allowed")
+    completion_percentage: float = Field(..., description="Percentage of team completion")
+
+class StudentContestStatusResponse(BaseModel):
+    """Combined response for student's status and participation in a contest."""
+    registration_status: RegistrationStatus = Field(..., description="Registration and approval status")
+    readiness: ReadinessStatus = Field(..., description="Readiness to start the contest")
+    team: Optional[TeamParticipationStatus] = Field(None, description="Team details if registered")

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from app.utils.enums import ContestTeamMemberStatus
 
 import uuid
 from datetime import datetime, timezone
@@ -147,6 +148,9 @@ class Contest(Base):
         back_populates="contest",
         cascade="all, delete-orphan",
     )
+    team_members: Mapped[list["ContestTeamMember"]] = relationship(
+        "ContestTeamMember", back_populates="contest", cascade="all, delete-orphan"
+    )
 
 
 class ContestInstructor(Base):
@@ -260,11 +264,20 @@ class ContestTeam(Base):
 
     __tablename__ = "contest_team"
 
-    contest_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("contest.id", ondelete="CASCADE"), primary_key=True
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    team_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey(Team.id, ondelete="CASCADE"), primary_key=True
+
+    contest_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("contest.id", ondelete="CASCADE")
+    )
+    team_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey(Team.id, ondelete="SET NULL"), nullable=True
+    )
+
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    leader_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
 
     enrolled_at: Mapped[datetime] = mapped_column(
@@ -281,6 +294,11 @@ class ContestTeam(Base):
 
     contest = relationship("Contest", back_populates="teams", foreign_keys=[contest_id])
     team = relationship("Team", back_populates="team_contests", foreign_keys=[team_id])
+    leader = relationship("User", foreign_keys=[leader_id])
+    contest_team_member:Mapped[list["ContestTeamMember"]] = relationship("ContestTeamMember", back_populates="contest_team", cascade="all, delete-orphan")
+
+
+    
     progress = relationship(
         "ContestTeamProgress",
         back_populates="contest_team",
@@ -289,6 +307,33 @@ class ContestTeam(Base):
         foreign_keys="[ContestTeamProgress.contest_id, ContestTeamProgress.team_id]",
         primaryjoin="and_(ContestTeam.contest_id==ContestTeamProgress.contest_id, ContestTeam.team_id==ContestTeamProgress.team_id)",
     )
+
+class ContestTeamMember(Base):
+    __tablename__ = "contest_team_member"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    contest_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("contest.id", ondelete="CASCADE"), nullable=False
+    )
+    contest_team_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("contest_team.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+
+    status: Mapped[ContestTeamMemberStatus] = mapped_column(
+        Enum(ContestTeamMemberStatus), nullable=False, default=ContestTeamMemberStatus.PENDING
+    )
+    confirmed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    contest = relationship("Contest", back_populates="team_members")
+    contest_team:Mapped[ContestTeam] = relationship("ContestTeam",back_populates="contest_team_member", foreign_keys=[contest_team_id])
+    user = relationship("User", back_populates="team_registration_members")
 
 
 class ContestTeamViolation(Base):

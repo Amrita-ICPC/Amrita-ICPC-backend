@@ -8,12 +8,12 @@ Combines student endpoints for:
 
 from fastapi import APIRouter
 
-from app.api.routes.v1.students import contests, teams, run
+from app.api.routes.v1.students import contests, run
 
 # Combined router for all student endpoints
 router = APIRouter()
 router.include_router(contests.router, prefix="/contests")
-router.include_router(teams.router, prefix="/teams")
+# router.include_router(teams.router, prefix="/teams")
 router.include_router(run.router, prefix="/run")
 
 __all__ = ["router"]
