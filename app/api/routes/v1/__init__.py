@@ -9,6 +9,7 @@ from . import (
     execution,
     image,
     question,
+    team,
     user,
 )
 from .students import router as students_router
@@ -23,7 +24,7 @@ api_v1_router.include_router(bank.router, prefix="/banks", tags=["Banks"])
 api_v1_router.include_router(
     bank_questions.router, prefix="/banks", tags=["Bank Questions"]
 )
-# api_v1_router.include_router(team.router, tags=["Teams"])
+api_v1_router.include_router(team.router, tags=["Teams"])
 api_v1_router.include_router(
     audience.router,
     prefix="/audiences",

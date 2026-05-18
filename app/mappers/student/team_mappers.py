@@ -11,12 +11,17 @@ from app.schema.student.teams import (
 )
 
 
-def to_student_team_card_response(team: Team, user_id: UUID) -> StudentTeamCardResponse:
+def to_student_team_card_response(
+    team: Team,
+    user_id: UUID,
+    has_requested: bool = False,
+) -> StudentTeamCardResponse:
     """Map a Team database ORM model to a StudentTeamCardResponse schema.
 
     Args:
         team: The Team database ORM model to map.
         user_id: UUID of the requesting student user.
+        has_requested: Whether the requesting student has a pending join request.
 
     Returns:
         StudentTeamCardResponse: Mapped response card schema.
@@ -50,6 +55,9 @@ def to_student_team_card_response(team: Team, user_id: UUID) -> StudentTeamCardR
         members=member_list,
         has_more_members=has_more,
         more_members_count=more_count,
+        is_public=team.is_public,
+        code=team.code,
+        has_requested=has_requested,
     )
 
 
@@ -60,6 +68,8 @@ def to_student_team_list_response(
     limit: int,
     user_id: UUID,
     pending_invitation_count: int = 0,
+    pending_request_count: int = 0,
+    requested_team_ids: set[UUID] | None = None,
 ) -> StudentTeamListResponse:
     """Map a list of Team ORM models to a StudentTeamListResponse with pagination.
 
@@ -70,17 +80,25 @@ def to_student_team_list_response(
         limit: Max items returned.
         user_id: UUID of the requesting student user.
         pending_invitation_count: Total count of pending invitations for this student.
+        pending_request_count: Total count of pending join requests for teams led by this student.
+        requested_team_ids: Set of team IDs with pending requests from the user.
 
     Returns:
         StudentTeamListResponse: Standard paginated response.
     """
-    team_cards = [to_student_team_card_response(team, user_id) for team in teams]
+    if requested_team_ids is None:
+        requested_team_ids = set()
+    team_cards = [
+        to_student_team_card_response(team, user_id, team.id in requested_team_ids)
+        for team in teams
+    ]
     return StudentTeamListResponse(
         teams=team_cards,
         total=total,
         skip=skip,
         limit=limit,
         pending_invitation_count=pending_invitation_count,
+        pending_request_count=pending_request_count,
     )
 
 
@@ -100,10 +118,11 @@ def to_student_team_invitation_response(invitation: TeamInvitation) -> StudentTe
         title=invitation.team.name,
         description=invitation.team.description,
         logo=invitation.team.logo,
-        created_at=invitation.invited_at,
+        created_at=invitation.sent_at,
         updated_at=invitation.updated_at,
         member_count=len(invitation.team.members),
-        invited_by_name=invitation.invited_by_user.name,
+        invited_by_name=invitation.sender.name,
+        invitation_type=invitation.invitation_type,
     )
 
 

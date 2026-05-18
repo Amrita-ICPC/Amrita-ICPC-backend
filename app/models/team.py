@@ -1,4 +1,9 @@
 from __future__ import annotations
+from sqlalchemy import Boolean
+
+
+from sqlalchemy import CheckConstraint
+from app.utils.enums import InvitationType
 from typing import TYPE_CHECKING
 from sqlalchemy import Enum
 from app.utils.enums import TeamInvitationStatus
@@ -33,6 +38,9 @@ class Team(Base):
     leader_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+
+    code: Mapped[str] = mapped_column(String(6), unique=True, nullable=False)
+    is_public: Mapped[bool] = mapped_column(Boolean, default=True)
 
     audience_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("audience.id", ondelete="SET NULL"), nullable=True
@@ -74,6 +82,22 @@ class TeamUser(Base):
 
 class TeamInvitation(Base):
     __tablename__ = "team_invitation"
+    __table_args__ = (
+        CheckConstraint(
+            """
+            (
+                invitation_type = 'INVITE'
+                AND reciever_id IS NOT NULL
+            )
+            OR
+            (
+                invitation_type = 'REQUEST'
+                AND reciever_id IS NULL
+            )
+            """,
+            name="ck_team_invitation_receiver_logic",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
@@ -83,15 +107,20 @@ class TeamInvitation(Base):
         ForeignKey("team.id", ondelete="CASCADE"), nullable=False
     )
 
-    user_id: Mapped[uuid.UUID] = mapped_column(
+    sender_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
 
-    invited_by: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    reciever_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True
     )
 
-    invited_at: Mapped[datetime] = mapped_column(
+    invitation_type: Mapped[InvitationType] = mapped_column(
+        Enum(InvitationType, native_enum=False),
+        default=InvitationType.INVITE,
+    )
+
+    sent_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
@@ -111,5 +140,5 @@ class TeamInvitation(Base):
     )
 
     team: Mapped["Team"] = relationship("Team", back_populates="invitations")
-    user: Mapped["User"] = relationship("User", foreign_keys=[user_id])
-    invited_by_user: Mapped["User"] = relationship("User", foreign_keys=[invited_by])
+    sender: Mapped["User"] = relationship("User", foreign_keys=[sender_id])
+    reciever: Mapped["User"] = relationship("User", foreign_keys=[reciever_id])

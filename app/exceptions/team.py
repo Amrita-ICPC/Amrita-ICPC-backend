@@ -134,4 +134,16 @@ class StudentTeamInvitationNotFoundError(AppBaseException):
         )
 
 
+class StudentTeamInvitationError(AppBaseException):
+    """Raised when a team invitation operation is invalid in the student context."""
+
+    def __init__(self, detail: str):
+        super().__init__(
+            message=detail,
+            status_code=400,
+            detail=detail,
+        )
+
+
+
 

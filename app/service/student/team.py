@@ -12,7 +12,7 @@ from app.schema.student.teams import (
     StudentTeamInvitationListResponse,
 )
 from app.exceptions.base import AppBaseException
-from app.exceptions.student.teams import StudentTeamNotFoundError
+from app.exceptions.student.teams import StudentTeamNotFoundError, StudentTeamInvitationError
 from app.core.guards.team_student import TeamStudentGuard
 from app.mappers.student.team_mappers import (
     to_student_team_card_response,
@@ -20,7 +20,7 @@ from app.mappers.student.team_mappers import (
     to_student_team_invitation_list_response,
 )
 from app.core.cache.decorators import cache_get, cache_delete
-from app.utils.enums import TeamInvitationStatus
+from app.utils.enums import TeamInvitationStatus, InvitationType
 
 
 class StudentTeamService:
@@ -55,6 +55,7 @@ class StudentTeamService:
             f":leader:{filters.leader_only}"
             f":min:{filters.min_size or 'none'}"
             f":max:{filters.max_size or 'none'}"
+            f":is_public:{filters.is_public if filters.is_public is not None else 'all'}"
             f":skip:{pagination.skip}:limit:{pagination.limit}"
         ),
         ttl=300,
@@ -79,7 +80,15 @@ class StudentTeamService:
             user_id=user_id, filters=filters, pagination=pagination
         )
 
-        pending_count = await self.repository.get_pending_student_invitations_count(user_id=user_id)
+        pending_count = await self.repository.get_pending_student_invitations_count(
+            user_id=user_id,
+            invitation_type=InvitationType.INVITE,
+            team_id=None,
+        )
+
+        requested_team_ids, pending_request_count = (
+            await self.repository.get_user_pending_join_requests_data(user_id)
+        )
 
         return to_student_team_list_response(
             teams=paginated_result.items,
@@ -88,6 +97,8 @@ class StudentTeamService:
             limit=pagination.limit,
             user_id=user_id,
             pending_invitation_count=pending_count,
+            pending_request_count=pending_request_count,
+            requested_team_ids=requested_team_ids,
         )
 
 
@@ -123,12 +134,16 @@ class StudentTeamService:
         return to_student_team_card_response(team=team, user_id=user_id)
 
     @cache_delete(
-        key_builder=lambda self, user_id, team_name, team_description: [
+        key_builder=lambda self, user_id, team_name, team_description, is_public=True: [
             f"student:teams:user:{user_id}:*"
         ]
     )
     async def create_student_team(
-        self, user_id: UUID, team_name: str, team_description: str | None
+        self,
+        user_id: UUID,
+        team_name: str,
+        team_description: str | None,
+        is_public: bool = True,
     ) -> StudentTeamCardResponse:
         """Create a new team led by the student, invalidating list caches.
 
@@ -136,15 +151,32 @@ class StudentTeamService:
             user_id: UUID of the student creating the team (becomes leader).
             team_name: Name of the team.
             team_description: Optional description of the team.
+            is_public: Whether the team is public.
 
         Returns:
             StudentTeamCardResponse: Card details of the created team.
         """
+        import random
+        import string
+
+        # Generate a unique 6-digit numeric code
+        code = ""
+        for _ in range(5):
+            candidate = "".join(random.choices(string.digits, k=6))
+            existing = await self.repository.get_team_by_code(candidate)
+            if not existing:
+                code = candidate
+                break
+        else:
+            raise StudentTeamInvitationError("Could not generate a unique team code. Please try again.")
+
         team = Team(
             name=team_name,
             description=team_description,
             leader_id=user_id,
             created_by=user_id,
+            is_public=is_public,
+            code=code,
         )
         team = await self.repository.create_student_team(team)
         return to_student_team_card_response(team=team, user_id=user_id)
@@ -178,7 +210,7 @@ class StudentTeamService:
         await self.repository.delete_student_team(team_id=team_id)
 
     @cache_delete(
-        key_builder=lambda self, user_id, team_id, name, description: [
+        key_builder=lambda self, user_id, team_id, name, description, is_public=None: [
             f"student:teams:user:{user_id}:*",
             f"student:team:{team_id}:*",
         ]
@@ -189,6 +221,7 @@ class StudentTeamService:
         team_id: UUID,
         name: str | None,
         description: str | None,
+        is_public: bool | None = None,
     ) -> StudentTeamCardResponse:
         """Update an existing student team's details, validating leader privileges.
 
@@ -197,6 +230,7 @@ class StudentTeamService:
             team_id: UUID of the team to update.
             name: New name for the team (optional).
             description: New description for the team (optional).
+            is_public: Updated public access setting (optional).
 
         Returns:
             StudentTeamCardResponse: Card details of the updated team.
@@ -218,6 +252,8 @@ class StudentTeamService:
             team.name = name
         if description is not None:
             team.description = description
+        if is_public is not None:
+            team.is_public = is_public
 
         # Save to database
         updated_team = await self.repository.update_student_team(team)
@@ -225,29 +261,41 @@ class StudentTeamService:
         return to_student_team_card_response(team=updated_team, user_id=user_id)
 
     @cache_get(
-        key_builder=lambda self, user_id, invitation_status=None: (
+        key_builder=lambda self, user_id, invitation_type, invitation_status=None, team_id=None, sent=False: (
             f"student:invitations:user:{user_id}"
+            f":type:{invitation_type.value}"
             f":status:{invitation_status.value if invitation_status else 'all'}"
+            f":team:{team_id if team_id else 'all'}"
+            f":sent:{sent}"
         ),
         ttl=300,
     )
     async def get_team_invitations(
         self,
         user_id: UUID,
+        invitation_type: InvitationType,
         invitation_status: TeamInvitationStatus | None = None,
+        team_id: UUID | None = None,
+        sent: bool = False,
     ) -> StudentTeamInvitationListResponse:
-        """Retrieve the student's active team invitations.
+        """Retrieve the student's active team invitations or requests.
 
         Args:
             user_id: UUID of the requesting student user.
+            invitation_type: The type of invitation (INVITE or REQUEST).
             invitation_status: Optional TeamInvitationStatus to filter by.
+            team_id: Optional team ID to filter by.
+            sent: Optional bool to retrieve sent invitations/requests.
 
         Returns:
-            StudentTeamInvitationListResponse: List of mapped invitations.
+            StudentTeamInvitationListResponse: List of mapped invitations/requests.
         """
         invitations = await self.repository.get_student_team_invitations(
             user_id=user_id,
+            invitation_type=invitation_type,
             invitation_status=invitation_status,
+            team_id=team_id,
+            sent=sent,
         )
 
         return to_student_team_invitation_list_response(
@@ -256,19 +304,39 @@ class StudentTeamService:
         )
 
     @cache_delete(
-        key_builder=lambda self, user_id, team_id, invite_user_id: [
-            f"student:invitations:user:{invite_user_id}:*",
-            f"student:teams:user:{invite_user_id}:*",
+        key_builder=lambda self, user_id, team_id, invitation_type, invite_user_id=None: [
+            f"student:invitations:user:{invite_user_id or user_id}:*",
+            f"student:teams:user:{invite_user_id or user_id}:*",
         ]
     )
-    async def create_team_invitations(self, user_id: UUID, team_id: UUID, invite_user_id: UUID):
-        #Check the permission
-        team = await self.repository.get_student_team_by_id_or_raise(user_id, team_id)
-        self.guard.check_is_leader(user_id=user_id, team=team)
-        await self.user_repository.get_user_or_raise(user_id=invite_user_id)
-        await self.user_repository.get_user_or_raise(user_id=user_id)
-        #Create the invitation
-        await self.repository.create_student_team_invitation(team_id, invite_user_id, user_id)
+    async def create_team_invitation(
+        self,
+        user_id: UUID,
+        team_id: UUID,
+        invitation_type: InvitationType,
+        invite_user_id: UUID | None = None,
+    ) -> None:
+        """Create a team invitation or request."""
+        if invitation_type == InvitationType.INVITE:
+            if not invite_user_id:
+                raise StudentTeamInvitationError("invite_user_id is required for INVITE type")
+            # Check permission: Only team leader can invite a student
+            team = await self.repository.get_student_team_by_id_or_raise(user_id, team_id)
+            self.guard.check_is_leader(user_id=user_id, team=team)
+            # Create the invitation
+            await self.repository.create_student_team_invitation(
+                team_id=team_id,
+                sender_id=user_id,
+                invitation_type=InvitationType.INVITE,
+                reciever_id=invite_user_id,
+            )
+        elif invitation_type == InvitationType.REQUEST:
+            await self.repository.create_student_team_invitation(
+                team_id=team_id,
+                sender_id=user_id,
+                invitation_type=InvitationType.REQUEST,
+                reciever_id=None,
+            )
 
     @cache_delete(
         key_builder=lambda self, user_id, invitation_id, status: [
@@ -277,9 +345,68 @@ class StudentTeamService:
         ]
     )
     async def accept_or_reject_team_invitation(self, user_id: UUID, invitation_id: UUID, status: TeamInvitationStatus):
-        team_invitation = await self.repository.get_student_team_invitation_or_raise(user_id, invitation_id)
+        team_invitation = await self.repository.get_student_team_invitation_or_raise(invitation_id)
+        
+        if team_invitation.invitation_type == InvitationType.INVITE:
+            if team_invitation.reciever_id != user_id:
+                raise StudentTeamInvitationError("You are not the receiver of this invitation")
+        elif team_invitation.invitation_type == InvitationType.REQUEST:
+            # Check permission: Only team leader can approve/reject request to join
+            team = await self.repository.get_student_team_by_id_or_raise(user_id, team_invitation.team_id)
+            self.guard.check_is_leader(user_id=user_id, team=team)
+            
         await self.repository.approve_or_reject_team_invitation(team_invitation, status)
         return 
+
+    @cache_get(
+        key_builder=lambda self, name, pagination, user_id: (
+            f"student:teams:search:{name}"
+            f":skip:{pagination.skip}:limit:{pagination.limit}"
+            f":user:{user_id}"
+        ),
+        ttl=300,
+    )
+    async def search_teams_by_name(
+        self,
+        name: str,
+        pagination: PaginationParams,
+        user_id: UUID,
+    ) -> StudentTeamListResponse:
+        """Search student teams by name and return mapped cards with pending invitation count.
+
+        Args:
+            name: The query string to search in team names.
+            pagination: PaginationParams containing skip and limit.
+            user_id: UUID of the requesting student user.
+
+        Returns:
+            StudentTeamListResponse: Mapped list of team cards with total count and pending count.
+        """
+        paginated_result = await self.repository.search_teams_by_name(
+            name_query=name,
+            pagination=pagination,
+        )
+
+        pending_count = await self.repository.get_pending_student_invitations_count(
+            user_id=user_id,
+            invitation_type=InvitationType.INVITE,
+            team_id=None,
+        )
+
+        requested_team_ids, pending_request_count = (
+            await self.repository.get_user_pending_join_requests_data(user_id)
+        )
+
+        return to_student_team_list_response(
+            teams=paginated_result.items,
+            total=paginated_result.total,
+            skip=pagination.skip,
+            limit=pagination.limit,
+            user_id=user_id,
+            pending_invitation_count=pending_count,
+            pending_request_count=pending_request_count,
+            requested_team_ids=requested_team_ids,
+        )
         
 
         

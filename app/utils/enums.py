@@ -360,5 +360,10 @@ class TeamInvitationStatus(str, enum.Enum):
     PENDING = "PENDING"
     ACCEPTED = "ACCEPTED"
     REJECTED = "REJECTED"
+
+class InvitationType(str,enum.Enum):
+
+    REQUEST = "REQUEST"
+    INVITE = "INVITE"
     
 
