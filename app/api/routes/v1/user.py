@@ -10,7 +10,7 @@ from app.core.logger import logger
 from app.core.response import create_api_response
 from app.repositories.dto.user import UserListFilters
 from app.schema.base import APIResponse
-from app.schema.user import UserProfile, UserResponse, UserSyncResponse
+from app.schema.user import UserProfile, UserResponse, UserSyncResponse, StudentUserSearchResponse
 from app.service.user_service import UserService
 from app.utils.enums import UserRole
 from app.utils.pagination import get_pagination
@@ -137,3 +137,56 @@ async def list_users(
         message="Users fetched successfully",
         pagination=pagination,
     )
+
+
+@router.get(
+    "/students",
+    response_model=APIResponse[list[StudentUserSearchResponse]],
+    summary="List student users for team invitations",
+)
+async def list_students(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id),
+    page: int = Query(1, ge=1, description="Page number (starts from 1)"),
+    page_size: int = Query(20, ge=1, le=100, description="Number of items per page"),
+    q: str | None = Query(None, description="Search by name or email"),
+    team_id: UUID | None = Query(None, description="Check if the student is already in this team"),
+):
+    """List student users with search query support.
+
+    This endpoint is accessible to all logged-in users (e.g. students sending team invitations).
+
+    Args:
+        request: FastAPI request context.
+        db: Database session.
+        user_id: ID of the authenticated user.
+        page: Page number for pagination.
+        page_size: Number of items per page.
+        q: Optional search query (matches name or email).
+        team_id: Optional team ID to check membership.
+
+    Returns:
+        Paginated list of student users with is_in_team field.
+    """
+    skip = (page - 1) * page_size
+
+    filters = UserListFilters(
+        skip=skip,
+        limit=page_size,
+        role=UserRole.student,
+        query=q,
+        audience_ids=None,
+    )
+    total, mapped_users = await UserService.list_students_with_team_check(
+        db, filters, actor_id=user_id, team_id=team_id
+    )
+
+    pagination = get_pagination(total=total, page=page, page_size=page_size)
+    return create_api_response(
+        request,
+        data=mapped_users,
+        message="Student users fetched successfully",
+        pagination=pagination,
+    )
+

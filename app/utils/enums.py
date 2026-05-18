@@ -347,5 +347,18 @@ class TeamMemberRole(str, enum.Enum):
 
     LEADER = "LEADER"
     MEMBER = "MEMBER"
+
+class TeamInvitationStatus(str, enum.Enum):
+    """
+    Enumeration of team invitation statuses.
+
+    Attributes:
+        PENDING: Invitation is pending.
+        ACCEPTED: Invitation is accepted.
+        REJECTED: Invitation is rejected.
+    """
+    PENDING = "PENDING"
+    ACCEPTED = "ACCEPTED"
+    REJECTED = "REJECTED"
     
 

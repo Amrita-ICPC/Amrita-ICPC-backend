@@ -9,14 +9,10 @@ from app.mappers.student.contest_mappers import (
     to_student_available_contests_list_response,
 )
 from app.mappers.student.team_mappers import (
-    to_student_available_team_response,
-    to_student_available_teams_list_response,
-    to_student_team_create_and_join_response,
-    to_student_team_join_response,
-    to_student_team_leave_response,
-    to_student_team_member_response,
-    to_student_team_response,
-    to_student_teams_list_response,
+    to_student_team_card_response,
+    to_student_team_list_response,
+    to_student_team_invitation_response,
+    to_student_team_invitation_list_response,
 )
 
 __all__ = [
@@ -24,12 +20,8 @@ __all__ = [
     "to_student_available_contest_response",
     "to_student_available_contests_list_response",
     # Team mappers
-    "to_student_team_member_response",
-    "to_student_team_response",
-    "to_student_teams_list_response",
-    "to_student_available_team_response",
-    "to_student_available_teams_list_response",
-    "to_student_team_join_response",
-    "to_student_team_create_and_join_response",
-    "to_student_team_leave_response",
+    "to_student_team_card_response",
+    "to_student_team_list_response",
+    "to_student_team_invitation_response",
+    "to_student_team_invitation_list_response",
 ]

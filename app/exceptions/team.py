@@ -1,3 +1,4 @@
+from uuid import UUID
 from app.exceptions.base import AppBaseException
 
 
@@ -98,3 +99,39 @@ class ApprovalNotAllowedError(AppBaseException):
             status_code=400,
             detail="Approval is not allowed for this team in the current contest approval mode.",
         )
+
+
+class TeamLeaderAccessDeniedError(AppBaseException):
+    """Raised when an operation requires team leader privileges but the user is not the leader."""
+
+    def __init__(self, team_id: str, user_id: str):
+        super().__init__(
+            message=f"Access denied: User {user_id} is not the leader of team {team_id}.",
+            status_code=403,
+            detail="Only the team leader is permitted to perform this operation.",
+        )
+
+
+class StudentTeamNotFoundError(AppBaseException):
+    """Raised when a team is not found by ID in the student context."""
+
+    def __init__(self, team_id: str | UUID):
+        super().__init__(
+            message=f"Team with ID {team_id} not found.",
+            status_code=404,
+            detail=f"Team with ID {team_id} was not found or you do not have permission to view it.",
+        )
+
+
+class StudentTeamInvitationNotFoundError(AppBaseException):
+    """Raised when a team invitation is not found by ID in the student context."""
+
+    def __init__(self, invitation_id: str | UUID):
+        super().__init__(
+            message=f"Team invitation with ID {invitation_id} not found.",
+            status_code=404,
+            detail=f"Team invitation with ID {invitation_id} was not found or you do not have permission to view it.",
+        )
+
+
+

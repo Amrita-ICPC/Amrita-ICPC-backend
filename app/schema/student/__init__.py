@@ -17,18 +17,15 @@ from app.schema.student.run import (
     StudentTestCaseRunResultResponse,
 )
 from app.schema.student.teams import (
-    StudentLeaveTeamResponse,
-    StudentTeamAddMemberRequest,
-    StudentTeamAddMemberResponse,
-    StudentTeamAvailableResponse,
-    StudentTeamCreateAndJoinResponse,
-    StudentTeamCreateRequest,
-    StudentTeamJoinRequest,
-    StudentTeamJoinResponse,
+    StudentTeamMemberSummaryResponse,
+    StudentTeamCardResponse,
     StudentTeamListResponse,
-    StudentTeamMemberResponse,
-    StudentTeamRemoveMemberResponse,
-    StudentTeamResponse,
+    StudentTeamsResponse,
+    StudentTeamCreateRequest,
+    StudentTeamUpdateRequest,
+    StudentTeamInvitationResponse,
+    StudentTeamInvitationListResponse,
+    StudentTeamInvitationUpdateRequest,
 )
 
 __all__ = [
@@ -50,17 +47,14 @@ __all__ = [
     "StudentCodeRunResponse",
     "StudentTestCaseRunResultResponse",
     # Team schemas
-    "StudentTeamResponse",
-    "StudentTeamMemberResponse",
-    "StudentTeamAvailableResponse",
-    "StudentTeamJoinRequest",
-    "StudentTeamJoinResponse",
-    "StudentTeamCreateRequest",
-    "StudentTeamCreateAndJoinResponse",
-    # Team schemas - Member management
-    "StudentTeamAddMemberRequest",
-    "StudentTeamAddMemberResponse",
-    "StudentTeamRemoveMemberResponse",
-    "StudentLeaveTeamResponse",
+    "StudentTeamMemberSummaryResponse",
+    "StudentTeamCardResponse",
     "StudentTeamListResponse",
+    "StudentTeamsResponse",
+    "StudentTeamCreateRequest",
+    "StudentTeamUpdateRequest",
+    "StudentTeamInvitationResponse",
+    "StudentTeamInvitationListResponse",
+    "StudentTeamInvitationUpdateRequest",
 ]
+

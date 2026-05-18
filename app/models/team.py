@@ -1,5 +1,12 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
+from sqlalchemy import Enum
+from app.utils.enums import TeamInvitationStatus
 import uuid
 from datetime import datetime, timezone
+
+if TYPE_CHECKING:
+    from app.models.user import User
 
 from sqlalchemy import DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
@@ -43,10 +50,13 @@ class Team(Base):
     creator = relationship("User", foreign_keys=[created_by])
     leader = relationship("User", foreign_keys=[leader_id])
     audience = relationship("Audience")
-    members = relationship("TeamUser", back_populates="team")
+    members: Mapped[list[TeamUser]] = relationship("TeamUser", back_populates="team")
     team_contests = relationship("ContestTeam", back_populates="team")
     contest_violations = relationship(
         "ContestTeamViolation", back_populates="team", cascade="all, delete-orphan"
+    )
+    invitations: Mapped[list[TeamInvitation]] = relationship(
+        "TeamInvitation", back_populates="team", cascade="all, delete-orphan"
     )
 
 
@@ -61,3 +71,45 @@ class TeamUser(Base):
     )
     team = relationship("Team", back_populates="members")
     user = relationship("User", back_populates="teams")
+
+class TeamInvitation(Base):
+    __tablename__ = "team_invitation"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+
+    team_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("team.id", ondelete="CASCADE"), nullable=False
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+
+    invited_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+
+    invited_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    status: Mapped[TeamInvitationStatus] = mapped_column(
+        Enum(TeamInvitationStatus, native_enum=False),
+        default=TeamInvitationStatus.PENDING,
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    team: Mapped["Team"] = relationship("Team", back_populates="invitations")
+    user: Mapped["User"] = relationship("User", foreign_keys=[user_id])
+    invited_by_user: Mapped["User"] = relationship("User", foreign_keys=[invited_by])
