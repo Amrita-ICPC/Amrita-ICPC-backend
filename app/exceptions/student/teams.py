@@ -7,10 +7,17 @@ from app.exceptions.team import (
     TeamNotFoundError,
     MemberAlreadyInTeamError,
     InvalidTeamSizeError,
+    TeamLeaderAccessDeniedError,
+    StudentTeamNotFoundError,
+    StudentTeamInvitationNotFoundError,
 )
 
 __all__ = [
     "TeamNotFoundError",
     "MemberAlreadyInTeamError",
     "InvalidTeamSizeError",
+    "TeamLeaderAccessDeniedError",
+    "StudentTeamNotFoundError",
+    "StudentTeamInvitationNotFoundError",
 ]
+

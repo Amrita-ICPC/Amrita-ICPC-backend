@@ -78,3 +78,10 @@ class UserResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class StudentUserSearchResponse(UserResponse):
+    is_in_team: Optional[bool] = None
+    is_already_invited: Optional[bool] = None
+
+

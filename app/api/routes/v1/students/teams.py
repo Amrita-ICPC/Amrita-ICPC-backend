@@ -1,320 +1,334 @@
-"""Student team endpoints.
-
-Routes for:
-- Team management (create, join, leave)
-- Team listing and details
-- Team membership operations (add/remove members)
-"""
-
+from app.repositories.user import UserRepository
+from app.schema.student import (
+    StudentTeamCreateRequest,
+    StudentTeamUpdateRequest,
+    StudentTeamInvitationListResponse,
+    StudentTeamsResponse,
+    StudentTeamInvitationUpdateRequest,
+)
 from uuid import UUID
-
-from fastapi import APIRouter, Depends, Query, status
+from typing import Optional
+from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import can_read, get_current_user_id
+from app.auth.dependencies import get_current_user_id
 from app.core.clients.database import get_db
-from app.core.logger import logger
-from app.repositories.team import TeamRepository
-from app.schema.student.teams import (
-    StudentTeamCreateRequest,
-    StudentTeamCreateAndJoinResponse,
-    StudentTeamJoinRequest,
-    StudentTeamJoinResponse,
-    StudentTeamListResponse,
-    StudentTeamResponse,
-    StudentTeamAddMemberRequest,
-    StudentTeamAddMemberResponse,
-    StudentTeamRemoveMemberResponse,
-    StudentLeaveTeamResponse,
-)
-from app.core.guards.team import TeamOperationGuard
-from app.service.student.teams import StudentTeamService
+from app.core.response import create_api_response
+from app.repositories.student.team import StudentTeamRepository
+from app.repositories.dto.student.teams import StudentTeamFilters
+from app.repositories.dto.pagination import PaginationParams
+from app.schema.base import APIResponse
+from app.schema.student.teams import StudentTeamCardResponse
+from app.service.student.team import StudentTeamService
+from app.core.guards.team_student import TeamStudentGuard
+from app.utils.pagination import get_pagination
+from app.utils.enums import TeamInvitationStatus
 
-router = APIRouter(prefix="/students/teams", tags=["Student - Teams"])
+router = APIRouter(tags=["Student - Teams"])
 
 
 def get_student_team_service(db: AsyncSession = Depends(get_db)) -> StudentTeamService:
-    """Provide StudentTeamService instance."""
-    team_repo = TeamRepository(db)
-    guard = TeamOperationGuard(db)
-    return StudentTeamService(team_repo, guard)
+    """Provide StudentTeamService instance with request-scoped dependencies.
+
+    Args:
+        db: Async database session injected by FastAPI.
+
+    Returns:
+        Configured StudentTeamService instance.
+    """
+    repository = StudentTeamRepository(db)
+    user_repository = UserRepository(db)
+    guard = TeamStudentGuard(db)
+    return StudentTeamService(repository,user_repository, guard)
 
 
 @router.get(
     "",
-    response_model=StudentTeamListResponse,
     status_code=status.HTTP_200_OK,
-    summary="List my teams",
-    dependencies=[can_read("contests")],
+    response_model=APIResponse[StudentTeamsResponse],
 )
 async def get_my_teams(
+    request: Request,
+    page: int = Query(1, ge=1, description="Current page number (1-indexed)"),
+    page_size: int = Query(10, ge=1, le=100, description="Items per page"),
+    search: str | None = Query(None, description="Search by team name"),
+    created_only: bool = Query(False, description="Filter only teams created by you"),
+    leader_only: bool = Query(False, description="Filter only teams where you are the leader"),
+    min_size: int | None = Query(None, description="Minimum team size filter"),
+    max_size: int | None = Query(None, description="Maximum team size filter"),
     user_id: UUID = Depends(get_current_user_id),
     service: StudentTeamService = Depends(get_student_team_service),
-    limit: int = Query(10, ge=1, le=100),
-    offset: int = Query(0, ge=0),
-) -> StudentTeamListResponse:
-    """
-    Get all teams student is a member of.
-    
+):
+    """Retrieve paginated and filtered list of teams that the student belongs to.
+
     Args:
-        user_id: Current authenticated user
-        service: StudentTeamService instance
-        limit: Pagination limit
-        offset: Pagination offset
-        
+        request: FastAPI Request object.
+        page: Current page number.
+        page_size: Items per page.
+        search: Optional search term.
+        created_only: Filter only created teams.
+        leader_only: Filter only teams where you are the leader.
+        min_size: Minimum team member size.
+        max_size: Maximum team member size.
+        user_id: ID of the authenticated user.
+        service: Injected StudentTeamService.
+
     Returns:
-        List of teams
+        API response containing team cards list and paginated metadata.
     """
-    result = await service.get_my_teams(
-        user_id=user_id,
-        skip=offset,
-        limit=limit,
+    filters = StudentTeamFilters(
+        search_term=search,
+        created_only=created_only,
+        leader_only=leader_only,
+        min_size=min_size,
+        max_size=max_size,
     )
-    return result
+    pagination = PaginationParams(
+        skip=(page - 1) * page_size,
+        limit=page_size,
+    )
+
+    list_response = await service.get_student_teams(
+        user_id=user_id,
+        filters=filters,
+        pagination=pagination,
+    )
+
+    pagination_meta = get_pagination(
+        total=list_response.total,
+        page=page,
+        page_size=page_size,
+    )
+
+
+    return create_api_response(
+        request,
+        data={
+            "teams": list_response.teams,
+            "pending_invitation": list_response.pending_invitation_count,
+        },
+        message="Student teams fetched successfully",
+        pagination=pagination_meta,
+    )
+
+@router.get(
+    "/invitations",
+    status_code=status.HTTP_200_OK,
+    response_model=APIResponse[StudentTeamInvitationListResponse],
+)
+async def get_team_invitations(
+    request: Request,
+    status_filter: Optional[TeamInvitationStatus] = Query(None, alias="status", description="Filter invitations by status"),
+    user_id: UUID = Depends(get_current_user_id),
+    service: StudentTeamService = Depends(get_student_team_service),
+):
+    """Retrieve all team invitations for the authenticated student.
+
+    Args:
+        request: FastAPI Request object.
+        status_filter: Optional invitation status filter.
+        user_id: ID of the authenticated user.
+        service: Injected StudentTeamService.
+
+    Returns:
+        API response containing list of invitations.
+    """
+    invitations = await service.get_team_invitations(
+        user_id=user_id,
+        invitation_status=status_filter,
+    )
+    return create_api_response(
+        request,
+        data=invitations,
+        message="Team invitations fetched successfully",
+    )
+
+@router.patch(
+    "/invitations/{id}",
+    status_code=status.HTTP_200_OK,
+    response_model=APIResponse[None],
+)
+async def accept_or_reject_team_invitation(
+    request: Request,
+    id: UUID,
+    body: StudentTeamInvitationUpdateRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    service: StudentTeamService = Depends(get_student_team_service),
+):
+    """Accept or reject a team invitation.
+
+    Args:
+        request: FastAPI Request object.
+        id: UUID of the target invitation.
+        body: Request body containing the status.
+        user_id: ID of the authenticated user.
+        service: Injected StudentTeamService.
+
+    Returns:
+        APIResponse indicating successful update.
+    """
+    await service.accept_or_reject_team_invitation(
+        user_id=user_id, invitation_id=id, status=body.status
+    )
+    return create_api_response(
+        request,
+        data=None,
+        message="Team invitation accepted or rejected successfully",
+    )
 
 
 @router.get(
     "/{team_id}",
-    response_model=StudentTeamResponse,
     status_code=status.HTTP_200_OK,
-    summary="Get team details",
-    dependencies=[can_read("contests")],
+    response_model=APIResponse[StudentTeamCardResponse],
 )
-async def get_team_details(
+async def get_team_by_id(
+    request: Request,
     team_id: UUID,
     user_id: UUID = Depends(get_current_user_id),
     service: StudentTeamService = Depends(get_student_team_service),
-) -> StudentTeamResponse:
-    """
-    Get team details including members.
-    
+):
+    """Retrieve details of a specific team the student belongs to.
+
     Args:
-        team_id: Team UUID
-        user_id: Current authenticated user
-        service: StudentTeamService instance
-        
+        request: FastAPI Request object.
+        team_id: UUID of the target team.
+        user_id: ID of the authenticated user.
+        service: Injected StudentTeamService.
+
     Returns:
-        Team details with member list
+        API response containing team card details.
+
+    Raises:
+        AppBaseException: If the team is not found or student lacks permission.
     """
-    result = await service.get_team_by_id(
-        user_id=user_id,
-        team_id=team_id,
+    team_card = await service.get_student_team_by_id(user_id=user_id, team_id=team_id)
+    return create_api_response(
+        request,
+        data=team_card,
+        message="Team details fetched successfully",
     )
-    return result
-
-
-@router.get(
-    "/contests/{contest_id}/available",
-    response_model=StudentTeamListResponse,
-    status_code=status.HTTP_200_OK,
-    summary="Get available teams to join",
-    dependencies=[can_read("contests")],
-)
-async def get_available_teams(
-    contest_id: UUID,
-    user_id: UUID = Depends(get_current_user_id),
-    service: StudentTeamService = Depends(get_student_team_service),
-    limit: int = Query(10, ge=1, le=100),
-    offset: int = Query(0, ge=0),
-) -> StudentTeamListResponse:
-    """
-    Get teams available to join in a contest.
-    
-    Teams must have available slots.
-    
-    Args:
-        contest_id: Contest UUID
-        user_id: Current authenticated user
-        service: StudentTeamService instance
-        limit: Pagination limit
-        offset: Pagination offset
-        
-    Returns:
-        List of available teams
-    """
-    result = await service.get_available_teams_in_contest(
-        user_id=user_id,
-        contest_id=contest_id,
-        skip=offset,
-        limit=limit,
-    )
-    return result
-
 
 @router.post(
     "",
-    response_model=StudentTeamCreateAndJoinResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Create and join team",
-    dependencies=[can_read("contests")],
+    response_model=APIResponse[StudentTeamCardResponse],
 )
-async def create_and_join_team(
-    request: StudentTeamCreateRequest,
+async def create_team(
+    request: Request,
+    team_create_request: StudentTeamCreateRequest,
     user_id: UUID = Depends(get_current_user_id),
     service: StudentTeamService = Depends(get_student_team_service),
-) -> StudentTeamCreateAndJoinResponse:
-    """
-    Create a new team and join it.
-    
-    Only for public contests.
-    
-    Args:
-        request: Team creation request
-        user_id: Current authenticated user
-        service: StudentTeamService instance
-        
-    Returns:
-        Created team details
-    """
-    result = await service.create_and_join_team(
-        contest_id=request.contest_id,
-        team_data=request,
-        created_by=user_id,
-    )
-    logger.info(f"User {user_id} created team {request.name}")
-    return result
+):
+    """Create a new team led by the authenticated student.
 
-
-@router.post(
-    "/{team_id}/join",
-    response_model=StudentTeamJoinResponse,
-    status_code=status.HTTP_200_OK,
-    summary="Join existing team",
-    dependencies=[can_read("contests")],
-)
-async def join_team(
-    team_id: UUID,
-    request: StudentTeamJoinRequest,
-    user_id: UUID = Depends(get_current_user_id),
-    service: StudentTeamService = Depends(get_student_team_service),
-) -> StudentTeamJoinResponse:
-    """
-    Join an existing team.
-    
     Args:
-        team_id: Team UUID to join
-        request: Join request
-        user_id: Current authenticated user
-        service: StudentTeamService instance
-        
+        request: FastAPI Request object.
+        team_create_request: Request body with team details.
+        user_id: ID of the authenticated user.
+        service: Injected StudentTeamService.
+
     Returns:
-        Join confirmation
+        API response containing the created team's card.
     """
-    result = await service.join_team(
-        team_id=team_id,
-        contest_id=request.contest_id,
+    team_card = await service.create_student_team(
         user_id=user_id,
+        team_name=team_create_request.name,
+        team_description=team_create_request.description,
     )
-    logger.info(f"User {user_id} joined team {team_id}")
-    return result
-
-
-@router.post(
-    "/{team_id}/leave",
-    response_model=StudentLeaveTeamResponse,
-    status_code=status.HTTP_200_OK,
-    summary="Leave team",
-    dependencies=[can_read("contests")],
-)
-async def leave_team(
-    team_id: UUID,
-    user_id: UUID = Depends(get_current_user_id),
-    service: StudentTeamService = Depends(get_student_team_service),
-) -> StudentLeaveTeamResponse:
-    """
-    Leave a team.
-    
-    Args:
-        team_id: Team UUID to leave
-        user_id: Current authenticated user
-        service: StudentTeamService instance
-        
-    Returns:
-        Leave confirmation
-    """
-    result = await service.leave_team(
-        user_id=user_id,
-        team_id=team_id,
+    return create_api_response(
+        request,
+        data=team_card,
+        message="Team created successfully",
     )
-    logger.info(f"User {user_id} left team {team_id}")
-    return result
-
-
-@router.post(
-    "/{team_id}/members",
-    response_model=StudentTeamAddMemberResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Add members to team (leader only)",
-    dependencies=[can_read("contests")],
-)
-async def add_member_to_team(
-    team_id: UUID,
-    request: StudentTeamAddMemberRequest,
-    user_id: UUID = Depends(get_current_user_id),
-    service: StudentTeamService = Depends(get_student_team_service),
-) -> StudentTeamAddMemberResponse:
-    """
-    Add members to team (leader only).
-    
-    Only the team leader can add new members. Follows the same strategy as
-    the regular team endpoints.
-    
-    All member additions are assumed to be within the student's current contest context.
-    The method determines the contest from the team's relationship.
-    
-    Args:
-        team_id: Team UUID
-        request: Add members request with list of user_ids
-        user_id: Current authenticated user (must be leader)
-        service: StudentTeamService instance
-        
-    Returns:
-        Updated team members list and confirmation
-        
-    Raises:
-        PermissionDenied: If user is not the team leader
-        TeamNotFound: If team does not exist
-        UserNotFound: If any user IDs don't exist
-        InvalidTeamSize: If adding members would exceed team size limit
-    """
-    result = await service.add_member_to_team(
-        team_id=team_id,
-        leader_user_id=user_id,
-        member_ids=request.member_ids,
-    )
-    logger.info(f"User {user_id} added {len(request.member_ids)} members to team {team_id}")
-    return result
 
 
 @router.delete(
-    "/{team_id}/members/{member_id}",
-    response_model=StudentTeamRemoveMemberResponse,
+    "/{team_id}",
     status_code=status.HTTP_200_OK,
-    summary="Remove member from team (leader only)",
-    dependencies=[can_read("contests")],
+    response_model=APIResponse[None],
 )
-async def remove_member_from_team(
+async def delete_team(
+    request: Request,
     team_id: UUID,
-    member_id: UUID,
     user_id: UUID = Depends(get_current_user_id),
     service: StudentTeamService = Depends(get_student_team_service),
-) -> StudentTeamRemoveMemberResponse:
-    """
-    Remove a member from team (leader only).
-    
+):
+    """Delete an existing student team. Only the team leader is permitted.
+
     Args:
-        team_id: Team UUID
-        member_id: Member UUID to remove
-        user_id: Current authenticated user (must be leader)
-        service: StudentTeamService instance
-        
+        request: FastAPI Request object.
+        team_id: UUID of the team to delete.
+        user_id: ID of the authenticated user.
+        service: Injected StudentTeamService.
+
     Returns:
-        Removal confirmation
+        API response indicating successful deletion.
     """
-    result = await service.remove_member_from_team(
-        team_id=team_id,
-        member_id=member_id,
-        user_id=user_id,
+    await service.delete_student_team(user_id=user_id, team_id=team_id)
+    return create_api_response(
+        request,
+        data=None,
+        message="Team deleted successfully",
     )
-    logger.info(f"User {user_id} removed member {member_id} from team {team_id}")
-    return result
+    
+
+
+@router.patch(
+    "/{team_id}",
+    status_code=status.HTTP_200_OK,
+    response_model=APIResponse[StudentTeamCardResponse],
+)
+async def edit_team(
+    request: Request,
+    team_id: UUID,
+    team_update_request: StudentTeamUpdateRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    service: StudentTeamService = Depends(get_student_team_service),
+):
+    """Edit/Update an existing student team. Only the team leader is permitted.
+
+    Args:
+        request: FastAPI Request object.
+        team_id: UUID of the team to edit/update.
+        team_update_request: Request body with team details to update.
+        user_id: ID of the authenticated user.
+        service: Injected StudentTeamService.
+
+    Returns:
+        API response containing the updated team's card.
+    """
+    updated_card = await service.update_student_team(
+        user_id=user_id,
+        team_id=team_id,
+        name=team_update_request.name,
+        description=team_update_request.description,
+    )
+    return create_api_response(
+        request,
+        data=updated_card,
+        message="Team updated successfully",
+    )
+
+
+@router.post(
+    "/{team_id}/invitation/{invite_user_id}",
+    status_code=status.HTTP_200_OK,
+    response_model=APIResponse[None],
+)
+async def invite_to_team(
+    request: Request,
+    invite_user_id: UUID,
+    team_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: StudentTeamService = Depends(get_student_team_service),
+):
+    """Invite a user to join the team."""
+    await service.create_team_invitations(user_id=user_id, team_id=team_id, invite_user_id=invite_user_id)
+    return create_api_response(
+        request,
+        data=None,
+        message="Invitation sent successfully",
+    )
+
+    

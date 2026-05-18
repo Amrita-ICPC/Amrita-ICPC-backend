@@ -18,8 +18,10 @@ class StudentTeamFilters:
     """Filters for querying teams from a student's perspective."""
 
     search_term: str | None = None
-    status: TeamStatus | None = None
-    only_my_teams: bool = False  # If True, only teams where user is a member
+    created_only: bool = False   # If True, only teams created by the student
+    leader_only: bool = False    # If True, only teams where user is leader
+    min_size: int | None = None  # Minimum team member count filter
+    max_size: int | None = None  # Maximum team member count filter
 
 
 @dataclass

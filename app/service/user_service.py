@@ -14,7 +14,7 @@ from app.models.audience import UserAudience
 from app.models.user import User
 from app.repositories.dto.user import UserListFilters
 from app.repositories.user import UserRepository
-from app.schema.user import UserResponse
+from app.schema.user import UserResponse, StudentUserSearchResponse
 from app.utils.enums import UserRole
 
 
@@ -248,3 +248,57 @@ class UserService:
             error_message = f"Failed to sync Keycloak users: {str(e)}"
             logger.error(error_message)
             raise KeycloakSyncError(error_message)
+
+    @staticmethod
+    async def list_students_with_team_check(
+        db: AsyncSession,
+        filters: UserListFilters,
+        actor_id: UUID,
+        team_id: UUID | None = None,
+    ) -> tuple[int, list[StudentUserSearchResponse]]:
+        """List students with a check to see if they are already in the specified team.
+
+        Args:
+            db: Database session.
+            filters: Filter options for the user search.
+            actor_id: ID of the user executing the query.
+            team_id: Optional team ID to check membership.
+
+        Returns:
+            A tuple of total count and the mapped list of StudentUserSearchResponse schemas.
+        """
+        total, users = await UserService.list_users(db, filters, actor_id=actor_id)
+
+        # Check team membership and pending invitations if team_id is provided
+        member_ids = set()
+        invited_ids = set()
+        if team_id:
+            from app.models.team import TeamUser, TeamInvitation
+            from app.utils.enums import TeamInvitationStatus
+
+            stmt = select(TeamUser.user_id).where(TeamUser.team_id == team_id)
+            res = await db.execute(stmt)
+            member_ids = set(res.scalars().all())
+
+            stmt_inv = select(TeamInvitation.user_id).where(
+                TeamInvitation.team_id == team_id,
+                TeamInvitation.status == TeamInvitationStatus.PENDING,
+            )
+            res_inv = await db.execute(stmt_inv)
+            invited_ids = set(res_inv.scalars().all())
+
+        # Map to StudentUserSearchResponse schemas
+        mapped_users = []
+        for user in users:
+            is_in_team = user.id in member_ids if team_id else None
+            is_already_invited = user.id in invited_ids if team_id else None
+            mapped_users.append(
+                StudentUserSearchResponse(
+                    **user.model_dump(),
+                    is_in_team=is_in_team,
+                    is_already_invited=is_already_invited,
+                )
+            )
+
+        return total, mapped_users
+

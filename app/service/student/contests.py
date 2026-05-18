@@ -27,7 +27,27 @@ from app.core.guards.contest_student import ContestStudentGuard
 
 
 class StudentContestService:
-    def __init__(self, repository: StudentContestRepository,contest_repository: ContestRepository,team_repository: TeamRepository, contest_student_guard: ContestStudentGuard) -> None:
+    """Service class for handling student-facing contest operations.
+
+    This service coordinates repository access, permission guard checks,
+    and cache handling for student queries related to contests.
+    """
+
+    def __init__(
+        self,
+        repository: StudentContestRepository,
+        contest_repository: ContestRepository,
+        team_repository: TeamRepository,
+        contest_student_guard: ContestStudentGuard,
+    ) -> None:
+        """Initialize the StudentContestService with required dependencies.
+
+        Args:
+            repository: Repository for student contest queries.
+            contest_repository: Repository for general contest operations.
+            team_repository: Repository for team operations.
+            contest_student_guard: Guard for student eligibility checks.
+        """
         self.repository = repository
         self.contest_student_guard = contest_student_guard
         self.contest_repository = contest_repository
@@ -45,8 +65,16 @@ class StudentContestService:
         search: str | None,
         pagination: PaginationParams,
     ) -> StudentContestListResponse:
-        """
-        Retrieve all available contests for a student with filtering and pagination.
+        """Retrieve all available contests for a student with filtering and pagination.
+
+        Args:
+            user_id: The unique identifier of the requesting user.
+            request: Filters such as registration status, run status, and team size bounds.
+            search: Optional search keyword for contest names.
+            pagination: Pagination parameters including limit and skip values.
+
+        Returns:
+            StudentContestListResponse: Paginated list of available contests with total count and teams count.
         """
         filters = StudentContestFilters(
             search_term=search,
@@ -70,12 +98,24 @@ class StudentContestService:
             run_status_calculator=compute_run_status
         )
 
-    
     @cache_get(
         key_builder=lambda self, contest_id, user_id: f"student:contest:user:{user_id}:contest:{contest_id}",
         ttl=300
     )
     async def get_contest_by_id(self, contest_id: UUID, user_id: UUID) -> StudentContestDetailsResponse:
+        """Retrieve the detailed information of a specific contest for a student.
+
+        Args:
+            contest_id: The unique identifier of the contest.
+            user_id: The unique identifier of the student making the request.
+
+        Returns:
+            StudentContestDetailsResponse: Detailed configuration, run status, and metadata of the contest.
+
+        Raises:
+            ContestNotFoundError: If the contest is not found.
+            StudentNotEligibleForContestError: If the student does not meet accessibility/audience checks.
+        """
         # Get contest details
         contest = await self.contest_repository.get_contest_or_raise(contest_id)
 
@@ -96,8 +136,22 @@ class StudentContestService:
     async def get_student_status_in_contest(
         self, contest_id: UUID, user_id: UUID
     ) -> StudentContestStatusResponse:
-        """
-        Get the participation status of a student in a contest.
+        """Get the participation status and start readiness of a student in a contest.
+
+        This method calculates the team completion percentage, approved member count,
+        individual roles, and checks if the contest is currently open, upcoming, or ended
+        relative to the current UTC time.
+
+        Args:
+            contest_id: The unique identifier of the contest.
+            user_id: The unique identifier of the student.
+
+        Returns:
+            StudentContestStatusResponse: Details about registration status, readiness to start, and team composition.
+
+        Raises:
+            ContestNotFoundError: If the contest does not exist.
+            StudentNotEligibleForContestError: If the student is not eligible to participate in the contest.
         """
         # Check if the student is eligible for the contest
         contest = await self.contest_repository.get_contest_or_raise(contest_id)
