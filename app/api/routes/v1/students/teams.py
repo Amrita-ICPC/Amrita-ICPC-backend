@@ -5,6 +5,7 @@ from app.schema.student import (
     StudentTeamInvitationListResponse,
     StudentTeamsResponse,
     StudentTeamInvitationUpdateRequest,
+    StudentTeamListResponse,
 )
 from uuid import UUID
 from typing import Optional
@@ -22,7 +23,7 @@ from app.schema.student.teams import StudentTeamCardResponse
 from app.service.student.team import StudentTeamService
 from app.core.guards.team_student import TeamStudentGuard
 from app.utils.pagination import get_pagination
-from app.utils.enums import TeamInvitationStatus
+from app.utils.enums import TeamInvitationStatus, InvitationType
 
 router = APIRouter(tags=["Student - Teams"])
 
@@ -56,6 +57,7 @@ async def get_my_teams(
     leader_only: bool = Query(False, description="Filter only teams where you are the leader"),
     min_size: int | None = Query(None, description="Minimum team size filter"),
     max_size: int | None = Query(None, description="Maximum team size filter"),
+    is_public: bool | None = Query(None, description="Filter by public/private setting"),
     user_id: UUID = Depends(get_current_user_id),
     service: StudentTeamService = Depends(get_student_team_service),
 ):
@@ -70,6 +72,7 @@ async def get_my_teams(
         leader_only: Filter only teams where you are the leader.
         min_size: Minimum team member size.
         max_size: Maximum team member size.
+        is_public: Filter by public/private setting.
         user_id: ID of the authenticated user.
         service: Injected StudentTeamService.
 
@@ -82,6 +85,7 @@ async def get_my_teams(
         leader_only=leader_only,
         min_size=min_size,
         max_size=max_size,
+        is_public=is_public,
     )
     pagination = PaginationParams(
         skip=(page - 1) * page_size,
@@ -106,6 +110,7 @@ async def get_my_teams(
         data={
             "teams": list_response.teams,
             "pending_invitation": list_response.pending_invitation_count,
+            "pending_request": list_response.pending_request_count,
         },
         message="Student teams fetched successfully",
         pagination=pagination_meta,
@@ -118,24 +123,33 @@ async def get_my_teams(
 )
 async def get_team_invitations(
     request: Request,
+    invitation_type: InvitationType = Query(InvitationType.INVITE, alias="type", description="Type of invitation (INVITE or REQUEST)"),
     status_filter: Optional[TeamInvitationStatus] = Query(None, alias="status", description="Filter invitations by status"),
+    team_id: Optional[UUID] = Query(None, alias="team_id", description="Optional team ID filter"),
+    sent: bool = Query(False, alias="sent", description="Filter for sent invitations/requests where current user is the sender"),
     user_id: UUID = Depends(get_current_user_id),
     service: StudentTeamService = Depends(get_student_team_service),
 ):
-    """Retrieve all team invitations for the authenticated student.
+    """Retrieve all team invitations or requests for the authenticated student.
 
     Args:
         request: FastAPI Request object.
+        invitation_type: Type of invitation filter.
         status_filter: Optional invitation status filter.
+        team_id: Optional team ID filter.
+        sent: Optional bool to retrieve sent invitations/requests.
         user_id: ID of the authenticated user.
         service: Injected StudentTeamService.
 
     Returns:
-        API response containing list of invitations.
+        API response containing list of invitations/requests.
     """
     invitations = await service.get_team_invitations(
         user_id=user_id,
+        invitation_type=invitation_type,
         invitation_status=status_filter,
+        team_id=team_id,
+        sent=sent,
     )
     return create_api_response(
         request,
@@ -174,6 +188,57 @@ async def accept_or_reject_team_invitation(
         request,
         data=None,
         message="Team invitation accepted or rejected successfully",
+    )
+
+
+@router.get(
+    "/search",
+    status_code=status.HTTP_200_OK,
+    response_model=APIResponse[StudentTeamListResponse],
+)
+async def search_teams_by_name(
+    request: Request,
+    name: str = Query(..., min_length=1, description="Search teams by name"),
+    page: int = Query(1, ge=1, description="Current page number (1-indexed)"),
+    page_size: int = Query(10, ge=1, le=100, description="Items per page"),
+    user_id: UUID = Depends(get_current_user_id),
+    service: StudentTeamService = Depends(get_student_team_service),
+):
+    """Search student teams by name with case-insensitive partial match.
+
+    Args:
+        request: FastAPI Request object.
+        name: Name query to search.
+        page: Current page number.
+        page_size: Items per page.
+        user_id: ID of the authenticated user.
+        service: Injected StudentTeamService.
+
+    Returns:
+        API response containing paginated list of matched student team cards.
+    """
+    pagination = PaginationParams(
+        skip=(page - 1) * page_size,
+        limit=page_size,
+    )
+
+    list_response = await service.search_teams_by_name(
+        name=name,
+        pagination=pagination,
+        user_id=user_id,
+    )
+
+    pagination_meta = get_pagination(
+        total=list_response.total,
+        page=page,
+        page_size=page_size,
+    )
+
+    return create_api_response(
+        request,
+        data=list_response,
+        message="Teams searched successfully",
+        pagination=pagination_meta,
     )
 
 
@@ -235,6 +300,7 @@ async def create_team(
         user_id=user_id,
         team_name=team_create_request.name,
         team_description=team_create_request.description,
+        is_public=team_create_request.is_public,
     )
     return create_api_response(
         request,
@@ -303,6 +369,7 @@ async def edit_team(
         team_id=team_id,
         name=team_update_request.name,
         description=team_update_request.description,
+        is_public=team_update_request.is_public,
     )
     return create_api_response(
         request,
@@ -316,19 +383,31 @@ async def edit_team(
     status_code=status.HTTP_200_OK,
     response_model=APIResponse[None],
 )
+@router.post(
+    "/{team_id}/invitation",
+    status_code=status.HTTP_200_OK,
+    response_model=APIResponse[None],
+)
 async def invite_to_team(
     request: Request,
-    invite_user_id: UUID,
     team_id: UUID,
+    invite_user_id: Optional[UUID] = None,
+    invitation_type: InvitationType = Query(InvitationType.INVITE, alias="type", description="Type of invitation (INVITE or REQUEST)"),
     user_id: UUID = Depends(get_current_user_id),
     service: StudentTeamService = Depends(get_student_team_service),
 ):
-    """Invite a user to join the team."""
-    await service.create_team_invitations(user_id=user_id, team_id=team_id, invite_user_id=invite_user_id)
+    """Invite a user to join the team (INVITE type) or request to join a team (REQUEST type)."""
+    await service.create_team_invitation(
+        user_id=user_id,
+        team_id=team_id,
+        invitation_type=invitation_type,
+        invite_user_id=invite_user_id,
+    )
+    message = "Invitation sent successfully" if invitation_type == InvitationType.INVITE else "Request sent successfully"
     return create_api_response(
         request,
         data=None,
-        message="Invitation sent successfully",
+        message=message,
     )
 
     

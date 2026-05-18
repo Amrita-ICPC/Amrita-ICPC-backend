@@ -10,7 +10,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.utils.enums import TeamApprovalStatus, TeamInvitationStatus
+from app.utils.enums import TeamApprovalStatus, TeamInvitationStatus, InvitationType
 
 from datetime import datetime
 from typing import List, Optional
@@ -47,6 +47,9 @@ class StudentTeamCardResponse(BaseModel):
     member_count: int = Field(
         ..., description="Total count of members currently in the team"
     )
+    is_public: bool = Field(..., description="Whether the team is public")
+    code: str = Field(..., description="The unique 6-digit random code of the team")
+    has_requested: bool = Field(..., description="Whether the requesting student has a pending join request")
 
     # Avatar Stack Helper Fields
     members: List[StudentTeamMemberSummaryResponse] = Field(
@@ -74,6 +77,7 @@ class StudentTeamListResponse(BaseModel):
     skip: int = Field(..., description="Number of items skipped")
     limit: int = Field(..., description="Maximum number of items returned")
     pending_invitation_count: int = Field(..., description="Total count of pending invitations for this student")
+    pending_request_count: int = Field(..., description="Total count of pending join requests for teams led by this student")
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -83,6 +87,7 @@ class StudentTeamsResponse(BaseModel):
 
     teams: List[StudentTeamCardResponse] = Field(..., description="List of team cards")
     pending_invitation: int = Field(..., description="Total count of pending invitations for this student")
+    pending_request: int = Field(..., description="Total count of pending join requests for teams led by this student")
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -94,6 +99,7 @@ class StudentTeamCreateRequest(BaseModel):
 
     name: str = Field(..., min_length=3, max_length=100, description="The name of the team")
     description: Optional[str] = Field(None, max_length=500, description="Description of the team")
+    is_public: bool = Field(default=True, description="Whether the team is public")
 
 
 class StudentTeamUpdateRequest(BaseModel):
@@ -101,6 +107,7 @@ class StudentTeamUpdateRequest(BaseModel):
 
     name: Optional[str] = Field(None, min_length=3, max_length=100, description="The new name of the team")
     description: Optional[str] = Field(None, max_length=500, description="The new description of the team")
+    is_public: Optional[bool] = Field(None, description="Whether the team is public")
 
 
 class StudentTeamInvitationResponse(BaseModel):
@@ -115,6 +122,7 @@ class StudentTeamInvitationResponse(BaseModel):
     updated_at: datetime = Field(..., description="Timestamp of the last invitation update")
     member_count: int = Field(..., description="Total count of members currently in the team")
     invited_by_name: str = Field(..., description="Name of the user who sent the invitation")
+    invitation_type: InvitationType = Field(..., description="The type of invitation: INVITE or REQUEST")
 
     model_config = ConfigDict(from_attributes=True)
 

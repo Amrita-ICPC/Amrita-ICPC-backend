@@ -280,7 +280,7 @@ class UserService:
             res = await db.execute(stmt)
             member_ids = set(res.scalars().all())
 
-            stmt_inv = select(TeamInvitation.user_id).where(
+            stmt_inv = select(TeamInvitation.reciever_id).where(
                 TeamInvitation.team_id == team_id,
                 TeamInvitation.status == TeamInvitationStatus.PENDING,
             )
