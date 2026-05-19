@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 from pydantic import BaseModel, Field, field_validator, model_validator
-from app.utils.enums import ContestMode, ContestRunStatus, ContestStatus, TeamApprovalMode
+from app.utils.enums import ContestMode, ContestRunStatus, ContestStatus, TeamApprovalMode, RegistrationState
 from app.schema.contest import ContestAudienceResponse
 
 class StudentContestRegistrationRequest(BaseModel):
@@ -103,7 +103,7 @@ class RegistrationStatus(BaseModel):
     """Schema for student registration status in a contest."""
     registered: bool = Field(..., description="Whether the student is registered for the contest")
     approved: bool = Field(..., description="Whether the registration is approved")
-    status: str = Field(..., description="Combined registration status (e.g., REGISTERED, PENDING, NOT_REGISTERED)")
+    status: RegistrationState = Field(..., description="Combined registration status (e.g., APPROVED, PENDING_APPROVAL, NOT_REGISTERED)")
 
 class ReadinessStatus(BaseModel):
     """Schema for student readiness to start a contest."""

@@ -1,3 +1,5 @@
+from app.repositories.contest import ContestRepository
+from app.repositories.user import UserRepository
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, status
@@ -45,6 +47,8 @@ def get_team_service(db: AsyncSession = Depends(get_db)) -> TeamService:
         repository=TeamRepository(db),
         guard=TeamOperationGuard(db),
         validator=TeamValidator(),
+        user_repository=UserRepository(db),
+        contest_repository=ContestRepository(db),
     )
 
 
@@ -376,88 +380,4 @@ async def get_team_members(
         data=members,
         message="Team members fetched successfully",
         pagination=pagination,
-    )
-
-
-@router.post(
-    "/contests/{contest_id}/teams/{team_id}/members",
-    response_model=APIResponse[list[TeamMemberResponse]],
-    summary="Add members to a team",
-    dependencies=[can_update("teams")],
-)
-async def add_team_members(
-    request: Request,
-    contest_id: UUID,
-    team_id: UUID,
-    member_data: TeamMemberAdd,
-    user_id: UUID = Depends(get_current_user_id),
-    service: TeamService = Depends(get_team_service),
-):
-    """
-    Add members to an existing team.
-
-    Args:
-        request (Request): Framework context.
-        contest_id (UUID): The unique identifier of the contest.
-        team_id (UUID): The unique identifier of the team.
-        member_data (TeamMemberAdd): Request containing list of member IDs.
-        user_id (UUID): Authenticated user ID.
-        service (TeamService): Injected domain service.
-
-    Returns:
-        APIResponse: Success confirmation with updated member list.
-    """
-    _, members = await service.add_team_members(
-        contest_id, team_id, member_data, user_id
-    )
-    logger.info(
-        f"Added {len(member_data.member_ids)} members to team {team_id} "
-        f"in contest {contest_id} by user {user_id}"
-    )
-    return create_api_response(
-        request,
-        data=members,
-        message="Members added successfully",
-    )
-
-
-@router.delete(
-    "/contests/{contest_id}/teams/{team_id}/members",
-    response_model=APIResponse[list[TeamMemberResponse]],
-    summary="Remove members from a team",
-    dependencies=[can_update("teams")],
-)
-async def remove_team_member(
-    request: Request,
-    contest_id: UUID,
-    team_id: UUID,
-    member_data: TeamMemberRemove,
-    user_id: UUID = Depends(get_current_user_id),
-    service: TeamService = Depends(get_team_service),
-):
-    """
-    Remove members from an existing team.
-
-    Args:
-        request (Request): Framework context.
-        contest_id (UUID): The unique identifier of the contest.
-        team_id (UUID): The unique identifier of the team.
-        member_data (TeamMemberRemove): Request containing list of member IDs to remove.
-        user_id (UUID): Authenticated user ID.
-        service (TeamService): Injected domain service.
-
-    Returns:
-        APIResponse: Success confirmation with updated member list.
-    """
-    _, members = await service.remove_team_member(
-        contest_id, team_id, member_data, user_id
-    )
-    logger.info(
-        f"Removed {len(member_data.member_ids)} members from team {team_id} "
-        f"in contest {contest_id} by user {user_id}"
-    )
-    return create_api_response(
-        request,
-        data=members,
-        message="Members removed successfully",
     )

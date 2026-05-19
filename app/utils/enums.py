@@ -327,11 +327,13 @@ class ContestTeamMemberStatus(str, enum.Enum):
 
     Attributes:
         PENDING: Team registration is pending.
+        CANCELLED: Team registration is cancelled.
         APPROVED: Team registration is approved.
         REJECTED: Team registration is rejected.
     """
 
     PENDING = "PENDING"
+    CANCELLED = "CANCELLED"
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
 
@@ -354,16 +356,27 @@ class TeamInvitationStatus(str, enum.Enum):
 
     Attributes:
         PENDING: Invitation is pending.
+        CANCELLED: Invitation is cancelled.
         ACCEPTED: Invitation is accepted.
         REJECTED: Invitation is rejected.
     """
     PENDING = "PENDING"
+    CANCELLED = "CANCELLED"
     ACCEPTED = "ACCEPTED"
     REJECTED = "REJECTED"
 
-class InvitationType(str,enum.Enum):
+class InvitationType(str, enum.Enum):
 
     REQUEST = "REQUEST"
     INVITE = "INVITE"
     
+
+class RegistrationState(str, enum.Enum):
+    """
+    Enumeration of student registration states in a contest.
+    """
+    NOT_REGISTERED = "NOT_REGISTERED"
+    PENDING_APPROVAL = "PENDING_APPROVAL"
+    APPROVED = "APPROVED"
+
 

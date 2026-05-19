@@ -263,6 +263,9 @@ class ContestTeam(Base):
     """
 
     __tablename__ = "contest_team"
+    __table_args__ = (
+       UniqueConstraint("contest_id", "team_id", name="uq_contest_team_contest_id_team_id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
@@ -310,6 +313,10 @@ class ContestTeam(Base):
 
 class ContestTeamMember(Base):
     __tablename__ = "contest_team_member"
+
+    __table_args__ = (
+        UniqueConstraint("contest_team_id", "user_id", name="uq_contest_team_member_team_user"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4

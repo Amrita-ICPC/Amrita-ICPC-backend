@@ -13,7 +13,7 @@ from app.schema.student.contests import (
     StudentContestDetailsResponse,
     StudentContestStatusResponse,
 )
-from app.utils.enums import ContestRunStatus, ContestStatus, TeamStatus, TeamMemberRole, ContestTeamMemberStatus
+from app.utils.enums import ContestRunStatus, ContestStatus, TeamStatus, TeamMemberRole, ContestTeamMemberStatus, RegistrationState
 from app.core.cache.decorators import cache_get
 from app.mappers.student.contest_mappers import (
     to_student_available_contests_list_response,
@@ -170,7 +170,7 @@ class StudentContestService:
         is_draft = contest_team.team_status == TeamStatus.DRAFT
         registered = True
         approved = not is_draft
-        status_str = "PENDING_APPROVAL" if is_draft else "APPROVED"
+        status_state = RegistrationState.PENDING_APPROVAL if is_draft else RegistrationState.APPROVED
 
         # Determine readiness by evaluating start and end time relative to current time
         current_time = datetime.now(timezone.utc)
@@ -214,7 +214,7 @@ class StudentContestService:
             completion_percentage=completion_percentage,
             registered=registered,
             approved=approved,
-            status_str=status_str,
+            status_state=status_state,
             can_start=can_start,
             reason=reason,
         )        

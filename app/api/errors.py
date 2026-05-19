@@ -59,6 +59,7 @@ from app.exceptions.team import (
     TeamNotFoundError,
     StudentTeamInvitationNotFoundError,
     StudentTeamInvitationError,
+    StudentTeamUserNotFoundError,
 )
 from app.schema.base import APIErrorResponse, ErrorDetails, MetaResponse
 from app.schema.execution import CompilationErrorResponse
@@ -457,6 +458,19 @@ def setup_exception_handlers(app: FastAPI) -> None:
             status_code=exc.status_code,
             message=exc.message,
             error_code="STUDENT_TEAM_INVITATION_ERROR",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(StudentTeamUserNotFoundError)
+    async def student_team_user_not_found_handler(
+        request: Request, exc: StudentTeamUserNotFoundError
+    ):
+        logger.warning(f"Student team user not found: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="STUDENT_TEAM_USER_NOT_FOUND",
             details=[exc.detail] if exc.detail else None,
         )
 
