@@ -1,14 +1,13 @@
 from app.utils.enums import ContestTeamMemberStatus
 from app.models.contest import ContestTeamMember
 from app.models import ContestAudience
-from app.models import Audience
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import Contest, TeamUser, ContestTeam
 from sqlalchemy import and_, case, func, or_, select
 from app.utils.enums import ContestRunStatus, ContestStatus, TeamApprovalStatus
 from uuid import UUID
 from app.repositories.dto import PaginationParams
-from sqlalchemy.orm import selectinload, joinedload
+from sqlalchemy.orm import selectinload
 from datetime import datetime, timezone
 from app.repositories.dto import PaginatedResult
 from app.repositories.dto.student.contests import StudentContestFilters
@@ -154,7 +153,7 @@ class StudentContestRepository:
         query = select(ContestTeamMember).where(
             ContestTeamMember.contest_id == contest_id,
             ContestTeamMember.user_id == user_id,
-            ContestTeamMember.status == TeamApprovalStatus.APPROVED
+            ContestTeamMember.status == ContestTeamMemberStatus.APPROVED
         ).options(
           selectinload(ContestTeamMember.contest_team)
 

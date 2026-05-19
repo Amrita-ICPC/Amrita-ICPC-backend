@@ -1,3 +1,4 @@
+#TODO: Implement RBAC auth gaurd
 from app.repositories.user import UserRepository
 from app.schema.student import (
     StudentTeamCreateRequest,
@@ -6,6 +7,7 @@ from app.schema.student import (
     StudentTeamsResponse,
     StudentTeamInvitationUpdateRequest,
     StudentTeamListResponse,
+    StudentTeamTransferLeaderRequest,
 )
 from uuid import UUID
 from typing import Optional
@@ -60,7 +62,7 @@ async def get_my_teams(
     is_public: bool | None = Query(None, description="Filter by public/private setting"),
     user_id: UUID = Depends(get_current_user_id),
     service: StudentTeamService = Depends(get_student_team_service),
-):
+) -> APIResponse[StudentTeamsResponse]:
     """Retrieve paginated and filtered list of teams that the student belongs to.
 
     Args:
@@ -129,7 +131,7 @@ async def get_team_invitations(
     sent: bool = Query(False, alias="sent", description="Filter for sent invitations/requests where current user is the sender"),
     user_id: UUID = Depends(get_current_user_id),
     service: StudentTeamService = Depends(get_student_team_service),
-):
+) -> APIResponse[StudentTeamInvitationListResponse]:
     """Retrieve all team invitations or requests for the authenticated student.
 
     Args:
@@ -162,14 +164,14 @@ async def get_team_invitations(
     status_code=status.HTTP_200_OK,
     response_model=APIResponse[None],
 )
-async def accept_or_reject_team_invitation(
+async def update_team_invitation_status(
     request: Request,
     id: UUID,
     body: StudentTeamInvitationUpdateRequest,
     user_id: UUID = Depends(get_current_user_id),
     service: StudentTeamService = Depends(get_student_team_service),
-):
-    """Accept or reject a team invitation.
+) -> APIResponse[None]:
+    """Update a team invitation status (accept, reject, or cancel).
 
     Args:
         request: FastAPI Request object.
@@ -181,13 +183,112 @@ async def accept_or_reject_team_invitation(
     Returns:
         APIResponse indicating successful update.
     """
-    await service.accept_or_reject_team_invitation(
+    await service.update_team_invitation_status(
         user_id=user_id, invitation_id=id, status=body.status
     )
     return create_api_response(
         request,
         data=None,
-        message="Team invitation accepted or rejected successfully",
+        message="Team invitation status updated successfully",
+    )
+
+@router.post(
+    "/{team_id}/leader",
+    status_code=status.HTTP_200_OK,
+    response_model=APIResponse[None],
+)
+async def transfer_team_leadership(
+    request: Request,
+    team_id: UUID,
+    body: StudentTeamTransferLeaderRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    service: StudentTeamService = Depends(get_student_team_service),
+) -> APIResponse[None]:
+    """Transfer team leadership to another member.
+
+    Args:
+        request: FastAPI Request object.
+        team_id: UUID of the target team.
+        body: Request body containing the new leader ID.
+        user_id: ID of the authenticated user.
+        service: Injected StudentTeamService.
+
+    Returns:
+        APIResponse indicating successful leadership transfer.
+    """
+    await service.transfer_team_leader(
+        user_id=user_id, team_id=team_id, new_leader_id=body.new_leader_id
+    )
+    return create_api_response(
+        request,
+        data=None,
+        message="Team leadership transferred successfully",
+    )
+
+
+@router.delete(
+    "/{team_id}/members/me",
+    status_code=status.HTTP_200_OK,
+    response_model=APIResponse[None],
+)
+async def leave_team_me(
+    request: Request,
+    team_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: StudentTeamService = Depends(get_student_team_service),
+) -> APIResponse[None]:
+    """Leave the team voluntarily (authenticated user leaves).
+
+    Args:
+        request: FastAPI Request object.
+        team_id: UUID of the team.
+        user_id: ID of the authenticated user.
+        service: Injected StudentTeamService.
+
+    Returns:
+        APIResponse indicating successful team exit.
+    """
+    await service.leave_team(
+        user_id=user_id, team_id=team_id, leave_member_id=user_id
+    )
+    return create_api_response(
+        request,
+        data=None,
+        message="Successfully left the team",
+    )
+
+
+@router.delete(
+    "/{team_id}/members/{member_id}",
+    status_code=status.HTTP_200_OK,
+    response_model=APIResponse[None],
+)
+async def remove_team_member(
+    request: Request,
+    team_id: UUID,
+    member_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: StudentTeamService = Depends(get_student_team_service),
+) -> APIResponse[None]:
+    """Remove/kick a member from the team. Only the team leader is permitted, or if it is me, the user leaves.
+
+    Args:
+        request: FastAPI Request object.
+        team_id: UUID of the team.
+        member_id: UUID of the member to remove.
+        user_id: ID of the authenticated user.
+        service: Injected StudentTeamService.
+
+    Returns:
+        APIResponse indicating successful member removal.
+    """
+    await service.leave_team(
+        user_id=user_id, team_id=team_id, leave_member_id=member_id
+    )
+    return create_api_response(
+        request,
+        data=None,
+        message="Member successfully removed from the team",
     )
 
 
@@ -203,7 +304,7 @@ async def search_teams_by_name(
     page_size: int = Query(10, ge=1, le=100, description="Items per page"),
     user_id: UUID = Depends(get_current_user_id),
     service: StudentTeamService = Depends(get_student_team_service),
-):
+) -> APIResponse[StudentTeamListResponse]:
     """Search student teams by name with case-insensitive partial match.
 
     Args:
@@ -252,7 +353,7 @@ async def get_team_by_id(
     team_id: UUID,
     user_id: UUID = Depends(get_current_user_id),
     service: StudentTeamService = Depends(get_student_team_service),
-):
+) -> APIResponse[StudentTeamCardResponse]:
     """Retrieve details of a specific team the student belongs to.
 
     Args:
@@ -284,7 +385,7 @@ async def create_team(
     team_create_request: StudentTeamCreateRequest,
     user_id: UUID = Depends(get_current_user_id),
     service: StudentTeamService = Depends(get_student_team_service),
-):
+) -> APIResponse[StudentTeamCardResponse]:
     """Create a new team led by the authenticated student.
 
     Args:
@@ -319,7 +420,7 @@ async def delete_team(
     team_id: UUID,
     user_id: UUID = Depends(get_current_user_id),
     service: StudentTeamService = Depends(get_student_team_service),
-):
+) -> APIResponse[None]:
     """Delete an existing student team. Only the team leader is permitted.
 
     Args:
@@ -351,7 +452,7 @@ async def edit_team(
     team_update_request: StudentTeamUpdateRequest,
     user_id: UUID = Depends(get_current_user_id),
     service: StudentTeamService = Depends(get_student_team_service),
-):
+) -> APIResponse[StudentTeamCardResponse]:
     """Edit/Update an existing student team. Only the team leader is permitted.
 
     Args:
@@ -395,7 +496,7 @@ async def invite_to_team(
     invitation_type: InvitationType = Query(InvitationType.INVITE, alias="type", description="Type of invitation (INVITE or REQUEST)"),
     user_id: UUID = Depends(get_current_user_id),
     service: StudentTeamService = Depends(get_student_team_service),
-):
+) -> APIResponse[None]:
     """Invite a user to join the team (INVITE type) or request to join a team (REQUEST type)."""
     await service.create_team_invitation(
         user_id=user_id,

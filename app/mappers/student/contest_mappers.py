@@ -41,7 +41,7 @@ if TYPE_CHECKING:
     from app.models.contest import Contest, ContestQuestion, ContestTeam, ContestTeamMember
     from app.models.team import Team
     from app.repositories.dto import PaginatedResult
-from app.utils.enums import ContestRunStatus, TeamMemberRole
+from app.utils.enums import ContestRunStatus, TeamMemberRole, RegistrationState
 from app.utils.image import image_object_key_to_url
 from app.schema.contest import ContestAudienceResponse
 
@@ -160,7 +160,7 @@ def to_student_contest_not_registered_response() -> StudentContestStatusResponse
         registration_status=RegistrationStatus(
             registered=False,
             approved=False,
-            status="NOT_REGISTERED",
+            status=RegistrationState.NOT_REGISTERED,
         ),
         readiness=ReadinessStatus(
             can_start=False,
@@ -199,7 +199,7 @@ def to_student_contest_status_response(
     completion_percentage: float,
     registered: bool,
     approved: bool,
-    status_str: str,
+    status_state: RegistrationState,
     can_start: bool,
     reason: str | None,
 ) -> StudentContestStatusResponse:
@@ -220,7 +220,7 @@ def to_student_contest_status_response(
         registration_status=RegistrationStatus(
             registered=registered,
             approved=approved,
-            status=status_str,
+            status=status_state,
         ),
         readiness=ReadinessStatus(
             can_start=can_start,

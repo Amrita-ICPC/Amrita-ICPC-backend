@@ -137,11 +137,26 @@ class StudentTeamInvitationListResponse(BaseModel):
 
 
 class StudentTeamInvitationUpdateRequest(BaseModel):
-    """Schema representing the request to accept or reject a team invitation."""
+    """Schema representing the request to accept, reject, or cancel a team invitation."""
 
-    status: Literal[TeamInvitationStatus.ACCEPTED, TeamInvitationStatus.REJECTED] = Field(
+    status: Literal[
+        TeamInvitationStatus.ACCEPTED,
+        TeamInvitationStatus.REJECTED,
+        TeamInvitationStatus.CANCELLED,
+    ] = Field(
         ...,
-        description="The action status for the invitation, must be ACCEPTED or REJECTED",
+        description="The action status for the invitation, must be ACCEPTED, REJECTED, or CANCELLED",
+    )
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class StudentTeamTransferLeaderRequest(BaseModel):
+    """Schema representing the request to transfer team leadership to another member."""
+
+    new_leader_id: UUID = Field(
+        ...,
+        description="The UUID of the team member to transfer leadership to",
     )
 
     model_config = ConfigDict(from_attributes=True)

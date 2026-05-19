@@ -135,7 +135,9 @@ class StudentTeamService:
 
     @cache_delete(
         key_builder=lambda self, user_id, team_name, team_description, is_public=True: [
-            f"student:teams:user:{user_id}:*"
+            f"student:teams:user:{user_id}:*",
+            "student:teams:search:*",
+            "student:teams:user:*"
         ]
     )
     async def create_student_team(
@@ -185,6 +187,8 @@ class StudentTeamService:
         key_builder=lambda self, user_id, team_id: [
             f"student:teams:user:{user_id}:*",
             f"student:team:{team_id}:*",
+            "student:teams:search:*",
+            "student:teams:user:*"
         ]
     )
     async def delete_student_team(self, user_id: UUID, team_id: UUID) -> None:
@@ -213,6 +217,8 @@ class StudentTeamService:
         key_builder=lambda self, user_id, team_id, name, description, is_public=None: [
             f"student:teams:user:{user_id}:*",
             f"student:team:{team_id}:*",
+            "student:teams:search:*",
+            "student:teams:user:*"
         ]
     )
     async def update_student_team(
@@ -307,6 +313,8 @@ class StudentTeamService:
         key_builder=lambda self, user_id, team_id, invitation_type, invite_user_id=None: [
             f"student:invitations:user:{invite_user_id or user_id}:*",
             f"student:teams:user:{invite_user_id or user_id}:*",
+            "student:teams:search:*",
+            "student:teams:user:*"
         ]
     )
     async def create_team_invitation(
@@ -341,13 +349,20 @@ class StudentTeamService:
     @cache_delete(
         key_builder=lambda self, user_id, invitation_id, status: [
             f"student:invitations:user:{user_id}:*",
-            f"student:teams:user:{invitation_id}:*",
+            f"student:teams:user:{user_id}:*",
+            "student:teams:search:*",
+            "student:teams:user:*"
         ]
     )
-    async def accept_or_reject_team_invitation(self, user_id: UUID, invitation_id: UUID, status: TeamInvitationStatus):
+    async def update_team_invitation_status(self, user_id: UUID, invitation_id: UUID, status: TeamInvitationStatus)->None:
         team_invitation = await self.repository.get_student_team_invitation_or_raise(invitation_id)
         
-        if team_invitation.invitation_type == InvitationType.INVITE:
+        if status == TeamInvitationStatus.CANCELLED:
+            if team_invitation.status != TeamInvitationStatus.PENDING:
+                raise StudentTeamInvitationError("Only pending invitations or requests can be cancelled")
+            if team_invitation.sender_id != user_id:
+                raise StudentTeamInvitationError("Only the sender can cancel this invitation/request")
+        elif team_invitation.invitation_type == InvitationType.INVITE:
             if team_invitation.reciever_id != user_id:
                 raise StudentTeamInvitationError("You are not the receiver of this invitation")
         elif team_invitation.invitation_type == InvitationType.REQUEST:
@@ -355,8 +370,60 @@ class StudentTeamService:
             team = await self.repository.get_student_team_by_id_or_raise(user_id, team_invitation.team_id)
             self.guard.check_is_leader(user_id=user_id, team=team)
             
-        await self.repository.approve_or_reject_team_invitation(team_invitation, status)
+        await self.repository.update_team_invitation_status(team_invitation, status)
         return 
+
+    @cache_delete(
+        key_builder=lambda self, user_id, team_id, new_leader_id: [
+            f"student:teams:user:{user_id}:*",
+            f"student:teams:user:{new_leader_id}:*",
+            f"student:team:{team_id}:*",
+            "student:teams:search:*",
+            "student:teams:user:*"
+        ]
+    )
+    async def transfer_team_leader(self, user_id: UUID, team_id:UUID, new_leader_id: UUID)-> None:
+        #Get the team enitity
+        team = await self.repository.get_student_team_by_id_or_raise(user_id, team_id)
+
+        #Check if user_id is the leader
+        self.guard.check_is_leader(user_id=user_id, team=team)
+        
+        #Check if new_leader_id is a member of the team
+        await self.guard.check_is_member(team_id=team_id, user_id=new_leader_id)
+
+        #Update the leader
+        team.leader_id = new_leader_id
+        await self.repository.update_student_team(team)
+
+    @cache_delete(
+        key_builder=lambda self, user_id, team_id, leave_member_id: [
+            f"student:teams:user:{user_id}:*",
+            f"student:teams:user:{leave_member_id}:*",
+            f"student:team:{team_id}:*",
+            "student:teams:search:*",
+            "student:teams:user:*"
+        ]
+    )
+    async def leave_team(self, user_id:UUID, team_id:UUID, leave_member_id: UUID):
+        
+        #Get the team entity
+        team = await self.repository.get_student_team_by_id_or_raise(user_id, team_id)
+
+        if user_id != leave_member_id:
+            self.guard.check_is_leader(user_id=user_id, team=team) 
+
+        if team.leader_id == leave_member_id:
+            #Transfer ownership if only two members are there
+            members = team.members
+            if(len(members) >= 2):
+                next_member = [m for m in members if m.user_id != leave_member_id][0]
+                team.leader_id = next_member.user_id
+                await self.repository.update_student_team(team)
+            else:
+                raise StudentTeamInvitationError("Cannot leave team with only one member")
+        
+        await self.repository.leave_team(team_id, leave_member_id)
 
     @cache_get(
         key_builder=lambda self, name, pagination, user_id: (

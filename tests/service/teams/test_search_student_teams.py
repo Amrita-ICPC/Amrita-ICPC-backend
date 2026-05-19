@@ -10,6 +10,8 @@ from app.repositories.user import UserRepository
 from app.schema.student.teams import StudentTeamListResponse, StudentTeamCardResponse
 from app.service.student.team import StudentTeamService
 from app.utils.enums import InvitationType, TeamInvitationStatus
+from app.exceptions.student.teams import StudentTeamInvitationError
+from app.models.team import TeamInvitation
 
 # Disable caching decorators globally for tests
 patch("app.core.cache.decorators.cache_get", lambda **kw: lambda f: f).start()
@@ -220,3 +222,237 @@ async def test_get_team_invitations_with_sent_filtering(
     )
     assert result.total == 0
     assert len(result.invitations) == 0
+
+
+@pytest.mark.asyncio
+async def test_update_team_invitation_status_cancelled_by_sender_success(
+    student_team_service: StudentTeamService,
+    mock_repository: AsyncMock,
+):
+    """Test that invitation cancellation succeeds when requested by the sender."""
+    user_id = uuid.uuid4()
+    invitation_id = uuid.uuid4()
+
+    mock_invitation = MagicMock(spec=TeamInvitation)
+    mock_invitation.id = invitation_id
+    mock_invitation.sender_id = user_id
+    mock_invitation.status = TeamInvitationStatus.PENDING
+
+    mock_repository.get_student_team_invitation_or_raise.return_value = mock_invitation
+    mock_repository.update_team_invitation_status = AsyncMock()
+
+    await student_team_service.update_team_invitation_status(
+        user_id=user_id,
+        invitation_id=invitation_id,
+        status=TeamInvitationStatus.CANCELLED,
+    )
+
+    mock_repository.get_student_team_invitation_or_raise.assert_called_once_with(invitation_id)
+    mock_repository.update_team_invitation_status.assert_called_once_with(
+        mock_invitation, TeamInvitationStatus.CANCELLED
+    )
+
+
+@pytest.mark.asyncio
+async def test_update_team_invitation_status_cancelled_by_non_sender_raises_error(
+    student_team_service: StudentTeamService,
+    mock_repository: AsyncMock,
+):
+    """Test that invitation cancellation fails when requested by a non-sender."""
+    user_id = uuid.uuid4()
+    sender_id = uuid.uuid4()
+    invitation_id = uuid.uuid4()
+
+    mock_invitation = MagicMock(spec=TeamInvitation)
+    mock_invitation.id = invitation_id
+    mock_invitation.sender_id = sender_id
+    mock_invitation.status = TeamInvitationStatus.PENDING
+
+    mock_repository.get_student_team_invitation_or_raise.return_value = mock_invitation
+    mock_repository.update_team_invitation_status = AsyncMock()
+
+    with pytest.raises(StudentTeamInvitationError) as excinfo:
+        await student_team_service.update_team_invitation_status(
+            user_id=user_id,
+            invitation_id=invitation_id,
+            status=TeamInvitationStatus.CANCELLED,
+        )
+
+    assert "Only the sender can cancel" in str(excinfo.value)
+    mock_repository.get_student_team_invitation_or_raise.assert_called_once_with(invitation_id)
+    assert not mock_repository.update_team_invitation_status.called
+
+
+@pytest.mark.asyncio
+async def test_update_team_invitation_status_cancelled_non_pending_raises_error(
+    student_team_service: StudentTeamService,
+    mock_repository: AsyncMock,
+):
+    """Test that invitation cancellation fails when the invitation status is not PENDING."""
+    user_id = uuid.uuid4()
+    invitation_id = uuid.uuid4()
+
+    mock_invitation = MagicMock(spec=TeamInvitation)
+    mock_invitation.id = invitation_id
+    mock_invitation.sender_id = user_id
+    mock_invitation.status = TeamInvitationStatus.ACCEPTED  # Not PENDING
+
+    mock_repository.get_student_team_invitation_or_raise.return_value = mock_invitation
+    mock_repository.update_team_invitation_status = AsyncMock()
+
+    with pytest.raises(StudentTeamInvitationError) as excinfo:
+        await student_team_service.update_team_invitation_status(
+            user_id=user_id,
+            invitation_id=invitation_id,
+            status=TeamInvitationStatus.CANCELLED,
+        )
+
+    assert "Only pending invitations or requests can be cancelled" in str(excinfo.value)
+    mock_repository.get_student_team_invitation_or_raise.assert_called_once_with(invitation_id)
+    assert not mock_repository.update_team_invitation_status.called
+
+
+@pytest.mark.asyncio
+async def test_transfer_team_leader_success(
+    student_team_service: StudentTeamService,
+    mock_repository: AsyncMock,
+    mock_guard: MagicMock,
+):
+    """Test that transfer_team_leader successfully delegates, performs guard checks, updates leader ID, and calls repository."""
+    user_id = uuid.uuid4()
+    team_id = uuid.uuid4()
+    new_leader_id = uuid.uuid4()
+
+    mock_team = MagicMock(spec=Team)
+    mock_team.id = team_id
+    mock_team.leader_id = user_id
+
+    mock_repository.get_student_team_by_id_or_raise.return_value = mock_team
+    mock_repository.update_student_team = AsyncMock()
+
+    mock_guard.check_is_leader = MagicMock()
+    mock_guard.check_is_member = AsyncMock()
+
+    await student_team_service.transfer_team_leader(
+        user_id=user_id,
+        team_id=team_id,
+        new_leader_id=new_leader_id,
+    )
+
+    # Assertions
+    mock_repository.get_student_team_by_id_or_raise.assert_called_once_with(user_id, team_id)
+    mock_guard.check_is_leader.assert_called_once_with(user_id=user_id, team=mock_team)
+    mock_guard.check_is_member.assert_called_once_with(team_id=team_id, user_id=new_leader_id)
+    assert mock_team.leader_id == new_leader_id
+    mock_repository.update_student_team.assert_called_once_with(mock_team)
+
+
+@pytest.mark.asyncio
+async def test_leave_team_member_success(
+    student_team_service: StudentTeamService,
+    mock_repository: AsyncMock,
+):
+    """Test that a team member can leave the team voluntarily, and leadership is transferred if needed."""
+    user_id = uuid.uuid4()
+    team_id = uuid.uuid4()
+    other_member_id = uuid.uuid4()
+
+    mock_team = MagicMock(spec=Team)
+    mock_team.id = team_id
+    mock_team.leader_id = user_id
+
+    mock_member1 = MagicMock()
+    mock_member1.user_id = user_id
+
+    mock_member2 = MagicMock()
+    mock_member2.user_id = other_member_id
+
+    mock_team.members = [mock_member1, mock_member2]
+
+    mock_repository.get_student_team_by_id_or_raise.return_value = mock_team
+    mock_repository.update_student_team = AsyncMock()
+    mock_repository.leave_team = AsyncMock()
+
+    await student_team_service.leave_team(
+        user_id=user_id,
+        team_id=team_id,
+        leave_member_id=user_id,
+    )
+
+    mock_repository.get_student_team_by_id_or_raise.assert_called_once_with(user_id, team_id)
+    assert mock_team.leader_id == other_member_id
+    mock_repository.update_student_team.assert_called_once_with(mock_team)
+    mock_repository.leave_team.assert_called_once_with(team_id, user_id)
+
+
+@pytest.mark.asyncio
+async def test_leave_team_only_one_member_raises_error(
+    student_team_service: StudentTeamService,
+    mock_repository: AsyncMock,
+):
+    """Test that a user cannot leave a team if they are the only member left."""
+    user_id = uuid.uuid4()
+    team_id = uuid.uuid4()
+
+    mock_team = MagicMock(spec=Team)
+    mock_team.id = team_id
+    mock_team.leader_id = user_id
+
+    mock_member = MagicMock()
+    mock_member.user_id = user_id
+    mock_team.members = [mock_member]
+
+    mock_repository.get_student_team_by_id_or_raise.return_value = mock_team
+    mock_repository.leave_team = AsyncMock()
+
+    with pytest.raises(StudentTeamInvitationError) as excinfo:
+        await student_team_service.leave_team(
+            user_id=user_id,
+            team_id=team_id,
+            leave_member_id=user_id,
+        )
+
+    assert "Cannot leave team with only one member" in str(excinfo.value)
+    mock_repository.get_student_team_by_id_or_raise.assert_called_once_with(user_id, team_id)
+    assert not mock_repository.leave_team.called
+
+
+@pytest.mark.asyncio
+async def test_leave_team_kick_by_leader(
+    student_team_service: StudentTeamService,
+    mock_repository: AsyncMock,
+    mock_guard: MagicMock,
+):
+    """Test that a leader can kick/remove a team member."""
+    leader_id = uuid.uuid4()
+    team_id = uuid.uuid4()
+    member_to_kick_id = uuid.uuid4()
+
+    mock_team = MagicMock(spec=Team)
+    mock_team.id = team_id
+    mock_team.leader_id = leader_id
+
+    mock_member1 = MagicMock()
+    mock_member1.user_id = leader_id
+
+    mock_member2 = MagicMock()
+    mock_member2.user_id = member_to_kick_id
+
+    mock_team.members = [mock_member1, mock_member2]
+
+    mock_repository.get_student_team_by_id_or_raise.return_value = mock_team
+    mock_guard.check_is_leader = MagicMock()
+    mock_repository.leave_team = AsyncMock()
+
+    await student_team_service.leave_team(
+        user_id=leader_id,
+        team_id=team_id,
+        leave_member_id=member_to_kick_id,
+    )
+
+    mock_repository.get_student_team_by_id_or_raise.assert_called_once_with(leader_id, team_id)
+    mock_guard.check_is_leader.assert_called_once_with(user_id=leader_id, team=mock_team)
+    mock_repository.leave_team.assert_called_once_with(team_id, member_to_kick_id)
+
+
+

@@ -1,7 +1,12 @@
 from app.utils.enums import InvitationType
 from app.utils.enums import TeamInvitationStatus
 from app.models.team import TeamInvitation
-from app.exceptions.team import StudentTeamNotFoundError, StudentTeamInvitationNotFoundError, StudentTeamInvitationError
+from app.exceptions.team import (
+    StudentTeamNotFoundError,
+    StudentTeamInvitationNotFoundError,
+    StudentTeamInvitationError,
+    StudentTeamUserNotFoundError,
+)
 from sqlalchemy import delete
 from sqlalchemy.orm import aliased
 from uuid import UUID
@@ -117,7 +122,8 @@ class StudentTeamRepository:
 
         # Pagination + eager loading
         query = (
-            query.offset(pagination.skip)
+            query.order_by(Team.created_at.desc(), Team.id.desc())
+            .offset(pagination.skip)
             .limit(pagination.limit)
             .options(
                 selectinload(Team.members).selectinload(TeamUser.user),
@@ -224,13 +230,13 @@ class StudentTeamRepository:
         result = await self.db.execute(query)
         return result.scalar_one()
 
-    async def delete_student_team(self,team_id: UUID):
+    async def delete_student_team(self,team_id: UUID)->None:
         #delete team_users where team_id = team_id
         await self.db.execute(delete(TeamUser).where(TeamUser.team_id == team_id))
         #delete team where id = team_id
         await self.db.execute(delete(Team).where(Team.id == team_id))
 
-        await self.db.commit()
+        await self.db.flush()
 
         return 
 
@@ -238,7 +244,8 @@ class StudentTeamRepository:
         query = (
             select(func.count(TeamInvitation.id)).where(
                 and_(
-                    TeamInvitation.invitation_type == invitation_type
+                    TeamInvitation.invitation_type == invitation_type,
+                    TeamInvitation.status == TeamInvitationStatus.PENDING,
                 )
             )
         )
@@ -315,7 +322,7 @@ class StudentTeamRepository:
             raise StudentTeamInvitationNotFoundError(invitation_id)
         return invitation
 
-    async def approve_or_reject_team_invitation(self, team_invitation: TeamInvitation, status: TeamInvitationStatus):
+    async def update_team_invitation_status(self, team_invitation: TeamInvitation, status: TeamInvitationStatus):
         if status == TeamInvitationStatus.ACCEPTED:
             joined_user_id = team_invitation.reciever_id if team_invitation.invitation_type == InvitationType.INVITE else team_invitation.sender_id
             if joined_user_id is None:
@@ -330,6 +337,10 @@ class StudentTeamRepository:
 
         elif status == TeamInvitationStatus.REJECTED:
             team_invitation.status = TeamInvitationStatus.REJECTED
+            self.db.add(team_invitation)
+
+        elif status == TeamInvitationStatus.CANCELLED:
+            team_invitation.status = TeamInvitationStatus.CANCELLED
             self.db.add(team_invitation)
 
     async def get_team_by_code(self, code: str) -> Team | None:
@@ -398,6 +409,7 @@ class StudentTeamRepository:
         query = (
             select(Team)
             .where(name_filter)
+            .order_by(Team.created_at.desc(), Team.id.desc())
             .offset(pagination.skip)
             .limit(pagination.limit)
             .options(
@@ -451,6 +463,27 @@ class StudentTeamRepository:
         requests_count = count_result.scalar_one() or 0
 
         return requested_team_ids, requests_count
+
+    
+    async def leave_team(self,team_id: UUID,user_id:UUID):
+        """Remove a user from a team.
+
+        Args:
+            team_id: The ID of the team to leave.
+            user_id: The ID of the user to remove.
+        """
+        query = select(TeamUser).where(
+            and_(
+                TeamUser.team_id == team_id,
+                TeamUser.user_id == user_id,
+            )
+        )
+        result = await self.db.execute(query)
+        team_user = result.scalar_one_or_none()
+        if team_user is None:
+            raise StudentTeamUserNotFoundError(team_id, user_id)
+        await self.db.delete(team_user)
+        await self.db.flush()
 
         
 

@@ -123,6 +123,17 @@ class StudentTeamNotFoundError(AppBaseException):
         )
 
 
+class StudentTeamUserNotFoundError(AppBaseException):
+    """Raised when a user is not found as a member of a team in the student context."""
+
+    def __init__(self, team_id: str | UUID, user_id: str | UUID):
+        super().__init__(
+            message=f"User {user_id} is not a member of team {team_id}.",
+            status_code=404,
+            detail="The requested user is not a member of this team.",
+        )
+
+
 class StudentTeamInvitationNotFoundError(AppBaseException):
     """Raised when a team invitation is not found by ID in the student context."""
 
@@ -142,6 +153,17 @@ class StudentTeamInvitationError(AppBaseException):
             message=detail,
             status_code=400,
             detail=detail,
+        )
+
+
+class TeamMemberAccessDeniedError(AppBaseException):
+    """Raised when an operation requires team membership but the user is not a member."""
+
+    def __init__(self, team_id: str, user_id: str):
+        super().__init__(
+            message=f"Access denied: User {user_id} is not a member of team {team_id}.",
+            status_code=403,
+            detail="Only team members are permitted to perform this operation.",
         )
 
 

@@ -11,6 +11,8 @@ from app.exceptions.team import (
     StudentTeamNotFoundError,
     StudentTeamInvitationNotFoundError,
     StudentTeamInvitationError,
+    TeamMemberAccessDeniedError,
+    StudentTeamUserNotFoundError,
 )
 
 __all__ = [
@@ -21,5 +23,7 @@ __all__ = [
     "StudentTeamNotFoundError",
     "StudentTeamInvitationNotFoundError",
     "StudentTeamInvitationError",
+    "TeamMemberAccessDeniedError",
+    "StudentTeamUserNotFoundError",
 ]
 

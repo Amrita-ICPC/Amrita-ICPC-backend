@@ -1,8 +1,12 @@
+from app.models import TeamUser
+from sqlalchemy import and_
+from sqlalchemy import exists
+from sqlalchemy import select
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Team
-from app.exceptions.student.teams import TeamLeaderAccessDeniedError
+from app.exceptions.student.teams import TeamLeaderAccessDeniedError, TeamMemberAccessDeniedError
 
 
 class TeamStudentGuard:
@@ -28,3 +32,12 @@ class TeamStudentGuard:
         """
         if team.leader_id != user_id:
             raise TeamLeaderAccessDeniedError(team_id=str(team.id), user_id=str(user_id))
+
+    async def check_is_member(self, team_id: UUID, user_id: UUID) -> None:
+        query = select(exists().where(and_(TeamUser.user_id == user_id, TeamUser.team_id == team_id)))
+        result = await self.db.execute(query)
+        is_member = result.scalar()
+        if not is_member:
+            raise TeamMemberAccessDeniedError(team_id=str(team_id), user_id=str(user_id))
+
+        

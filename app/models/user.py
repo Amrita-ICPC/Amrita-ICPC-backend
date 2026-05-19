@@ -13,6 +13,7 @@ from app.utils.enums import UserRole
 
 if TYPE_CHECKING:
     from app.models.audience import UserAudience
+    from app.models import ContestTeamMember
 
 
 class User(Base):
@@ -48,7 +49,7 @@ class User(Base):
     deleted_banks = relationship(
         "Bank", back_populates="deleter", foreign_keys="[Bank.deleted_by]"
     )
-    team_registration_members = relationship(
+    team_registration_members: Mapped[list["ContestTeamMember"]] = relationship(
         "ContestTeamMember", back_populates="user", cascade="all, delete-orphan"
     )
 
