@@ -1,3 +1,4 @@
+from app.exceptions.contest import ContestTeamNotFoundException
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, Request, status
@@ -218,6 +219,19 @@ def setup_exception_handlers(app: FastAPI) -> None:
             status_code=exc.status_code,
             message=exc.message,
             error_code="STUDENT_NOT_ELIGIBLE_FOR_CONTEST",
+            details=[exc.detail] if exc.detail else None,
+        )
+    
+    @app.exception_handler(ContestTeamNotFoundException)
+    async def contest_team_not_found_handler(
+        request: Request, exc: ContestTeamNotFoundException
+    ):
+        logger.warning(f"Contest team not found: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="CONTEST_TEAM_NOT_FOUND",
             details=[exc.detail] if exc.detail else None,
         )
 

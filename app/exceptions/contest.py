@@ -187,3 +187,11 @@ class TeamAlreadyInContestError(AppBaseException):
             status_code=status.HTTP_409_CONFLICT,
         )
 
+class ContestTeamNotFoundException(AppBaseException):
+    """Raised when contest team is not found."""
+    def __init__(self, contest_team_id: str):
+        super().__init__(
+            message=f"Contest team with ID {contest_team_id} not found",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
