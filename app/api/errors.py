@@ -33,6 +33,8 @@ from app.exceptions.contest import (
     QuestionAlreadyInContestError,
     QuestionNotInContestError,
     StudentNotEligibleForContestError,
+    StudentAlreadyInContestError,
+    TeamAlreadyInContestError,
 )
 from app.exceptions.execution import (
     CodeExecutionError,
@@ -216,6 +218,32 @@ def setup_exception_handlers(app: FastAPI) -> None:
             status_code=exc.status_code,
             message=exc.message,
             error_code="STUDENT_NOT_ELIGIBLE_FOR_CONTEST",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(StudentAlreadyInContestError)
+    async def student_already_in_contest_handler(
+        request: Request, exc: StudentAlreadyInContestError
+    ):
+        logger.warning(f"Student already in contest: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="STUDENT_ALREADY_IN_CONTEST",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(TeamAlreadyInContestError)
+    async def team_already_in_contest_handler(
+        request: Request, exc: TeamAlreadyInContestError
+    ):
+        logger.warning(f"Team already in contest: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="TEAM_ALREADY_IN_CONTEST",
             details=[exc.detail] if exc.detail else None,
         )
 

@@ -27,6 +27,7 @@ from app.schema.student.teams import (
     StudentTeamInvitationListResponse,
     StudentTeamInvitationUpdateRequest,
     StudentTeamTransferLeaderRequest,
+    TeamMemberDetailResponse,
 )
 
 __all__ = [
@@ -58,5 +59,6 @@ __all__ = [
     "StudentTeamInvitationListResponse",
     "StudentTeamInvitationUpdateRequest",
     "StudentTeamTransferLeaderRequest",
+    "TeamMemberDetailResponse",
 ]
 

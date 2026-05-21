@@ -10,7 +10,13 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.utils.enums import TeamApprovalStatus, TeamInvitationStatus, InvitationType
+from app.utils.enums import (
+    TeamApprovalStatus,
+    TeamInvitationStatus,
+    InvitationType,
+    TeamMemberRole,
+    UserRole,
+)
 
 from datetime import datetime
 from typing import List, Optional
@@ -160,3 +166,26 @@ class StudentTeamTransferLeaderRequest(BaseModel):
     )
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class TeamMemberDetailResponse(BaseModel):
+    """Schema representing detailed information of a team member."""
+
+    id: UUID = Field(..., description="Unique identifier of the member")
+    name: str = Field(..., description="Full name of the member")
+    email: str = Field(..., description="Email address of the member")
+    phone_no: Optional[str] = Field(None, description="Phone number of the member")
+    gender: Optional[str] = Field(None, description="Gender of the member")
+    role: UserRole = Field(..., description="Global role of the user")
+    team_role: TeamMemberRole = Field(
+        ..., description="Role of the member within this team (LEADER or MEMBER)"
+    )
+    joined_at: datetime = Field(
+        ..., description="Timestamp when the member joined the team"
+    )
+    is_in_contest: Optional[bool] = Field(
+        None, description="Whether the member is already registered in the specified contest"
+    )
+
+    model_config = ConfigDict(from_attributes=True)
+

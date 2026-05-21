@@ -11,6 +11,7 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -264,7 +265,13 @@ class ContestTeam(Base):
 
     __tablename__ = "contest_team"
     __table_args__ = (
-       UniqueConstraint("contest_id", "team_id", name="uq_contest_team_contest_id_team_id"),
+        Index(
+            "uq_contest_team_contest_id_team_id",
+            "contest_id",
+            "team_id",
+            unique=True,
+            postgresql_where="approval_status IN ('WAITING', 'APPROVED')",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -334,7 +341,7 @@ class ContestTeamMember(Base):
     status: Mapped[ContestTeamMemberStatus] = mapped_column(
         Enum(ContestTeamMemberStatus), nullable=False, default=ContestTeamMemberStatus.PENDING
     )
-    confirmed_at: Mapped[datetime] = mapped_column(
+    confirmed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
 

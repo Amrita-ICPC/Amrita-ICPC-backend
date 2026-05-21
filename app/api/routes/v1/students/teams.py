@@ -8,9 +8,11 @@ from app.schema.student import (
     StudentTeamInvitationUpdateRequest,
     StudentTeamListResponse,
     StudentTeamTransferLeaderRequest,
+    TeamMemberDetailResponse,
 )
+from datetime import datetime
 from uuid import UUID
-from typing import Optional
+from typing import Optional, Literal
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -510,5 +512,65 @@ async def invite_to_team(
         data=None,
         message=message,
     )
+
+
+@router.get(
+    "/{team_id}/members",
+    status_code=status.HTTP_200_OK,
+    response_model=APIResponse[list[TeamMemberDetailResponse]],
+    summary="Get details of all members in a team",
+)
+async def get_team_members(
+    request: Request,
+    team_id: UUID,
+    name: Optional[str] = Query(None, description="Filter members by name"),
+    email: Optional[str] = Query(None, description="Filter members by email"),
+    joined_after: Optional[datetime] = Query(
+        None, description="Filter members who joined after this timestamp"
+    ),
+    joined_before: Optional[datetime] = Query(
+        None, description="Filter members who joined before this timestamp"
+    ),
+    sort_by: Literal["name", "email", "joined_at"] = Query(
+        "joined_at", description="Field to sort members by"
+    ),
+    order: Literal["asc", "desc"] = Query(
+        "asc", description="Sort order (asc or desc)"
+    ),
+    contest_id: Optional[UUID] = Query(
+        None,
+        description="Optional contest ID to check if team members are already registered in it",
+    ),
+    user_id: UUID = Depends(get_current_user_id),
+    service: StudentTeamService = Depends(get_student_team_service),
+) -> APIResponse[list[TeamMemberDetailResponse]]:
+    """Retrieve detailed information of all members in the specified team.
+
+    Optional filters for name, email, and joined_at timestamp are supported.
+    Sorting/ordering is supported on name, email, and joined_at.
+    If contest_id is provided, checks if each member is already registered in it.
+    """
+    members = await service.get_team_members(
+        user_id=user_id,
+        team_id=team_id,
+        name_filter=name,
+        email_filter=email,
+        joined_after=joined_after,
+        joined_before=joined_before,
+        sort_by=sort_by,
+        order=order,
+        contest_id=contest_id,
+    )
+    return create_api_response(
+        request,
+        data=members,
+        message="Team members fetched successfully",
+    )
+
+
+
+
+
+
 
     

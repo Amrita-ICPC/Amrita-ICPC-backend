@@ -77,6 +77,10 @@ class TeamUser(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
+    joined_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
     team = relationship("Team", back_populates="members")
     user = relationship("User", back_populates="teams")
 

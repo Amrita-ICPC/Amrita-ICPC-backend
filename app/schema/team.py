@@ -349,3 +349,42 @@ class TeamListResponse(BaseModel):
     waiting_count: int = 0
     rejected_count: int = 0
     disqualified_count: int = 0
+
+
+class ContestTeamCreate(BaseModel):
+    """
+    Schema for creating a new contest team from scratch.
+
+    Attributes:
+        name: Name of the team.
+        leader_id: Optional leader ID for the team.
+        team_status: Status of the team in the contest (default: DRAFT).
+    """
+
+    name: str = Field(..., min_length=1, max_length=100, description="Name of the team.")
+    leader_id: Optional[UUID] = Field(None, description="Leader ID for the team.")
+    team_status: TeamStatus = Field(
+        default=TeamStatus.DRAFT, description="Status of the team in the contest."
+    )
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ContestTeamImport(BaseModel):
+    """
+    Schema for importing an existing team and its members into a contest.
+
+    Attributes:
+        team_id: UUID of the existing team to import.
+        member_ids: List of user IDs of the members to be imported.
+    """
+
+    team_id: UUID = Field(..., description="UUID of the existing team to import.")
+    member_ids: List[UUID] = Field(
+        default_factory=list, description="List of user IDs representing the members of the team."
+    )
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+

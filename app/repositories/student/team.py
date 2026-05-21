@@ -1,6 +1,13 @@
-from app.utils.enums import InvitationType
-from app.utils.enums import TeamInvitationStatus
+from datetime import datetime
+from app.utils.enums import (
+    InvitationType,
+    TeamInvitationStatus,
+    TeamMemberRole,
+    ContestTeamMemberStatus,
+)
+from app.models.user import User
 from app.models.team import TeamInvitation
+from app.models.contest import ContestTeamMember
 from app.exceptions.team import (
     StudentTeamNotFoundError,
     StudentTeamInvitationNotFoundError,
@@ -20,7 +27,12 @@ from app.repositories.dto.student.teams import StudentTeamFilters
 
 
 class StudentTeamRepository:
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession) -> None:
+        """Initialize the StudentTeamRepository with database session.
+
+        Args:
+            db: AsyncSession database connection.
+        """
         self.db = db
 
     async def get_student_teams(
@@ -177,13 +189,13 @@ class StudentTeamRepository:
         return team
 
     async def create_student_team(self, team: Team) -> Team:
-        """Create a new team.
+        """Create a new team and add the creator as the first member (leader).
 
         Args:
-            team: Team ORM database model.
+            team: The Team ORM object to persist.
 
         Returns:
-            Team: The created Team ORM object.
+            Team: The created Team ORM object with loaded relations.
         """
         self.db.add(team)
         team_user = TeamUser(
@@ -230,7 +242,12 @@ class StudentTeamRepository:
         result = await self.db.execute(query)
         return result.scalar_one()
 
-    async def delete_student_team(self,team_id: UUID)->None:
+    async def delete_student_team(self, team_id: UUID) -> None:
+        """Delete a student team and all its user memberships.
+
+        Args:
+            team_id: UUID of the team to delete.
+        """
         #delete team_users where team_id = team_id
         await self.db.execute(delete(TeamUser).where(TeamUser.team_id == team_id))
         #delete team where id = team_id
@@ -240,7 +257,19 @@ class StudentTeamRepository:
 
         return 
 
-    async def get_pending_student_invitations_count(self,user_id:UUID,invitation_type:InvitationType,team_id:UUID | None)->int:
+    async def get_pending_student_invitations_count(
+        self, user_id: UUID, invitation_type: InvitationType, team_id: UUID | None
+    ) -> int:
+        """Get the count of pending invitations or requests.
+
+        Args:
+            user_id: UUID of the user.
+            invitation_type: The type of invitation (INVITE or REQUEST).
+            team_id: Optional team ID to filter by.
+
+        Returns:
+            int: The count of pending invitations/requests matching the criteria.
+        """
         query = (
             select(func.count(TeamInvitation.id)).where(
                 and_(
@@ -266,7 +295,19 @@ class StudentTeamRepository:
         invitation_status: TeamInvitationStatus | None,
         team_id: UUID | None,
         sent: bool = False,
-    ):
+    ) -> list[TeamInvitation]:
+        """Retrieve team invitations or requests based on filters.
+
+        Args:
+            user_id: UUID of the student user.
+            invitation_type: The type of invitation (INVITE or REQUEST).
+            invitation_status: Optional TeamInvitationStatus to filter by.
+            team_id: Optional team ID to filter by.
+            sent: Whether to retrieve sent invitations/requests.
+
+        Returns:
+            list[TeamInvitation]: A list of TeamInvitation objects.
+        """
         query = select(TeamInvitation).where(TeamInvitation.invitation_type == invitation_type).options(
             selectinload(TeamInvitation.team).selectinload(Team.members),
             selectinload(TeamInvitation.sender),
@@ -287,10 +328,29 @@ class StudentTeamRepository:
             query = query.where(TeamInvitation.status == invitation_status)
 
         invitations = await self.db.execute(query)
-        return invitations.scalars().all()
+        return list(invitations.scalars().all())
 
-    async def create_student_team_invitation(self, team_id:UUID,sender_id:UUID,invitation_type:InvitationType, reciever_id:UUID | None) -> TeamInvitation:
+    async def create_student_team_invitation(
+        self,
+        team_id: UUID,
+        sender_id: UUID,
+        invitation_type: InvitationType,
+        reciever_id: UUID | None,
+    ) -> TeamInvitation:
+        """Create a new team invitation or request in the database.
 
+        Args:
+            team_id: UUID of the team.
+            sender_id: UUID of the user sending the invitation or request.
+            invitation_type: The type of invitation (INVITE or REQUEST).
+            reciever_id: Optional UUID of the receiving user. Required if type is INVITE.
+
+        Returns:
+            TeamInvitation: The created TeamInvitation ORM object with loaded relations.
+
+        Raises:
+            StudentTeamInvitationError: If invitation_type is INVITE and reciever_id is None.
+        """
         if invitation_type == InvitationType.INVITE and reciever_id is None:
             raise StudentTeamInvitationError("Receiver ID is required for invite invitations")
         
@@ -311,7 +371,18 @@ class StudentTeamRepository:
         invitations = await self.db.execute(query)
         return invitations.scalar_one()
 
-    async def get_student_team_invitation_or_raise(self,invitation_id: UUID)->TeamInvitation:
+    async def get_student_team_invitation_or_raise(self, invitation_id: UUID) -> TeamInvitation:
+        """Retrieve a specific team invitation by ID or raise an error if not found.
+
+        Args:
+            invitation_id: UUID of the team invitation to retrieve.
+
+        Returns:
+            TeamInvitation: The TeamInvitation ORM object if found.
+
+        Raises:
+            StudentTeamInvitationNotFoundError: If the invitation does not exist.
+        """
         query = select(TeamInvitation).where(TeamInvitation.id == invitation_id).options(
             selectinload(TeamInvitation.team).selectinload(Team.members),
             selectinload(TeamInvitation.sender),
@@ -322,7 +393,21 @@ class StudentTeamRepository:
             raise StudentTeamInvitationNotFoundError(invitation_id)
         return invitation
 
-    async def update_team_invitation_status(self, team_invitation: TeamInvitation, status: TeamInvitationStatus):
+    async def update_team_invitation_status(
+        self, team_invitation: TeamInvitation, status: TeamInvitationStatus
+    ) -> None:
+        """Update the status of a team invitation and handle side-effects (e.g., adding user to team).
+
+        If the status is ACCEPTED, the invited user (receiver for INVITE, sender
+        for REQUEST) is added to the TeamUser mapping.
+
+        Args:
+            team_invitation: The TeamInvitation ORM object.
+            status: The new TeamInvitationStatus to set.
+
+        Raises:
+            StudentTeamInvitationError: If the receiver ID is missing on acceptance.
+        """
         if status == TeamInvitationStatus.ACCEPTED:
             joined_user_id = team_invitation.reciever_id if team_invitation.invitation_type == InvitationType.INVITE else team_invitation.sender_id
             if joined_user_id is None:
@@ -484,6 +569,91 @@ class StudentTeamRepository:
             raise StudentTeamUserNotFoundError(team_id, user_id)
         await self.db.delete(team_user)
         await self.db.flush()
+
+    async def get_team_members(
+        self,
+        team_id: UUID,
+        name_filter: str | None = None,
+        email_filter: str | None = None,
+        joined_after: datetime | None = None,
+        joined_before: datetime | None = None,
+        sort_by: str = "joined_at",
+        order: str = "asc",
+        contest_id: UUID | None = None,
+    ) -> list[tuple[User, TeamMemberRole, datetime, bool | None]]:
+        """Retrieve members of a team with optional filtering and sorting by name, email, and joined_at.
+
+        Args:
+            team_id: UUID of the team.
+            name_filter: Optional filter for user's name.
+            email_filter: Optional filter for user's email.
+            joined_after: Optional filter for members joined after this timestamp.
+            joined_before: Optional filter for members joined before this timestamp.
+            sort_by: Column to sort by ("name", "email", or "joined_at"). Defaults to "joined_at".
+            order: Sort order ("asc" or "desc"). Defaults to "asc".
+            contest_id: Optional UUID of the contest to check if members are registered in.
+
+        Returns:
+            list[tuple[User, TeamMemberRole, datetime, bool | None]]: List of tuples containing the User model,
+                their corresponding TeamMemberRole (LEADER or MEMBER), their joined_at timestamp, and whether
+                they are already registered in the specified contest (or None if contest_id is not provided).
+        """
+        query = (
+            select(TeamUser, User, Team.leader_id)
+            .join(User, TeamUser.user_id == User.id)
+            .join(Team, TeamUser.team_id == Team.id)
+            .where(TeamUser.team_id == team_id)
+        )
+
+        if name_filter:
+            query = query.where(User.name.ilike(f"%{name_filter}%"))
+        if email_filter:
+            query = query.where(User.email.ilike(f"%{email_filter}%"))
+        if joined_after:
+            query = query.where(TeamUser.joined_at >= joined_after)
+        if joined_before:
+            query = query.where(TeamUser.joined_at <= joined_before)
+
+        # Ordering / Sorting
+        sort_col = TeamUser.joined_at
+        if sort_by == "name":
+            sort_col = User.name
+        elif sort_by == "email":
+            sort_col = User.email
+
+        if order.lower() == "desc":
+            query = query.order_by(sort_col.desc())
+        else:
+            query = query.order_by(sort_col.asc())
+
+        result = await self.db.execute(query)
+        rows = result.all()
+
+        in_contest_user_ids = set()
+        if contest_id and rows:
+            user_ids = [user.id for team_user, user, leader_id in rows]
+            stmt = select(ContestTeamMember.user_id).where(
+                ContestTeamMember.contest_id == contest_id,
+                ContestTeamMember.user_id.in_(user_ids),
+                ContestTeamMember.status == ContestTeamMemberStatus.APPROVED
+            )
+            res = await self.db.execute(stmt)
+            in_contest_user_ids = set(res.scalars().all())
+
+        members_list = []
+        for team_user, user, leader_id in rows:
+            team_role = (
+                TeamMemberRole.LEADER
+                if user.id == leader_id
+                else TeamMemberRole.MEMBER
+            )
+            is_in_contest = user.id in in_contest_user_ids if contest_id else None
+            members_list.append((user, team_role, team_user.joined_at, is_in_contest))
+        return members_list
+
+
+
+
 
         
 

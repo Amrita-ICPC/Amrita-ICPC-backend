@@ -155,8 +155,11 @@ class StudentContestRepository:
             ContestTeamMember.user_id == user_id,
             ContestTeamMember.status == ContestTeamMemberStatus.APPROVED
         ).options(
-          selectinload(ContestTeamMember.contest_team)
-
+            selectinload(ContestTeamMember.contest_team)
+            .selectinload(ContestTeam.contest_team_member)
+            .selectinload(ContestTeamMember.user),
+            selectinload(ContestTeamMember.contest_team)
+            .selectinload(ContestTeam.team)
         )
         result = await self.db.execute(query)
         return result.scalars().first()

@@ -38,10 +38,21 @@ from app.schema.student.contests import (
 )
 
 if TYPE_CHECKING:
-    from app.models.contest import Contest, ContestQuestion, ContestTeam, ContestTeamMember
-    from app.models.team import Team
+    from app.models.contest import ContestQuestion
     from app.repositories.dto import PaginatedResult
-from app.utils.enums import ContestRunStatus, TeamMemberRole, RegistrationState
+
+from app.models.contest import Contest, ContestTeam, ContestTeamMember
+from app.models.team import Team
+from app.utils.enums import (
+    ContestRunStatus,
+    TeamMemberRole,
+    RegistrationState,
+    TeamStatus,
+    TeamApprovalStatus,
+    TeamApprovalMode,
+    TeamInvitationStatus,
+    ContestTeamMemberStatus,
+)
 from app.utils.image import image_object_key_to_url
 from app.schema.contest import ContestAudienceResponse
 
@@ -202,6 +213,8 @@ def to_student_contest_status_response(
     status_state: RegistrationState,
     can_start: bool,
     reason: str | None,
+    status: TeamStatus,
+    team_approval_status: TeamApprovalStatus,
 ) -> StudentContestStatusResponse:
     """
     Map calculated registration, readiness, and team status to StudentContestStatusResponse.
@@ -214,6 +227,8 @@ def to_student_contest_status_response(
         min_team_size=min_team_size,
         max_team_size=max_team_size,
         completion_percentage=completion_percentage,
+        team_approval_status=team_approval_status,
+        team_status=status
     )
 
     return StudentContestStatusResponse(
@@ -228,3 +243,64 @@ def to_student_contest_status_response(
         ),
         team=team_status,
     )
+
+
+def to_contest_team(
+    contest_id: UUID,
+    team: Team,
+    contest: Contest,
+) -> ContestTeam:
+    """Map a student Team and Contest to a ContestTeam ORM model.
+
+    Args:
+        contest_id: UUID of the contest.
+        team: Team ORM model instance.
+        contest: Contest ORM model instance.
+
+    Returns:
+        ContestTeam: The mapped ContestTeam instance.
+    """
+    return ContestTeam(
+        contest_id=contest_id,
+        team_id=team.id,
+        name=team.name,
+        leader_id=team.leader_id,
+        team_status=TeamStatus.DRAFT,
+        approval_status=(
+            TeamApprovalStatus.APPROVED
+            if contest.team_approval_mode == TeamApprovalMode.AUTO_APPROVE
+            else TeamApprovalStatus.WAITING
+        ),
+    )
+
+
+def to_contest_team_members(
+    contest_id: UUID,
+    contest_team_id: UUID,
+    member_ids: list[UUID],
+    user_id: UUID,
+) -> list[ContestTeamMember]:
+    """Map a list of member IDs to ContestTeamMember ORM models.
+
+    Args:
+        contest_id: UUID of the associated contest.
+        contest_team_id: UUID of the associated contest team.
+        member_ids: List of member user IDs.
+        user_id: UUID of the requesting/creating user (the team leader).
+
+    Returns:
+        list[ContestTeamMember]: List of mapped ContestTeamMember instances.
+    """
+    return [
+        ContestTeamMember(
+            contest_id=contest_id,
+            contest_team_id=contest_team_id,
+            user_id=member_id,
+            status=(
+                ContestTeamMemberStatus.APPROVED
+                if member_id == user_id
+                else ContestTeamMemberStatus.PENDING
+            ),
+        )
+        for member_id in member_ids
+    ]

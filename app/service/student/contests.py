@@ -217,4 +217,6 @@ class StudentContestService:
             status_state=status_state,
             can_start=can_start,
             reason=reason,
+            team_approval_status=contest_team.approval_status,
+            status= contest_team.team_status,
         )        

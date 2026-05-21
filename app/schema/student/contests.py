@@ -1,3 +1,5 @@
+from app.utils.enums import TeamApprovalStatus
+from app.utils.enums import TeamStatus
 from app.utils.enums import TeamMemberRole
 from datetime import datetime
 from typing import Optional
@@ -126,6 +128,8 @@ class TeamParticipationStatus(BaseModel):
     member_count: int = Field(..., description="Current number of members")
     min_team_size: int = Field(..., description="Minimum team size")
     max_team_size: int = Field(..., description="Maximum team size allowed")
+    team_status: TeamStatus = Field(..., description="Team status")
+    team_approval_status: TeamApprovalStatus = Field(..., description="Team approval status")
     completion_percentage: float = Field(..., description="Percentage of team completion")
 
 class StudentContestStatusResponse(BaseModel):

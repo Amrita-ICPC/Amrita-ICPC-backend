@@ -21,6 +21,12 @@ from app.repositories.dto.pagination import PaginationParams
 from app.schema.base import APIResponse
 from app.service.student.contests import StudentContestService
 from app.utils.pagination import get_pagination
+from app.core.guards.team_student import TeamStudentGuard
+from app.repositories.student.team import StudentTeamRepository
+from app.repositories.student.contest_team import ContestTeamRepository
+from app.service.student.contest_team import ContestTeamService
+from app.schema.team import ContestTeamImport
+from app.core.logger import logger
 
 router = APIRouter()
 
@@ -34,6 +40,21 @@ def get_student_contest_service(
     contest_student_guard = ContestStudentGuard(db)
     return StudentContestService(repository,contest_repository,team_repository,contest_student_guard)
 
+def get_contest_team_service(
+    db: AsyncSession = Depends(get_db),
+) -> ContestTeamService:
+    repository = ContestTeamRepository(db)
+    team_repository = StudentTeamRepository(db)
+    team_student_guard = TeamStudentGuard(db)
+    contest_repository = ContestRepository(db)
+    contest_student_guard = ContestStudentGuard(db)
+    return ContestTeamService(
+        repository=repository,
+        team_repository=team_repository,
+        team_student_guard=team_student_guard,
+        contest_repository=contest_repository,
+        contest_student_guard=contest_student_guard,
+    )
 
 @router.get(
     "/",
@@ -112,3 +133,31 @@ async def get_student_contest_status(
         data=result,
         message="Student contest status fetched successfully",
     )
+
+@router.post(
+    "/{contest_id}/teams/import",
+    response_model=APIResponse[None],
+    summary="Import an existing student team into a contest",
+)
+async def import_student_team(
+    request: Request,
+    contest_id: UUID,
+    contest_team_import: ContestTeamImport,
+    user_id: UUID = Depends(get_current_user_id),
+    service: ContestTeamService = Depends(get_contest_team_service),
+):
+    """
+    Import an existing team and its members into the specified contest.
+    """
+    await service.import_team(
+        contest_id=contest_id,
+        contest_team_import=contest_team_import,
+        user_id=user_id,
+    )
+    logger.info(f"Successfully imported team {contest_team_import.team_id} into contest {contest_id} by user {user_id}")
+    return create_api_response(
+        request,
+        data=None,
+        message="Team imported into contest successfully",
+    )
+
