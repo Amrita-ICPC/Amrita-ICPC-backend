@@ -1,3 +1,4 @@
+from datetime import datetime
 from app.repositories.user import UserRepository
 from app.models.team import TeamInvitation
 from uuid import UUID
@@ -10,6 +11,7 @@ from app.schema.student.teams import (
     StudentTeamCardResponse,
     StudentTeamListResponse,
     StudentTeamInvitationListResponse,
+    TeamMemberDetailResponse,
 )
 from app.exceptions.base import AppBaseException
 from app.exceptions.student.teams import StudentTeamNotFoundError, StudentTeamInvitationError
@@ -20,7 +22,7 @@ from app.mappers.student.team_mappers import (
     to_student_team_invitation_list_response,
 )
 from app.core.cache.decorators import cache_get, cache_delete
-from app.utils.enums import TeamInvitationStatus, InvitationType
+from app.utils.enums import TeamInvitationStatus, InvitationType, TeamMemberRole
 
 
 class StudentTeamService:
@@ -157,6 +159,9 @@ class StudentTeamService:
 
         Returns:
             StudentTeamCardResponse: Card details of the created team.
+
+        Raises:
+            StudentTeamInvitationError: If a unique 6-digit team code cannot be generated.
         """
         import random
         import string
@@ -324,7 +329,24 @@ class StudentTeamService:
         invitation_type: InvitationType,
         invite_user_id: UUID | None = None,
     ) -> None:
-        """Create a team invitation or request."""
+        """Create a team invitation or join request.
+
+        If the invitation type is INVITE, this method validates that the requesting
+        user is the team leader before creating a pending invitation for another student.
+        If the invitation type is REQUEST, this method creates a pending request for
+        the requesting student to join the team.
+
+        Args:
+            user_id: UUID of the requesting student.
+            team_id: UUID of the team.
+            invitation_type: The type of invitation (INVITE or REQUEST).
+            invite_user_id: UUID of the user being invited. Required if invitation_type is INVITE.
+
+        Raises:
+            StudentTeamInvitationError: If invite_user_id is missing for an INVITE type.
+            StudentTeamNotFoundError: If the team is not found or accessible.
+            TeamLeaderAccessDeniedError: If the student is not the team leader for an INVITE type.
+        """
         if invitation_type == InvitationType.INVITE:
             if not invite_user_id:
                 raise StudentTeamInvitationError("invite_user_id is required for INVITE type")
@@ -354,7 +376,27 @@ class StudentTeamService:
             "student:teams:user:*"
         ]
     )
-    async def update_team_invitation_status(self, user_id: UUID, invitation_id: UUID, status: TeamInvitationStatus)->None:
+    async def update_team_invitation_status(
+        self, user_id: UUID, invitation_id: UUID, status: TeamInvitationStatus
+    ) -> None:
+        """Update the status of a team invitation or request.
+
+        Updates the status to ACCEPTED, REJECTED, or CANCELLED, verifying
+        the requester's permissions based on the invitation type and action.
+
+        Args:
+            user_id: UUID of the student performing the action.
+            invitation_id: UUID of the team invitation/request to update.
+            status: The target TeamInvitationStatus (ACCEPTED, REJECTED, CANCELLED).
+
+        Raises:
+            StudentTeamInvitationError: If the cancel request is not on a pending
+                invitation, if the user is not authorized to update/cancel, or if
+                required IDs are missing.
+            StudentTeamInvitationNotFoundError: If the invitation does not exist.
+            StudentTeamNotFoundError: If the team for the request is not found or accessible.
+            TeamLeaderAccessDeniedError: If the student is not the team leader for a REQUEST type.
+        """
         team_invitation = await self.repository.get_student_team_invitation_or_raise(invitation_id)
         
         if status == TeamInvitationStatus.CANCELLED:
@@ -382,7 +424,22 @@ class StudentTeamService:
             "student:teams:user:*"
         ]
     )
-    async def transfer_team_leader(self, user_id: UUID, team_id:UUID, new_leader_id: UUID)-> None:
+    async def transfer_team_leader(self, user_id: UUID, team_id: UUID, new_leader_id: UUID) -> None:
+        """Transfer team leadership to another team member.
+
+        Verifies that the requesting user is the current leader of the team
+        and that the target user is a member of the team before transferring leadership.
+
+        Args:
+            user_id: UUID of the current team leader.
+            team_id: UUID of the team.
+            new_leader_id: UUID of the team member to promote to leader.
+
+        Raises:
+            StudentTeamNotFoundError: If the team is not found or accessible.
+            TeamLeaderAccessDeniedError: If the student is not the team leader.
+            TeamMemberAccessDeniedError: If the target user is not a member of the team.
+        """
         #Get the team enitity
         team = await self.repository.get_student_team_by_id_or_raise(user_id, team_id)
 
@@ -405,8 +462,26 @@ class StudentTeamService:
             "student:teams:user:*"
         ]
     )
-    async def leave_team(self, user_id:UUID, team_id:UUID, leave_member_id: UUID):
-        
+    async def leave_team(self, user_id: UUID, team_id: UUID, leave_member_id: UUID) -> None:
+        """Remove a member from a team or allow a member to leave.
+
+        If the requesting user is not the member leaving, validates that the
+        requesting user is the team leader. If the leader is leaving, ownership
+        is transferred to another member if available.
+
+        Args:
+            user_id: UUID of the student requesting the action.
+            team_id: UUID of the team.
+            leave_member_id: UUID of the member leaving the team.
+
+        Raises:
+            StudentTeamNotFoundError: If the team is not found or accessible.
+            TeamLeaderAccessDeniedError: If the student is not the leader when trying
+                to remove another member.
+            StudentTeamInvitationError: If the leader is leaving but no other members
+                are available to assume leadership.
+            StudentTeamUserNotFoundError: If the user to remove is not found in the team.
+        """
         #Get the team entity
         team = await self.repository.get_student_team_by_id_or_raise(user_id, team_id)
 
@@ -474,6 +549,70 @@ class StudentTeamService:
             pending_request_count=pending_request_count,
             requested_team_ids=requested_team_ids,
         )
+
+    async def get_team_members(
+        self,
+        user_id: UUID,
+        team_id: UUID,
+        name_filter: str | None = None,
+        email_filter: str | None = None,
+        joined_after: datetime | None = None,
+        joined_before: datetime | None = None,
+        sort_by: str = "joined_at",
+        order: str = "asc",
+        contest_id: UUID | None = None,
+    ) -> list[TeamMemberDetailResponse]:
+        """Get detailed list of team members with optional name/email filters.
+
+        Args:
+            user_id: UUID of the requesting student user.
+            team_id: UUID of the team.
+            name_filter: Optional query to filter by user's name.
+            email_filter: Optional query to filter by user's email.
+            joined_after: Optional filter for members joined after this timestamp.
+            joined_before: Optional filter for members joined before this timestamp.
+            sort_by: Column to sort by ("name", "email", or "joined_at"). Defaults to "joined_at".
+            order: Sort order ("asc" or "desc"). Defaults to "asc".
+            contest_id: Optional UUID of the contest to check registration status in.
+
+        Returns:
+            list[TeamMemberDetailResponse]: List of mapped detailed team member schemas.
+
+        Raises:
+            StudentTeamNotFoundError: If the team does not exist or the user is not a member.
+        """
+        # Verify student belongs to the team (raises StudentTeamNotFoundError if not)
+        await self.repository.get_student_team_by_id_or_raise(user_id, team_id)
+
+        members_data = await self.repository.get_team_members(
+            team_id=team_id,
+            name_filter=name_filter,
+            email_filter=email_filter,
+            joined_after=joined_after,
+            joined_before=joined_before,
+            sort_by=sort_by,
+            order=order,
+            contest_id=contest_id,
+        )
+
+        return [
+            TeamMemberDetailResponse(
+                id=user.id,
+                name=user.name,
+                email=user.email,
+                phone_no=user.phone_no,
+                gender=user.gender,
+                role=user.role,
+                team_role=team_role,
+                joined_at=joined_at,
+                is_in_contest=is_in_contest,
+            )
+            for user, team_role, joined_at, is_in_contest in members_data
+        ]
+
+
+
+
         
 
         

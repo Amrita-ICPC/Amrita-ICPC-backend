@@ -166,3 +166,24 @@ class StudentNotEligibleForContestError(AppBaseException):
             message=f"Student {user_id} is not eligible for contest {contest_id}",
             status_code=status.HTTP_403_FORBIDDEN,
         )
+
+
+class StudentAlreadyInContestError(AppBaseException):
+    """Raised when student is already registered or enrolled in the contest."""
+
+    def __init__(self, user_id: str, contest_id: str):
+        super().__init__(
+            message=f"Student {user_id} is already in contest {contest_id}",
+            status_code=status.HTTP_409_CONFLICT,
+        )
+
+
+class TeamAlreadyInContestError(AppBaseException):
+    """Raised when team is already registered or enrolled in the contest."""
+
+    def __init__(self, team_id: str, contest_id: str):
+        super().__init__(
+            message=f"Team {team_id} is already in contest {contest_id}",
+            status_code=status.HTTP_409_CONFLICT,
+        )
+

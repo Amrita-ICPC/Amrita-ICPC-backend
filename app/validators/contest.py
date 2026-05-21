@@ -11,6 +11,7 @@ from app.exceptions.contest import (
 )
 from app.models.contest import ContestInstructor
 from app.utils.enums import ContestStatus
+from datetime import datetime, UTC
 
 
 class ContestValidator:
@@ -90,6 +91,16 @@ class ContestValidator:
             raise InvalidContestError(
                 "registration_end must be before or equal to contest start_time"
             )
+
+    @staticmethod
+    def validate_registration_date_past(registration_start: datetime | None,registration_end: datetime | None) -> None:
+        if registration_start is not None:
+            if datetime.now(UTC) < registration_start.astimezone(UTC):
+                raise InvalidContestError("Registration has not started yet")
+        if registration_end is not None:
+            if datetime.now(UTC) > registration_end.astimezone(UTC):
+                raise InvalidContestError("Registration has ended")
+        
 
     @staticmethod
     def validate_team_size_constraints(min_size: int, max_size: int) -> None:

@@ -1,3 +1,4 @@
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.config import config
@@ -36,6 +37,7 @@ async def init_db():
             logger.info("Migrations enabled; creating tables via metadata.")
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
+                
             logger.info("Database tables created successfully.")
         else:
             logger.warning("Migrations disabled; skipping metadata schema sync.")
