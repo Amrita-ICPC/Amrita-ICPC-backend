@@ -1,3 +1,4 @@
+from app.schema.student.contest_team import ContestTeamUpdate
 from app.validators.contest import ContestValidator
 from app.core.guards.contest_student import ContestStudentGuard
 from app.repositories.contest import ContestRepository
@@ -116,3 +117,22 @@ class ContestTeamService:
 
         return None
 
+    async def update_contest_team(
+        self, 
+        contest_team_id: UUID, 
+        contest_team_update: ContestTeamUpdate,
+        user_id: UUID
+    ) -> None:
+    
+        # Fetch the contest team
+        contest_team = await self.repository.get_contest_team_by_id_or_raise(contest_team_id)
+
+        #Check if the user is leader
+        self.team_student_guard.check_is_leader(team=contest_team.team, user_id=user_id)
+
+        #update the name
+        contest_team.name = contest_team_update.name
+        
+        await self.repository.update_contest_team(contest_team)
+
+        return None

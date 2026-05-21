@@ -1,4 +1,5 @@
 #TODO: Implement RBAC auth gaurd
+from app.schema.student.contest_team import ContestTeamUpdate
 from app.core.guards.contest_student import ContestStudentGuard
 from app.repositories.team import TeamRepository
 from app.repositories.contest import ContestRepository
@@ -159,5 +160,34 @@ async def import_student_team(
         request,
         data=None,
         message="Team imported into contest successfully",
+    )
+
+
+@router.patch(
+    "/{contest_id}/teams/{contest_team_id}",
+    response_model=APIResponse[None],
+    summary="Update a contest team",
+)
+async def update_contest_team(
+    request: Request,
+    contest_id: UUID,
+    contest_team_id: UUID,
+    contest_team_update: ContestTeamUpdate,
+    user_id: UUID = Depends(get_current_user_id),
+    service: ContestTeamService = Depends(get_contest_team_service),
+):
+    """
+    Update a contest team.
+    """
+    await service.update_contest_team(
+        contest_team_id=contest_team_id,
+        contest_team_update=contest_team_update,
+        user_id=user_id,
+    )
+    logger.info(f"Successfully updated team {contest_team_id} in contest {contest_id} by user {user_id}")
+    return create_api_response(
+        request,
+        data=None,
+        message="Team updated successfully",
     )
 
