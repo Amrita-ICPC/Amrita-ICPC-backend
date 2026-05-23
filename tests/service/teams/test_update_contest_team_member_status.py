@@ -16,7 +16,7 @@ from app.exceptions.student.teams import (
     InvalidContestTeamMemberStatusUpdateException,
 )
 from app.exceptions.team import InvalidTeamSizeError, CannotRemoveTeamLeaderError
-from app.exceptions.contest import InvalidContestError
+from app.exceptions.contest import InvalidContestError, StudentAlreadyInContestError
 
 
 @pytest.fixture
@@ -400,4 +400,49 @@ async def test_leader_leaving_last_cancels_team(
         to_status=ContestTeamMemberStatus.CANCELLED,
         exclude_user_id=leader_id,
     )
+
+
+@pytest.mark.asyncio
+async def test_accept_raises_if_already_in_contest(
+    contest_team_service,
+    mock_contest_repository,
+    mock_contest_team_repository,
+    mock_contest_student_guard,
+):
+    user_id = uuid4()
+    contest_id = uuid4()
+    contest_team_id = uuid4()
+    member_id = uuid4()
+
+    # Valid registration window
+    now = datetime.datetime.now(datetime.timezone.utc)
+    mock_contest = MagicMock(spec=Contest)
+    mock_contest.registration_start = now - datetime.timedelta(days=1)
+    mock_contest.registration_end = now + datetime.timedelta(days=1)
+    mock_contest_repository.get_contest_or_raise.return_value = mock_contest
+
+    # Team in draft
+    mock_contest_team = MagicMock(spec=ContestTeam)
+    mock_contest_team.team_status = TeamStatus.DRAFT
+    mock_contest_team_repository.get_contest_team_by_id_or_raise.return_value = mock_contest_team
+
+    mock_member = MagicMock(spec=ContestTeamMember)
+    mock_member.user_id = user_id
+    mock_member.status = ContestTeamMemberStatus.INVITED
+    mock_contest_team_repository.get_contest_team_member_or_raise.return_value = mock_member
+
+    # Mock the guard to raise StudentAlreadyInContestError
+    mock_contest_student_guard.check_student_already_in_contest.side_effect = StudentAlreadyInContestError(
+        user_id=str(user_id), contest_id=str(contest_id)
+    )
+
+    with pytest.raises(StudentAlreadyInContestError):
+        await contest_team_service.update_contest_team_member_status(
+            user_id=user_id,
+            contest_id=contest_id,
+            contest_team_id=contest_team_id,
+            contest_team_member_id=member_id,
+            contest_team_member_status=ContestTeamMemberStatus.ACCEPTED,
+        )
+
 

@@ -22,7 +22,9 @@ from app.repositories.contest import ContestRepository
 from app.validators.team import TeamValidator
 from app.core.guards.team_student import TeamStudentGuard
 from app.repositories.student.team import StudentTeamRepository
-from app.schema.team import ContestTeamImport
+from app.schema.team import ContestTeamImport, ContestTeamCreate
+from app.models.contest import ContestTeam, ContestTeamMember
+from app.utils.enums import TeamStatus, ContestTeamMemberStatus
 from uuid import UUID
 from datetime import datetime, timezone
 from app.models import ContestTeam
@@ -139,6 +141,69 @@ class ContestTeamService:
             user_id=user_id,
         )
         await self.repository.create_contest_team_members(contest_team_members)
+
+        return None
+
+    @cache_delete(
+        key_builder=lambda self, contest_id, contest_team_create, user_id: [
+            f"student:contest:user:{user_id}:contest:{contest_id}"
+        ]
+    )
+    async def create_contest_team(
+        self,
+        contest_id: UUID,
+        contest_team_create: ContestTeamCreate,
+        user_id: UUID,
+    ) -> None:
+        """Create a new contest team directly in a contest (not in standard teams).
+
+        Args:
+            contest_id: UUID of the contest.
+            contest_team_create: Schema containing team name.
+            user_id: UUID of the user creating the team.
+        """
+        # Fetch contest
+        contest = await self.contest_repository.get_contest_or_raise(contest_id)
+
+        # Validate registration timeframe
+        ContestValidator.validate_registration_date_past(contest.registration_start, contest.registration_end)
+
+        # Check if user is already in the contest
+        await self.contest_student_guard.check_student_already_in_contest(
+            contest_id=contest_id,
+            user_ids=[user_id],
+        )
+
+        # Check user's audience eligibility for the contest
+        if not contest.is_public:
+            await self.contest_student_guard.check_student_aduiences_for_contest(
+                user_ids=[user_id],
+                contest_id=contest_id,
+            )
+
+        # Create the ContestTeam association
+        # Keep team_id=None (as it's not a standard team)
+        # Set team_status=DRAFT (default)
+        # Set leader_id=user_id
+        contest_team = ContestTeam(
+            contest_id=contest_id,
+            name=contest_team_create.name,
+            leader_id=user_id,
+            team_status=TeamStatus.DRAFT,
+            team_id=None,
+        )
+        contest_team = await self.repository.create_contest_team(contest_team)
+
+        # Add the leader to the ContestTeamMember table
+        # When creating a team, the leader is automatically accepted
+        contest_team_member = ContestTeamMember(
+            contest_id=contest_id,
+            contest_team_id=contest_team.id,
+            user_id=user_id,
+            status=ContestTeamMemberStatus.ACCEPTED,
+            confirmed_at=datetime.now(timezone.utc),
+        )
+        await self.repository.create_contest_team_members([contest_team_member])
 
         return None
 
@@ -355,6 +420,12 @@ class ContestTeamService:
         if contest_team_member.user_id != user_id:
             raise TeamMemberAccessDeniedError(team_id=str(contest_team.id), user_id=str(user_id))
 
+        # Check if the user is already in the contest
+        await self.contest_student_guard.check_student_already_in_contest(
+            contest_id=contest.id,
+            user_ids=[user_id],
+        )
+
         current_contest_team_member_count = await self.repository.count_contest_team_members(contest_team_id, ContestTeamMemberStatus.ACCEPTED)
         # Check if team is full (i.e. size is already at or above max_team_size)
         if current_contest_team_member_count >= contest.max_team_size:
@@ -367,7 +438,6 @@ class ContestTeamService:
     async def invite_members(
         self,
         contest_id: UUID,
-        team_id: UUID,
         contest_team_id: UUID,
         invite_user_ids: list[UUID],
         user_id: UUID,
@@ -392,16 +462,25 @@ class ContestTeamService:
         if contest_team.contest_id != contest_id:
             raise ContestTeamNotFoundException(str(contest_team_id))
 
-        # Validate that the team_id matches if the contest team has a team_id
-        if contest_team.team_id is not None and contest_team.team_id != team_id:
-            raise StudentTeamNotFoundError(team_id)
-
         # Validate team status (must be DRAFT)
         if contest_team.team_status != TeamStatus.DRAFT:
             raise TeamStatusNotAllowedForUpdatingContestTeamMemberStatusException()
 
         # Validate requester is the contest team leader
         self.team_student_guard.check_is_contest_team_leader(user_id=user_id, contest_team=contest_team)
+
+        # Validate underlying team membership constraint if team_id is set
+        team_member_ids: set[UUID] = set()
+        if contest_team.team_id is not None:
+            members_data = await self.team_repository.get_team_members(team_id=contest_team.team_id)
+            team_member_ids = {row[0].id for row in members_data}
+
+        ContestTeamValidator.validate_team_membership_if_needed(
+            team_id=contest_team.team_id,
+            team_member_ids=team_member_ids,
+            invitee_ids=invite_user_ids,
+            team_name=contest_team.name,
+        )
 
         # Validate team size capacity limits
         active_members_count = await self.repository.count_contest_team_members(
@@ -445,16 +524,6 @@ class ContestTeamService:
             await self.contest_student_guard.check_student_aduiences_for_contest(
                 user_ids=invite_user_ids,
                 contest_id=contest_id,
-            )
-
-        # Validate underlying team membership constraint if team_id is set
-        if contest_team.team_id is not None:
-            members_data = await self.team_repository.get_team_members(team_id=contest_team.team_id)
-            team_member_ids = {row[0].id for row in members_data}
-            ContestTeamValidator.validate_members_are_in_team(
-                team_member_ids=team_member_ids,
-                invitee_ids=invite_user_ids,
-                team_name=contest_team.name,
             )
 
         # Create ContestTeamMember records

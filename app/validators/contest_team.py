@@ -20,6 +20,19 @@ class ContestTeamValidator:
                 raise TeamMemberAccessDeniedError(team_id=team_name, user_id=str(user_id))
 
     @staticmethod
+    def validate_team_membership_if_needed(
+        team_id: UUID | None,
+        team_member_ids: set[UUID],
+        invitee_ids: list[UUID],
+        team_name: str,
+    ) -> None:
+        """Validate that all invited members are part of the underlying team if the team exists."""
+        if team_id is not None:
+            for user_id in invitee_ids:
+                if user_id not in team_member_ids:
+                    raise TeamMemberAccessDeniedError(team_id=team_name, user_id=str(user_id))
+
+    @staticmethod
     def validate_contest_team_member_life_cycle(current_status: ContestTeamMemberStatus, upcoming_status: ContestTeamMemberStatus) -> None:
         ALLOWED_LIFE_CYCLE_TRANSITIONS = {
             ContestTeamMemberStatus.INVITED: [ContestTeamMemberStatus.ACCEPTED, ContestTeamMemberStatus.REJECTED, ContestTeamMemberStatus.CANCELLED],

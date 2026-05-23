@@ -122,6 +122,7 @@ class ContestInfoForInvitation(BaseModel):
 class UserInvitationResponse(BaseModel):
     id: UUID
     can_accept_invitation: bool
+    reason: Optional[str] = None
     contest: ContestInfoForInvitation
     team: ContestTeamInfo
 
