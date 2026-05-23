@@ -207,10 +207,12 @@ class TeamStatus(str, enum.Enum):
         DRAFT: Team is being formed and can still be modified.
         CONFIRMED: Team is finalized and ready for contest participation.
         DISQUALIFIED: Team has been disqualified from the contest.
+        CANCELLED: Team has been cancelled from the contest.
     """
 
     DRAFT = "DRAFT"
     CONFIRMED = "CONFIRMED"
+    CANCELLED = "CANCELLED"
     DISQUALIFIED = "DISQUALIFIED"
 
 
@@ -222,11 +224,13 @@ class TeamApprovalStatus(str, enum.Enum):
         WAITING: Team is awaiting instructor review.
         APPROVED: Team enrollment is approved.
         REJECTED: Team enrollment is rejected.
+        CANCELLED: Team enrollment is cancelled.
     """
 
     WAITING = "WAITING"
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
+    CANCELLED = "CANCELLED"
 
 
 class ContestMode(str, enum.Enum):
@@ -326,16 +330,19 @@ class ContestTeamMemberStatus(str, enum.Enum):
     Enumeration of contest team registration statuses.
 
     Attributes:
-        PENDING: Team registration is pending.
-        CANCELLED: Team registration is cancelled.
-        APPROVED: Team registration is approved.
-        REJECTED: Team registration is rejected.
+        INVITED: User has been invited to join a team but has not yet accepted.
+        ACCEPTED: User has accepted the team invitation and is a member of the team.
+        CANCELLED: User or team has cancelled the registration.
+        REJECTED: User has rejected the team invitation.
+        LEFT: User was a member but has left the team.
     """
 
-    PENDING = "PENDING"
+    INVITED = "INVITED"
+    ACCEPTED = "ACCEPTED"
+    REMOVED = "REMOVED"
     CANCELLED = "CANCELLED"
-    APPROVED = "APPROVED"
     REJECTED = "REJECTED"
+    LEFT = "LEFT"
 
 
 class TeamMemberRole(str, enum.Enum):

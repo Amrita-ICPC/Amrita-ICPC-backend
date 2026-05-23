@@ -1,3 +1,5 @@
+from app.utils.enums import TeamStatus
+from typing import List
 from app.utils.enums import TeamApprovalStatus
 from sqlalchemy import or_
 from sqlalchemy import exists
@@ -17,6 +19,7 @@ from app.exceptions.contest import (
     StudentAlreadyInContestError,
     TeamAlreadyInContestError,
 )
+from app.exceptions.student.contests import NoContestTeamMemberFoundError
 
 class ContestStudentGuard:
     def __init__(self, db: AsyncSession) -> None:
@@ -66,7 +69,7 @@ class ContestStudentGuard:
         query = select(ContestTeamMember.user_id).where(
             ContestTeamMember.contest_id == contest_id,
             ContestTeamMember.user_id.in_(user_ids),
-            ContestTeamMember.status == ContestTeamMemberStatus.APPROVED
+            ContestTeamMember.status == ContestTeamMemberStatus.ACCEPTED
         )
 
         result = await self.db.execute(query)
@@ -76,12 +79,26 @@ class ContestStudentGuard:
 
     async def check_team_already_in_contest(self, team_id: UUID, contest_id: UUID) -> None:
         """Check if a team is already in the contest."""
-        query = select(ContestTeam.id).where(
+        query = select(exists().where(
             ContestTeam.contest_id == contest_id,
             ContestTeam.team_id == team_id,
-            or_(ContestTeam.approval_status == TeamApprovalStatus.APPROVED, ContestTeam.approval_status == TeamApprovalStatus.WAITING)
-        )
-        result = await self.db.execute(query)
-        if result.scalar_one_or_none() is not None:
+            ContestTeam.approval_status.in_([TeamApprovalStatus.APPROVED, TeamApprovalStatus.WAITING]),
+            ContestTeam.team_status.in_([TeamStatus.DRAFT, TeamStatus.CONFIRMED])
+        ))
+        result = await self.db.scalar(query)
+        if result:
             raise TeamAlreadyInContestError(team_id=str(team_id), contest_id=str(contest_id))
+
+    async def check_contest_team_member_exist(self,contest_team_id:UUID, user_id: UUID):
+        query = select(ContestTeamMember.user_id).where(
+            ContestTeamMember.contest_team_id == contest_team_id,
+            ContestTeamMember.user_id == user_id,
+            ContestTeamMember.status == ContestTeamMemberStatus.ACCEPTED
+        )
+
+        result = await self.db.execute(query)
+        existing_user_ids = set(result.scalars().all())
+        if len(existing_user_ids) == 0:
+            raise NoContestTeamMemberFoundError(detail=f"User {user_id} is not a member of contest team {contest_team_id}")
+            
     

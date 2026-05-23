@@ -153,7 +153,7 @@ class StudentContestRepository:
         query = select(ContestTeamMember).where(
             ContestTeamMember.contest_id == contest_id,
             ContestTeamMember.user_id == user_id,
-            ContestTeamMember.status == ContestTeamMemberStatus.APPROVED
+            ContestTeamMember.status == ContestTeamMemberStatus.ACCEPTED
         ).options(
             selectinload(ContestTeamMember.contest_team)
             .selectinload(ContestTeam.contest_team_member)

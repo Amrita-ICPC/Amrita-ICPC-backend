@@ -4,7 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, field_validator
 
-from app.utils.enums import UserRole
+from app.utils.enums import ContestTeamMemberStatus, TeamMemberRole, UserRole
 
 
 class UserBase(BaseModel):
@@ -83,5 +83,49 @@ class UserResponse(BaseModel):
 class StudentUserSearchResponse(UserResponse):
     is_in_team: Optional[bool] = None
     is_already_invited: Optional[bool] = None
+
+
+class ContestTeamMemberInfo(BaseModel):
+    id: UUID
+    name: str
+    email: EmailStr
+    status: ContestTeamMemberStatus
+    role: TeamMemberRole
+
+    class Config:
+        from_attributes = True
+
+
+class ContestTeamInfo(BaseModel):
+    id: UUID
+    name: str
+    members: List[ContestTeamMemberInfo]
+    joined_members_count: int
+
+    class Config:
+        from_attributes = True
+
+
+class ContestInfoForInvitation(BaseModel):
+    id: UUID
+    name: str
+    description: Optional[str] = None
+    image: Optional[str] = None
+    min_team_size: int
+    max_team_size: int
+    registered_teams_count: int
+
+    class Config:
+        from_attributes = True
+
+
+class UserInvitationResponse(BaseModel):
+    id: UUID
+    can_accept_invitation: bool
+    contest: ContestInfoForInvitation
+    team: ContestTeamInfo
+
+    class Config:
+        from_attributes = True
 
 

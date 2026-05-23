@@ -1,3 +1,4 @@
+from app.repositories.student.contest_team import ContestTeamRepository
 from app.utils.enums import TeamApprovalStatus
 from app.repositories.team import TeamRepository
 from app.repositories.student.contest import StudentContestRepository
@@ -37,6 +38,7 @@ class StudentContestService:
         self,
         repository: StudentContestRepository,
         contest_repository: ContestRepository,
+        contest_team_reposiotry: ContestTeamRepository,
         team_repository: TeamRepository,
         contest_student_guard: ContestStudentGuard,
     ) -> None:
@@ -52,6 +54,7 @@ class StudentContestService:
         self.contest_student_guard = contest_student_guard
         self.contest_repository = contest_repository
         self.team_repository = team_repository
+        self.contest_team_repository = contest_team_reposiotry
 
     @cache_get(
         key_builder=lambda self, user_id, request, search, pagination: 
@@ -164,19 +167,23 @@ class StudentContestService:
             return to_student_contest_not_registered_response()
 
         contest_team = contest_team_member.contest_team
-        contest_team_members = contest_team.contest_team_member
+        contest_team_members = await self.contest_team_repository.get_contest_team_members(contest_team_id=contest_team.id,contestTeamMemberStatus=[ContestTeamMemberStatus.ACCEPTED,ContestTeamMemberStatus.INVITED])
+        # contest_team_members = contest_team.contest_team_member
 
         # Calculate status and readiness
         is_draft = contest_team.team_status == TeamStatus.DRAFT
         registered = True
-        approved = not is_draft
-        status_state = RegistrationState.PENDING_APPROVAL if is_draft else RegistrationState.APPROVED
+        is_approved = contest_team.approval_status == TeamApprovalStatus.APPROVED
+        registration_status = RegistrationState.NOT_REGISTERED if is_draft else (RegistrationState.PENDING_APPROVAL if contest_team.approval_status == TeamApprovalStatus.WAITING else RegistrationState.APPROVED)
 
         # Determine readiness by evaluating start and end time relative to current time
         current_time = datetime.now(timezone.utc)
         if is_draft:
             can_start = False
-            reason = "Team is not approved yet"
+            reason = "Team is in draft status"
+        elif not is_approved:
+            can_start = False
+            reason = "Team is not approved by contest organizers"
         elif current_time < contest.start_time:
             can_start = False
             reason = "Contest has not started yet"
@@ -190,33 +197,36 @@ class StudentContestService:
         # Calculate member details using pure mapper
         members = [
             to_team_member_status(
+                id=member.id,
                 user_id=member.user_id,
                 name=member.user.name,
                 role=TeamMemberRole.LEADER if contest_team.leader_id == member.user_id else TeamMemberRole.MEMBER,
-                joined=member.status != ContestTeamMemberStatus.PENDING,
-                confirmed=member.status != ContestTeamMemberStatus.PENDING,
+                joined=member.status == ContestTeamMemberStatus.ACCEPTED,
+                confirmed=member.status == ContestTeamMemberStatus.ACCEPTED,
+                is_current_user=member.user_id == user_id,
             )
             for member in contest_team_members
         ]
 
-        approved_count = len([1 for member in contest_team_members if member.status == ContestTeamMemberStatus.APPROVED])
+        approved_count = len([1 for member in contest_team_members if member.status == ContestTeamMemberStatus.ACCEPTED])
         max_size = contest.max_team_size if contest.max_team_size > 0 else 1
         completion_percentage = (approved_count / max_size) * 100
 
         # Perform the mapping via decoupled schema mapper
         return to_student_contest_status_response(
             contest_team_id=contest_team.id,
-            team_name=contest_team.team.name,
+            team_name=contest_team.name,
             members=members,
             approved_count=approved_count,
             min_team_size=contest.min_team_size,
             max_team_size=contest.max_team_size,
             completion_percentage=completion_percentage,
             registered=registered,
-            approved=approved,
-            status_state=status_state,
+            approved=is_approved,
+            status_state=registration_status,
             can_start=can_start,
             reason=reason,
             team_approval_status=contest_team.approval_status,
             status= contest_team.team_status,
+            team_id=contest_team.team_id
         )        

@@ -7,11 +7,6 @@ from app.service.team_service import TeamService
 from app.utils.enums import TeamApprovalMode, TeamApprovalStatus, TeamStatus
 
 
-@pytest.fixture
-def team_service(mock_repository, mock_guard, mock_validator):
-    return TeamService(
-        repository=mock_repository, guard=mock_guard, validator=mock_validator
-    )
 
 
 @pytest.fixture

@@ -21,6 +21,8 @@ from app.models.contest import ContestTeam
 from app.models.team import Team
 from app.models.user import User
 from app.repositories.team import TeamRepository
+from app.repositories.contest import ContestRepository
+from app.repositories.user import UserRepository
 from app.schema.team import ContestTeamResponse, TeamCreate
 from app.service.team_service import TeamService
 from app.utils.enums import TeamApprovalStatus, TeamStatus, UserRole
@@ -74,7 +76,17 @@ def mock_validator():
 
 
 @pytest.fixture
-def team_service(mock_repository, mock_guard, mock_validator):
+def mock_contest_repository():
+    return AsyncMock(spec=ContestRepository)
+
+
+@pytest.fixture
+def mock_user_repository():
+    return AsyncMock(spec=UserRepository)
+
+
+@pytest.fixture
+def team_service(mock_repository, mock_guard, mock_validator, mock_contest_repository, mock_user_repository):
     """TeamService instance with all dependencies mocked.
 
     Provides a fully configured TeamService with mocked dependencies,
@@ -84,14 +96,22 @@ def team_service(mock_repository, mock_guard, mock_validator):
         mock_repository: Mock TeamRepository
         mock_guard: Mock TeamOperationGuard
         mock_validator: Mock TeamValidator
+        mock_contest_repository: Mock ContestRepository
+        mock_user_repository: Mock UserRepository
 
     Returns:
         TeamService: Service instance with mocked dependencies
     """
+    mock_repository.get_contest_or_raise = mock_contest_repository.get_contest_or_raise
+    mock_repository.get_user_or_raise = mock_user_repository.get_user_or_raise
+    mock_repository.get_users_or_raise = mock_user_repository.get_users_or_raise
+
     return TeamService(
         repository=mock_repository,
         guard=mock_guard,
         validator=mock_validator,
+        contest_repository=mock_contest_repository,
+        user_repository=mock_user_repository,
     )
 
 

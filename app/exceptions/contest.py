@@ -195,3 +195,32 @@ class ContestTeamNotFoundException(AppBaseException):
             status_code=status.HTTP_404_NOT_FOUND,
         )
 
+
+class TeamCanceledError(AppBaseException):
+    """Raised when team is canceled."""
+    def __init__(self):
+        super().__init__(
+            message="Team is canceled",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+class AccessDeniedTeamStatusError(AppBaseException):
+    def __init__(self, team_status: str):
+        super().__init__(
+            message=f"Team is in status {team_status}' you cannot make changes to the team for students",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+class TeamDisqualifiedError(AppBaseException):
+    def __init__(self):
+        super().__init__(
+            message=f"Team is disqualified",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+class ContestTeamMemberNotFoundException(AppBaseException):
+    """Raised when contest team member is not found."""
+    def __init__(self, contest_team_member_id: str):
+        super().__init__(
+            message=f"Contest team member with ID {contest_team_member_id} not found",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )

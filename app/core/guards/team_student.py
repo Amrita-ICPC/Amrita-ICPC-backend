@@ -1,3 +1,4 @@
+from app.models import ContestTeam
 from app.models import TeamUser
 from sqlalchemy import and_
 from sqlalchemy import exists
@@ -32,6 +33,10 @@ class TeamStudentGuard:
         """
         if team.leader_id != user_id:
             raise TeamLeaderAccessDeniedError(team_id=str(team.id), user_id=str(user_id))
+
+    def check_is_contest_team_leader(self, user_id: UUID, contest_team: ContestTeam)->None:
+        if contest_team.leader_id != user_id:
+            raise TeamLeaderAccessDeniedError(team_id=str(contest_team.id), user_id=str(user_id))
 
     async def check_is_member(self, team_id: UUID, user_id: UUID) -> None:
         query = select(exists().where(and_(TeamUser.user_id == user_id, TeamUser.team_id == team_id)))
