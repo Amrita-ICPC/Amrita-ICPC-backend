@@ -32,7 +32,7 @@ from app.core.guards.team_student import TeamStudentGuard
 from app.repositories.student.team import StudentTeamRepository
 from app.repositories.student.contest_team import ContestTeamRepository
 from app.service.student.contest_team import ContestTeamService
-from app.schema.team import ContestTeamImport
+from app.schema.team import ContestTeamImport, ContestTeamCreate
 from app.core.logger import logger
 
 router = APIRouter()
@@ -170,6 +170,34 @@ async def import_student_team(
     )
 
 
+@router.post(
+    "/{contest_id}/teams",
+    response_model=APIResponse[None],
+    summary="Create a new contest team directly in a contest",
+)
+async def create_contest_team(
+    request: Request,
+    contest_id: UUID,
+    contest_team_create: ContestTeamCreate,
+    user_id: UUID = Depends(get_current_user_id),
+    service: ContestTeamService = Depends(get_contest_team_service),
+):
+    """
+    Create a new contest team directly in a contest (not in standard teams).
+    """
+    await service.create_contest_team(
+        contest_id=contest_id,
+        contest_team_create=contest_team_create,
+        user_id=user_id,
+    )
+    logger.info(f"Successfully created contest team {contest_team_create.name} in contest {contest_id} by user {user_id}")
+    return create_api_response(
+        request,
+        data=None,
+        message="Team created in contest successfully",
+    )
+
+
 @router.patch(
     "/{contest_id}/teams/{contest_team_id}",
     response_model=APIResponse[None],
@@ -290,14 +318,13 @@ async def update_contest_team_member_status(
 
 
 @router.patch(
-    "/{contest_id}/teams/{team_id}/teams/{contest_team_id}/invitation",
+    "/{contest_id}/teams/{contest_team_id}/invitation",
     response_model=APIResponse[None],
     summary="Invite members to a contest team",
 )
 async def invite_members_to_contest_team(
     request: Request,
     contest_id: UUID,
-    team_id: UUID,
     contest_team_id: UUID,
     invite_request: ContestTeamInviteRequest,
     user_id: UUID = Depends(get_current_user_id),
@@ -308,7 +335,6 @@ async def invite_members_to_contest_team(
     """
     await service.invite_members(
         contest_id=contest_id,
-        team_id=team_id,
         contest_team_id=contest_team_id,
         invite_user_ids=invite_request.user_ids,
         user_id=user_id,
