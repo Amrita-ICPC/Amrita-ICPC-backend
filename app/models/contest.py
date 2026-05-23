@@ -270,7 +270,7 @@ class ContestTeam(Base):
             "contest_id",
             "team_id",
             unique=True,
-            postgresql_where="approval_status IN ('WAITING', 'APPROVED')",
+            postgresql_where="approval_status IN ('WAITING', 'APPROVED') OR team_status IN ('DRAFT', 'CONFIRMED')",
         ),
     )
 
@@ -322,7 +322,13 @@ class ContestTeamMember(Base):
     __tablename__ = "contest_team_member"
 
     __table_args__ = (
-        UniqueConstraint("contest_team_id", "user_id", name="uq_contest_team_member_team_user"),
+        Index(
+            "uq_contest_team_member_team_user",
+            "contest_team_id",
+            "user_id",
+            unique=True,
+            postgresql_where="status IN ('ACCEPTED', 'INVITED')",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -339,12 +345,11 @@ class ContestTeamMember(Base):
     )
 
     status: Mapped[ContestTeamMemberStatus] = mapped_column(
-        Enum(ContestTeamMemberStatus), nullable=False, default=ContestTeamMemberStatus.PENDING
+        Enum(ContestTeamMemberStatus), nullable=False, default=ContestTeamMemberStatus.INVITED
     )
     confirmed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-
     contest = relationship("Contest", back_populates="team_members")
     contest_team:Mapped[ContestTeam] = relationship("ContestTeam",back_populates="contest_team_member", foreign_keys=[contest_team_id])
     user = relationship("User", back_populates="team_registration_members")

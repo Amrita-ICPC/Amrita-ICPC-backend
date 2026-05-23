@@ -9,26 +9,63 @@ from app.core.clients.database import get_db
 from app.core.logger import logger
 from app.core.response import create_api_response
 from app.repositories.dto.user import UserListFilters
+from app.repositories.student.contest_team import ContestTeamRepository
 from app.schema.base import APIResponse
-from app.schema.user import UserProfile, UserResponse, UserSyncResponse, StudentUserSearchResponse
+from app.schema.user import (
+    UserProfile,
+    UserResponse,
+    UserSyncResponse,
+    StudentUserSearchResponse,
+    UserInvitationResponse,
+)
+from app.service.student.student_service import StudentService
 from app.service.user_service import UserService
-from app.utils.enums import UserRole
+from app.utils.enums import UserRole, ContestTeamMemberStatus
 from app.utils.pagination import get_pagination
 
 router = APIRouter()
 
 
+def get_student_service(
+    db: AsyncSession = Depends(get_db),
+) -> StudentService:
+    contest_team_repo = ContestTeamRepository(db)
+    return StudentService(contest_team_repo)
+
+
 @router.get("/me", response_model=UserProfile)
-def get_me(current_user: Dict[str, Any] = Depends(get_current_user)):
+def get_me(current_user: Dict[str, Any] = Depends(get_current_user), current_user_id: UUID = Depends(get_current_user_id)):
     """Get current logged-in user details from JWT."""
     return {
-        "id": current_user.get("sub"),
+        "id": current_user_id,
+        "user_id": current_user.get("sub"),
         "name": current_user.get("name"),
         "email": current_user.get("email"),
         "roles": current_user.get("roles", []),
         "groups": current_user.get("groups", []),
     }
 
+
+@router.get(
+    "/me/team-invitation",
+    response_model=APIResponse[list[UserInvitationResponse]],
+    summary="Get current user's contest team invitations",
+)
+async def get_my_team_invitations(
+    request: Request,
+    status: ContestTeamMemberStatus | None = Query(None, description="Filter by invitation status"),
+    current_user_id: UUID = Depends(get_current_user_id),
+    service: StudentService = Depends(get_student_service),
+):
+    """
+    Get all contest team invitations for the currently authenticated user.
+    """
+    invitations = await service.get_user_invitations(current_user_id, status)
+    return create_api_response(
+        request,
+        data=invitations,
+        message="User invitations fetched successfully",
+    )
 
 @router.post(
     "/sync-keycloak-users",

@@ -1,3 +1,6 @@
+from app.exceptions.contest import ContestTeamMemberNotFoundException
+from app.exceptions.contest import TeamDisqualifiedError
+from app.exceptions.contest import AccessDeniedTeamStatusError
 from app.exceptions.contest import ContestTeamNotFoundException
 from datetime import datetime, timezone
 
@@ -59,12 +62,19 @@ from app.exceptions.question import (
     TemplateAlreadyExistsError,
 )
 from app.exceptions.team import (
+    TeamIsConfirmedError,
     TeamNotFoundError,
     StudentTeamInvitationNotFoundError,
     StudentTeamInvitationError,
     StudentTeamUserNotFoundError,
 )
+from app.exceptions.student.teams import (
+    TeamStatusNotAllowedForUpdatingContestTeamMemberStatusException,
+    InvalidContestTeamMemberStatusUpdateException,
+)
+from app.exceptions.student.contests import NoContestTeamMemberFoundError
 from app.schema.base import APIErrorResponse, ErrorDetails, MetaResponse
+
 from app.schema.execution import CompilationErrorResponse
 
 
@@ -183,6 +193,17 @@ def setup_exception_handlers(app: FastAPI) -> None:
             details=[exc.detail] if exc.detail else None,
         )
 
+    @app.exception_handler(NoContestTeamMemberFoundError)
+    async def no_contest_team_member_found_handler(request: Request, exc: NoContestTeamMemberFoundError):
+        logger.warning(f"No contest team member found: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="NO_CONTEST_TEAM_MEMBER_FOUND",
+            details=[exc.detail] if exc.detail else None,
+        )
+
     @app.exception_handler(AudienceNotAssignedToContestError)
     async def audience_not_assigned_to_contest_handler(
         request: Request, exc: AudienceNotAssignedToContestError
@@ -247,6 +268,85 @@ def setup_exception_handlers(app: FastAPI) -> None:
             error_code="STUDENT_ALREADY_IN_CONTEST",
             details=[exc.detail] if exc.detail else None,
         )
+
+    @app.exception_handler(AccessDeniedTeamStatusError)
+    async def access_denied_team_status_handler(
+        request: Request, exc: AccessDeniedTeamStatusError
+    ):
+        logger.warning(f"Access denied team status: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="ACCESS_DENIED_TEAM_STATUS",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(ContestTeamMemberNotFoundException)
+    async def contest_team_member_not_found_handler(
+        request: Request, exc: ContestTeamMemberNotFoundException
+    ):
+        logger.warning(f"Contest team member not found: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="CONTEST_TEAM_MEMBER_NOT_FOUND",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(TeamDisqualifiedError)
+    async def team_disqualified_handler(
+        request: Request, exc: TeamDisqualifiedError
+    ):
+        logger.warning(f"Team disqualified: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="TEAM_DISQUALIFIED",
+            details=[exc.detail] if exc.detail else None,
+        )
+    
+    @app.exception_handler(TeamIsConfirmedError)
+    async def team_is_confirmed_handler(
+        request: Request, exc: TeamIsConfirmedError
+    ):
+        logger.warning(f"Team is confirmed: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="TEAM_IS_CONFIRMED",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(TeamStatusNotAllowedForUpdatingContestTeamMemberStatusException)
+    async def team_status_not_allowed_for_updating_contest_team_member_status_handler(
+        request: Request, exc: TeamStatusNotAllowedForUpdatingContestTeamMemberStatusException
+    ):
+        logger.warning(f"Team status not allowed for updating contest team member status: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="TEAM_STATUS_NOT_ALLOWED_FOR_UPDATING_CONTEST_TEAM_MEMBER_STATUS",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(InvalidContestTeamMemberStatusUpdateException)
+    async def invalid_contest_team_member_status_update_handler(
+        request: Request, exc: InvalidContestTeamMemberStatusUpdateException
+    ):
+        logger.warning(f"Invalid contest team member status update: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="INVALID_CONTEST_TEAM_MEMBER_STATUS_UPDATE",
+            details=[exc.detail] if exc.detail else None,
+        )
+
 
     @app.exception_handler(TeamAlreadyInContestError)
     async def team_already_in_contest_handler(

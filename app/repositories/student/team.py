@@ -635,7 +635,7 @@ class StudentTeamRepository:
             stmt = select(ContestTeamMember.user_id).where(
                 ContestTeamMember.contest_id == contest_id,
                 ContestTeamMember.user_id.in_(user_ids),
-                ContestTeamMember.status == ContestTeamMemberStatus.APPROVED
+                ContestTeamMember.status == ContestTeamMemberStatus.ACCEPTED
             )
             res = await self.db.execute(stmt)
             in_contest_user_ids = set(res.scalars().all())

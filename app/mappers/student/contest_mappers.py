@@ -182,27 +182,32 @@ def to_student_contest_not_registered_response() -> StudentContestStatusResponse
 
 
 def to_team_member_status(
-    user_id: UUID,
+    id: UUID,
+    user_id:UUID,
     name: str,
     role: TeamMemberRole,
     joined: bool,
     confirmed: bool,
+    is_current_user: bool,
 ) -> TeamMemberStatus:
     """
     Map raw team member status data to TeamMemberStatus DTO.
     """
     return TeamMemberStatus(
-        id=user_id,
+        id=id,
+        user_id=user_id,
         name=name,
         role=role,
         joined=joined,
         confirmed=confirmed,
+        is_current_user=is_current_user,
     )
 
 
 def to_student_contest_status_response(
     contest_team_id: UUID,
     team_name: str,
+    
     members: list[TeamMemberStatus],
     approved_count: int,
     min_team_size: int,
@@ -215,6 +220,7 @@ def to_student_contest_status_response(
     reason: str | None,
     status: TeamStatus,
     team_approval_status: TeamApprovalStatus,
+    team_id: UUID | None,
 ) -> StudentContestStatusResponse:
     """
     Map calculated registration, readiness, and team status to StudentContestStatusResponse.
@@ -228,7 +234,8 @@ def to_student_contest_status_response(
         max_team_size=max_team_size,
         completion_percentage=completion_percentage,
         team_approval_status=team_approval_status,
-        team_status=status
+        team_status=status,
+        team_id = team_id
     )
 
     return StudentContestStatusResponse(
@@ -297,9 +304,9 @@ def to_contest_team_members(
             contest_team_id=contest_team_id,
             user_id=member_id,
             status=(
-                ContestTeamMemberStatus.APPROVED
+                ContestTeamMemberStatus.ACCEPTED
                 if member_id == user_id
-                else ContestTeamMemberStatus.PENDING
+                else ContestTeamMemberStatus.INVITED
             ),
         )
         for member_id in member_ids

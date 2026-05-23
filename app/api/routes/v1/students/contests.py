@@ -1,5 +1,11 @@
 #TODO: Implement RBAC auth gaurd
-from app.schema.student.contest_team import ContestTeamUpdate
+from app.schema.student.contest_team import (
+    ContestTeamStatusUpdate,
+    ContestTeamLeaderTransfer,
+    ContestTeamUpdate,
+    ContestTeamMemberStatusUpdate,
+    ContestTeamInviteRequest,
+)
 from app.core.guards.contest_student import ContestStudentGuard
 from app.repositories.team import TeamRepository
 from app.repositories.contest import ContestRepository
@@ -39,7 +45,8 @@ def get_student_contest_service(
     contest_repository = ContestRepository(db)
     team_repository = TeamRepository(db)
     contest_student_guard = ContestStudentGuard(db)
-    return StudentContestService(repository,contest_repository,team_repository,contest_student_guard)
+    contest_team_repository = ContestTeamRepository(db)
+    return StudentContestService(repository,contest_repository,contest_team_repository,team_repository,contest_student_guard)
 
 def get_contest_team_service(
     db: AsyncSession = Depends(get_db),
@@ -190,4 +197,127 @@ async def update_contest_team(
         data=None,
         message="Team updated successfully",
     )
+
+
+@router.patch(
+    "/{contest_id}/teams/{contest_team_id}/leader",
+    response_model=APIResponse[None],
+    summary="Transfer team leadership",
+)
+async def transfer_contest_team_leader(
+    request: Request,
+    contest_id: UUID,
+    contest_team_id: UUID,
+    contest_team_leader_transfer: ContestTeamLeaderTransfer,
+    user_id: UUID = Depends(get_current_user_id),
+    service: ContestTeamService = Depends(get_contest_team_service),
+):
+    """
+    Transfer team leadership to another member.
+    """
+    await service.transfer_team_leader(
+        contest_team_id=contest_team_id,
+        user_id=user_id,
+        new_leader_id=contest_team_leader_transfer.new_leader_id,
+    )
+    logger.info(f"Successfully transferred team leadership for team {contest_team_id} in contest {contest_id} by user {user_id}")
+    return create_api_response(
+        request,
+        data=None,
+        message="Team leadership transferred successfully",
+    )
+
+@router.patch(
+    "/{contest_id}/teams/{contest_team_id}/status",
+    response_model=APIResponse[None],
+    summary="Update a contest team status",
+)
+async def update_contest_team_status(
+    request: Request,
+    contest_id: UUID,
+    contest_team_id: UUID,
+    contest_team_status: ContestTeamStatusUpdate,
+    user_id: UUID = Depends(get_current_user_id),
+    service: ContestTeamService = Depends(get_contest_team_service),
+):
+    """
+    Update a contest team status.
+    """
+    await service.update_contest_team_status(
+        contest_team_id=contest_team_id,
+        contest_id=contest_id,
+        contest_team_status=contest_team_status.status,
+        user_id=user_id,
+    )
+    logger.info(f"Successfully updated team status for team {contest_team_id} in contest {contest_id} by user {user_id}")
+    return create_api_response(
+        request,
+        data=None,
+        message="Team status updated successfully",
+    )
+
+
+@router.patch(
+    "/{contest_id}/teams/{contest_team_id}/members/{contest_team_member_id}/status",
+    response_model=APIResponse[None],
+    summary="Update a contest team member status",
+)
+async def update_contest_team_member_status(
+    request: Request,
+    contest_id: UUID,
+    contest_team_id: UUID,
+    contest_team_member_id: UUID,
+    contest_team_member_status_update: ContestTeamMemberStatusUpdate,
+    user_id:UUID = Depends(get_current_user_id),
+    service: ContestTeamService = Depends(get_contest_team_service),
+):
+    """
+    Update a contest team member status.
+    """
+    await service.update_contest_team_member_status(
+        contest_id=contest_id,
+        user_id=user_id,
+        contest_team_id=contest_team_id,
+        contest_team_member_id=contest_team_member_id,
+        contest_team_member_status=contest_team_member_status_update.status,
+    )
+    logger.info(f"Successfully updated team member {contest_team_member_id} status for team {contest_team_id} in contest {contest_id}")
+    return create_api_response(
+        request,
+        data=None,
+        message="Team member status updated successfully",
+    )
+
+
+@router.patch(
+    "/{contest_id}/teams/{team_id}/teams/{contest_team_id}/invitation",
+    response_model=APIResponse[None],
+    summary="Invite members to a contest team",
+)
+async def invite_members_to_contest_team(
+    request: Request,
+    contest_id: UUID,
+    team_id: UUID,
+    contest_team_id: UUID,
+    invite_request: ContestTeamInviteRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    service: ContestTeamService = Depends(get_contest_team_service),
+):
+    """
+    Invite members to a contest team.
+    """
+    await service.invite_members(
+        contest_id=contest_id,
+        team_id=team_id,
+        contest_team_id=contest_team_id,
+        invite_user_ids=invite_request.user_ids,
+        user_id=user_id,
+    )
+    logger.info(f"Successfully invited members {invite_request.user_ids} to contest team {contest_team_id} in contest {contest_id}")
+    return create_api_response(
+        request,
+        data=None,
+        message="Members invited successfully",
+    )
+
 

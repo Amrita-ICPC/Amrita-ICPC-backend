@@ -1,4 +1,7 @@
 # app/validators/team.py
+from app.exceptions.contest import TeamDisqualifiedError
+from app.exceptions.contest import AccessDeniedTeamStatusError
+from app.exceptions.contest import TeamCanceledError
 from uuid import UUID
 
 from app.exceptions.team import (
@@ -8,6 +11,8 @@ from app.exceptions.team import (
     InvalidTeamSizeError,
     MemberNotInTeamError,
     TeamAlreadyExistsError,
+    TeamIsConfirmedError,
+    LeaderMustBeMemberError,
 )
 from app.models.contest import Contest
 from app.models.team import Team
@@ -141,6 +146,21 @@ class TeamValidator:
             missing_id = next(iter(missing_members))
             raise MemberNotInTeamError(str(missing_id), team_name)
 
+
+    @staticmethod
+    def validate_team_confirmation(team_status: TeamStatus, team_name: str):
+        """
+        Raises if the team is confirmed.
+        """
+        if team_status == TeamStatus.CONFIRMED:
+            raise TeamIsConfirmedError(team_name)
+
+    @staticmethod
+    def validate_allowed_student_team_status(team_status:TeamStatus):
+        allowed_team_statuses = {TeamStatus.CONFIRMED, TeamStatus.DRAFT, TeamStatus.CANCELLED}
+        if team_status not in allowed_team_statuses:
+            raise AccessDeniedTeamStatusError(team_status)
+
     @staticmethod
     def validate_leader_change(
         members_ids_to_remove: list[UUID],
@@ -171,3 +191,15 @@ class TeamValidator:
         if contest_mode == ContestMode.INDIVIDUAL:
             if members_count != 1:
                 raise InvalidTeamSizeByModeError()
+
+    @staticmethod
+    def validate_leader_in_members(
+        leader_id: UUID,
+        member_ids: list[UUID] | set[UUID],
+        team_name: str,
+    ) -> None:
+        """
+        Validates that the team leader is included in the list of member IDs.
+        """
+        if leader_id not in member_ids:
+            raise LeaderMustBeMemberError(str(leader_id), team_name)

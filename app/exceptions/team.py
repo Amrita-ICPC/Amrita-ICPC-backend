@@ -88,6 +88,17 @@ class InvalidLeaderAssignmentError(AppBaseException):
         )
 
 
+class TeamIsConfirmedError(AppBaseException):
+    """Raised when trying to change members of a confirmed team."""
+
+    def __init__(self, team_name: str):
+        super().__init__(
+            message=f"Team '{team_name}' is confirmed and cannot be modified",
+            status_code=400,
+            detail="Confirmed teams cannot have their members changed.",
+        )
+
+
 class ApprovalNotAllowedError(AppBaseException):
     """Raised when a team approval operation is not allowed in current state."""
 
@@ -166,6 +177,25 @@ class TeamMemberAccessDeniedError(AppBaseException):
             detail="Only team members are permitted to perform this operation.",
         )
 
+class TeamNotHavingRequiredNumberOfMembersException(AppBaseException):
+    """Raised when a team does not have the required number of members."""
+    def __init__(self, team_name: str, team_member_count: int, min_team_size: int, max_team_size: int):
+        super().__init__(
+            message=f"Team '{team_name}' does not have the required number of members.",
+            status_code=400,
+            detail=f"Team '{team_name}' must have between {min_team_size} and {max_team_size} members. Current: {team_member_count}",
+        )
+
+
+class LeaderMustBeMemberError(AppBaseException):
+    """Raised when the team leader is not included in the members to import."""
+
+    def __init__(self, leader_id: str, team_name: str):
+        super().__init__(
+            message=f"Team leader {leader_id} must be included as a member of team '{team_name}'",
+            status_code=400,
+            detail="The team leader must be one of the imported members.",
+        )
 
 
 

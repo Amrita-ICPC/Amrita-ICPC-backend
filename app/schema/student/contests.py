@@ -114,11 +114,13 @@ class ReadinessStatus(BaseModel):
 
 class TeamMemberStatus(BaseModel):
     """Schema for team member status in participation view."""
-    id: UUID = Field(..., description="User ID of the member")
+    id: UUID = Field(..., description="ContestTeamMember ID of the member")
+    user_id: UUID = Field(..., description="User ID of the member")
     name: str = Field(..., description="Name of the member")
     role: TeamMemberRole = Field(..., description="Role in the team (LEADER / MEMBER)")
     joined: bool = Field(..., description="Whether the user has joined the team")
     confirmed: bool = Field(..., description="Whether the user has confirmed participation")
+    is_current_user: bool = Field(..., description="Whether the user is the current user")
 
 class TeamParticipationStatus(BaseModel):
     """Schema for team participation status in a contest."""
@@ -131,6 +133,7 @@ class TeamParticipationStatus(BaseModel):
     team_status: TeamStatus = Field(..., description="Team status")
     team_approval_status: TeamApprovalStatus = Field(..., description="Team approval status")
     completion_percentage: float = Field(..., description="Percentage of team completion")
+    team_id: UUID | None = Field(None, description="Team ID if registered else None")
 
 class StudentContestStatusResponse(BaseModel):
     """Combined response for student's status and participation in a contest."""
