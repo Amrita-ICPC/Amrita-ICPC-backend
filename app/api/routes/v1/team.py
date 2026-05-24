@@ -52,7 +52,7 @@ def get_team_service(db: AsyncSession = Depends(get_db)) -> TeamService:
 
 
 @router.patch(
-    "/contests/{contest_id}/teams/{team_id}/approve",
+    "/contests/{contest_id}/teams/{contest_team_id}/approve",
     response_model=APIResponse[ContestTeamResponse],
     summary="Approve a team in a contest",
     dependencies=[can_update("teams")],
@@ -60,7 +60,7 @@ def get_team_service(db: AsyncSession = Depends(get_db)) -> TeamService:
 async def approve_team(
     request: Request,
     contest_id: UUID,
-    team_id: UUID,
+    contest_team_id: UUID,
     user_id: UUID = Depends(get_current_user_id),
     service: TeamService = Depends(get_team_service),
 ):
@@ -70,20 +70,20 @@ async def approve_team(
     Args:
         request (Request): Framework context.
         contest_id (UUID): The unique identifier of the contest.
-        team_id (UUID): The unique identifier of the team.
+        contest_team_id (UUID): The unique identifier of the contest team.
         user_id (UUID): Authenticated user ID.
         service (TeamService): Injected domain service.
 
     Returns:
         APIResponse: Standardized response encapsulating the updated team data.
     """
-    team = await service.approve_team(contest_id, team_id, user_id)
-    logger.info(f"Team {team_id} approved in contest {contest_id} by user {user_id}")
+    team = await service.approve_team(contest_id, contest_team_id, user_id)
+    logger.info(f"Contest team {contest_team_id} approved in contest {contest_id} by user {user_id}")
     return create_api_response(request, data=team, message="Team approved successfully")
 
 
 @router.patch(
-    "/contests/{contest_id}/teams/{team_id}/reject",
+    "/contests/{contest_id}/teams/{contest_team_id}/reject",
     response_model=APIResponse[ContestTeamResponse],
     summary="Reject a team in a contest",
     dependencies=[can_update("teams")],
@@ -91,7 +91,7 @@ async def approve_team(
 async def reject_team(
     request: Request,
     contest_id: UUID,
-    team_id: UUID,
+    contest_team_id: UUID,
     user_id: UUID = Depends(get_current_user_id),
     service: TeamService = Depends(get_team_service),
 ):
@@ -101,20 +101,20 @@ async def reject_team(
     Args:
         request (Request): Framework context.
         contest_id (UUID): The unique identifier of the contest.
-        team_id (UUID): The unique identifier of the team.
+        contest_team_id (UUID): The unique identifier of the contest team.
         user_id (UUID): Authenticated user ID.
         service (TeamService): Injected domain service.
 
     Returns:
         APIResponse: Standardized response encapsulating the updated team data.
     """
-    team = await service.reject_team(contest_id, team_id, user_id)
-    logger.info(f"Team {team_id} rejected in contest {contest_id} by user {user_id}")
+    team = await service.reject_team(contest_id, contest_team_id, user_id)
+    logger.info(f"Contest team {contest_team_id} rejected in contest {contest_id} by user {user_id}")
     return create_api_response(request, data=team, message="Team rejected successfully")
 
 
 @router.patch(
-    "/contests/{contest_id}/teams/{team_id}/disqualify",
+    "/contests/{contest_id}/teams/{contest_team_id}/disqualify",
     response_model=APIResponse[ContestTeamResponse],
     summary="Disqualify a team in a contest",
     dependencies=[can_update("teams")],
@@ -122,7 +122,7 @@ async def reject_team(
 async def disqualify_team(
     request: Request,
     contest_id: UUID,
-    team_id: UUID,
+    contest_team_id: UUID,
     user_id: UUID = Depends(get_current_user_id),
     service: TeamService = Depends(get_team_service),
 ):
@@ -132,16 +132,16 @@ async def disqualify_team(
     Args:
         request (Request): Framework context.
         contest_id (UUID): The unique identifier of the contest.
-        team_id (UUID): The unique identifier of the team.
+        contest_team_id (UUID): The unique identifier of the contest team.
         user_id (UUID): Authenticated user ID.
         service (TeamService): Injected domain service.
 
     Returns:
         APIResponse: Standardized response encapsulating the updated team data.
     """
-    team = await service.disqualify_team(contest_id, team_id, user_id)
+    team = await service.disqualify_team(contest_id, contest_team_id, user_id)
     logger.info(
-        f"Team {team_id} disqualified in contest {contest_id} by user {user_id}"
+        f"Contest team {contest_team_id} disqualified in contest {contest_id} by user {user_id}"
     )
     return create_api_response(
         request, data=team, message="Team disqualified successfully"

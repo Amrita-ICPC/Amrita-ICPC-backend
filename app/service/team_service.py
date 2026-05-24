@@ -85,27 +85,27 @@ class TeamService:
         guard: TeamOperationGuard,
         validator: TeamValidator,
     ):
-        self.repository = repository
         self.guard = guard
+        self.repository = repository
         self.validator = validator
         self.contest_repository = contest_repository
         self.contest_team_repository = contest_team_repository
 
     @cache_delete(
-        key_builder=lambda self, contest_id, team_id, approved_by: [
-            f"contest:{contest_id}:team:{team_id}:*",
+        key_builder=lambda self, contest_id, contest_team_id, approved_by: [
+            f"contest:{contest_id}:team:{contest_team_id}:*",
             f"contest:{contest_id}:teams:*",
         ]
     )
     async def approve_team(
-        self, contest_id: UUID, team_id: UUID, approved_by: UUID
+        self, contest_id: UUID, contest_team_id: UUID, approved_by: UUID
     ) -> ContestTeamResponse:
         """
         Approve a team in a contest.
 
         Args:
             contest_id: UUID of the contest containing the team
-            team_id: UUID of the team to approve
+            contest_team_id: UUID of the contest team to approve
             approved_by: UUID of the user approving the team
 
         Returns:
@@ -113,43 +113,55 @@ class TeamService:
 
         Raises:
             ContestNotFoundError: If the contest does not exist
-            TeamNotFoundError: If the team is not found in the contest
+            ContestTeamNotFoundException: If the contest team is not found in the contest
             PermissionDeniedError: If the user lacks contest management permission
             ApprovalNotAllowedError: If the user is not allowed to approve this team
         """
         contest = await self.contest_repository.get_contest_or_raise(contest_id)
         await self.guard.check_update_team(user_id=approved_by, contest=contest)
 
-        contest_team = await self.repository.get_contest_team_or_raise(
-            contest_id, team_id
+        contest_team = await self.contest_team_repository.get_contest_team_by_id_or_raise(
+            contest_team_id
         )
 
-        if contest_team.approval_status == TeamApprovalStatus.APPROVED:
-            return to_contest_team_response(contest_team)
+        if contest_team.approval_status != TeamApprovalStatus.APPROVED:
+            if contest.team_approval_mode == TeamApprovalMode.INSTRUCTOR_REVIEW:
+                contest_team.approval_status = TeamApprovalStatus.APPROVED
+                contest_team = await self.contest_team_repository.update_contest_team(
+                    contest_team
+                )
+            else:
+                raise ApprovalNotAllowedError(str(contest_team_id), str(contest_id))
 
-        if contest.team_approval_mode == TeamApprovalMode.INSTRUCTOR_REVIEW:
-            updated_team = await self.repository.update_team_approval_status(
-                contest_team, TeamApprovalStatus.APPROVED
-            )
-            return to_contest_team_response(updated_team)
+        # Fetch unique accepted members for response
+        members = await self.contest_team_repository.get_contest_team_members(
+            contest_team_id=contest_team.id,
+            contestTeamMemberStatus=[ContestTeamMemberStatus.ACCEPTED],
+        )
+        seen_users = set()
+        unique_members = []
+        for m in members:
+            if m.user_id not in seen_users:
+                seen_users.add(m.user_id)
+                unique_members.append(m)
 
-        raise ApprovalNotAllowedError(str(team_id), str(contest_id))
+        return to_contest_team_response(contest_team, members=unique_members)
 
     @cache_delete(
-        key_builder=lambda self, contest_id, team_id, rejected_by: [
-            f"contest:{contest_id}:team:{team_id}:*",
+        key_builder=lambda self, contest_id, contest_team_id, rejected_by: [
+            f"contest:{contest_id}:team:{contest_team_id}:*",
             f"contest:{contest_id}:teams:*",
         ]
     )
     async def reject_team(
-        self, contest_id: UUID, team_id: UUID, rejected_by: UUID
+        self, contest_id: UUID, contest_team_id: UUID, rejected_by: UUID
     ) -> ContestTeamResponse:
         """
         Reject a team in a contest.
 
         Args:
             contest_id: UUID of the contest containing the team
-            team_id: UUID of the team to reject
+            contest_team_id: UUID of the contest team to reject
             rejected_by: UUID of the user rejecting the team
 
         Returns:
@@ -158,33 +170,48 @@ class TeamService:
         contest = await self.contest_repository.get_contest_or_raise(contest_id)
         await self.guard.check_update_team(user_id=rejected_by, contest=contest)
 
-        contest_team = await self.repository.get_contest_team_or_raise(
-            contest_id, team_id
+        contest_team = await self.contest_team_repository.get_contest_team_by_id_or_raise(
+            contest_team_id
         )
 
         if contest.team_approval_mode != TeamApprovalMode.INSTRUCTOR_REVIEW:
-            raise ApprovalNotAllowedError(str(team_id), str(contest_id))
+            raise ApprovalNotAllowedError(str(contest_team_id), str(contest_id))
 
-        updated_team = await self.repository.update_team_approval_status(
-            contest_team, TeamApprovalStatus.REJECTED
+        if contest_team.approval_status != TeamApprovalStatus.REJECTED:
+            contest_team.approval_status = TeamApprovalStatus.REJECTED
+            contest_team = await self.contest_team_repository.update_contest_team(
+                contest_team
+            )
+
+        # Fetch unique accepted members for response
+        members = await self.contest_team_repository.get_contest_team_members(
+            contest_team_id=contest_team.id,
+            contestTeamMemberStatus=[ContestTeamMemberStatus.ACCEPTED],
         )
-        return to_contest_team_response(updated_team)
+        seen_users = set()
+        unique_members = []
+        for m in members:
+            if m.user_id not in seen_users:
+                seen_users.add(m.user_id)
+                unique_members.append(m)
+
+        return to_contest_team_response(contest_team, members=unique_members)
 
     @cache_delete(
-        key_builder=lambda self, contest_id, team_id, disqualified_by: [
-            f"contest:{contest_id}:team:{team_id}:*",
+        key_builder=lambda self, contest_id, contest_team_id, disqualified_by: [
+            f"contest:{contest_id}:team:{contest_team_id}:*",
             f"contest:{contest_id}:teams:*",
         ]
     )
     async def disqualify_team(
-        self, contest_id: UUID, team_id: UUID, disqualified_by: UUID
+        self, contest_id: UUID, contest_team_id: UUID, disqualified_by: UUID
     ) -> ContestTeamResponse:
         """
         Disqualify a team from a contest.
 
         Args:
             contest_id: UUID of the contest containing the team
-            team_id: UUID of the team to disqualify
+            contest_team_id: UUID of the contest team to disqualify
             disqualified_by: UUID of the user disqualifying the team
 
         Returns:
@@ -193,14 +220,29 @@ class TeamService:
         contest = await self.contest_repository.get_contest_or_raise(contest_id)
         await self.guard.check_update_team(user_id=disqualified_by, contest=contest)
 
-        contest_team = await self.repository.get_contest_team_or_raise(
-            contest_id, team_id
+        contest_team = await self.contest_team_repository.get_contest_team_by_id_or_raise(
+            contest_team_id
         )
 
-        updated_team = await self.repository.update_team_status(
-            contest_team, TeamStatus.DISQUALIFIED
+        if contest_team.team_status != TeamStatus.DISQUALIFIED:
+            contest_team.team_status = TeamStatus.DISQUALIFIED
+            contest_team = await self.contest_team_repository.update_contest_team(
+                contest_team
+            )
+
+        # Fetch unique accepted members for response
+        members = await self.contest_team_repository.get_contest_team_members(
+            contest_team_id=contest_team.id,
+            contestTeamMemberStatus=[ContestTeamMemberStatus.ACCEPTED],
         )
-        return to_contest_team_response(updated_team)
+        seen_users = set()
+        unique_members = []
+        for m in members:
+            if m.user_id not in seen_users:
+                seen_users.add(m.user_id)
+                unique_members.append(m)
+
+        return to_contest_team_response(contest_team, members=unique_members)
 
     @cache_get(
         key_builder=lambda self,
