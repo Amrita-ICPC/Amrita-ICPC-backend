@@ -108,6 +108,17 @@ class TeamMemberPreview(BaseModel):
     initials: str
 
 
+class ParentTeamInfo(BaseModel):
+    """
+    Schema for basic information about the parent team.
+    """
+
+    id: UUID
+    name: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class ContestTeamResponse(BaseModel):
     """
     Schema for contest team response without member details.
@@ -116,56 +127,56 @@ class ContestTeamResponse(BaseModel):
     Attributes:
         id: Unique identifier for the team.
         name: Name of the team.
-        description: Description of the team.
-        logo: Team logo.
         status: Status of the team in the contest.
+        approval_status: Approval status of the team.
         leader_id: ID of the team leader.
-        created_by: ID of the user who created the team.
-        created_at: Timestamp when the team was created.
-        updated_at: Timestamp when the team was last updated.
+        enrolled_at: Timestamp when the team enrolled.
         members_preview: List of first 3 members for display.
         extra_members_count: Number of members beyond the preview.
+        parent_team: Basic information about the parent team.
     """
 
     id: UUID
     name: str
-    description: Optional[str]
-    logo: Optional[str]
     status: TeamStatus
     approval_status: TeamApprovalStatus
     leader_id: Optional[UUID]
-    created_by: Optional[UUID]
-    created_at: datetime
-    updated_at: datetime
+    enrolled_at: datetime = Field(default_factory=datetime.now)
     members_preview: List[TeamMemberPreview] = Field(default_factory=list)
     extra_members_count: int = 0
+    parent_team: Optional[ParentTeamInfo] = None
 
     model_config = ConfigDict(from_attributes=True)
 
     @classmethod
-    def from_contest_team(cls, contest_team) -> "ContestTeamResponse":
+    def from_contest_team(cls, contest_team, members=None) -> "ContestTeamResponse":
         """
         Create ContestTeamResponse from ContestTeam ORM object.
 
         Args:
             contest_team: ContestTeam ORM object
+            members: Optional custom list of ContestTeamMember objects
 
         Returns:
             ContestTeamResponse with basic team data and member previews.
         """
-        team = contest_team.team
         members_preview = []
         extra_count = 0
+        parent_team_info = None
 
-        if "members" in inspect(team).unloaded:
-            raise ValueError("Team members must be preloaded")
+        if members is None:
+            if "contest_team_member" in inspect(contest_team).unloaded:
+                raise ValueError("Contest team members must be preloaded")
+            members = contest_team.contest_team_member
+
+        if contest_team.team:
+            parent_team_info = ParentTeamInfo(id=contest_team.team.id, name=contest_team.team.name)
 
         # Safely handle members if loaded
-        members = team.members
         if members:
             # First 3 members only
-            for team_user in members[:3]:
-                user = team_user.user
+            for team_member in members[:3]:
+                user = team_member.user
                 # Calculate initials (e.g., "John Doe" -> "JD")
                 names = user.name.split()
                 initials = "".join([n[0].upper() for n in names[:2]]) if names else ""
@@ -183,18 +194,15 @@ class ContestTeamResponse(BaseModel):
                 extra_count = len(members) - 3
 
         return cls(
-            id=team.id,
-            name=team.name,
-            description=team.description,
-            logo=team.logo,
+            id=contest_team.id,
+            name=contest_team.name,
             status=contest_team.team_status,
             approval_status=contest_team.approval_status,
-            leader_id=team.leader_id,
-            created_by=team.created_by,
-            created_at=team.created_at,
-            updated_at=team.updated_at,
+            leader_id=contest_team.leader_id,
+            enrolled_at=contest_team.enrolled_at,
             members_preview=members_preview,
             extra_members_count=extra_count,
+            parent_team=parent_team_info,
         )
 
 

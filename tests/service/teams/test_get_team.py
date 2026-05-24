@@ -163,7 +163,7 @@ class TestGetContestTeamsSuccess:
 
         call_args = mock_repository.get_contest_teams.call_args[0]
         filters = call_args[1]
-        assert filters.status == TeamStatus.CONFIRMED
+        assert filters.status == [TeamStatus.CONFIRMED]
 
     @pytest.mark.asyncio
     async def test_with_approval_status_filter_returns_only_matching(
@@ -240,7 +240,7 @@ class TestGetContestTeamsSuccess:
         pagination = call_args[2]
 
         assert filters.search_term == "Team"
-        assert filters.status == TeamStatus.DRAFT
+        assert filters.status == [TeamStatus.DRAFT]
         assert filters.approval_status == TeamApprovalStatus.WAITING
         assert pagination.skip == 5
         assert pagination.limit == 15
@@ -341,7 +341,7 @@ class TestGetContestTeamsRepositoryContract:
         assert call_args[0] == contest_id
         assert isinstance(call_args[1], TeamFilters)
         assert call_args[1].search_term == "Alpha"
-        assert call_args[1].status == TeamStatus.CONFIRMED
+        assert call_args[1].status == [TeamStatus.CONFIRMED]
 
     @pytest.mark.asyncio
     async def test_repository_called_with_correct_pagination(
@@ -436,11 +436,23 @@ class TestGetContestTeamsRepositoryContract:
         )
         mock_team.name = "Team Alpha"
 
+        mock_ct_members = [
+            MagicMock(user=mock_user1),
+            MagicMock(user=mock_user2),
+            MagicMock(user=mock_user3),
+            MagicMock(user=mock_user4),
+        ]
+
         mock_contest_team = MagicMock(
+            id=uuid4(),
             team=mock_team,
             team_status=TeamStatus.CONFIRMED,
             approval_status=TeamApprovalStatus.APPROVED,
+            leader_id=mock_team.leader_id,
+            enrolled_at=datetime.now(),
+            contest_team_member=mock_ct_members,
         )
+        mock_contest_team.name = "Team Alpha"
 
         response = ContestTeamResponse.from_contest_team(mock_contest_team)
 
@@ -664,3 +676,56 @@ class TestGetTeamByIdExecutionOrder:
             await team_service.get_team_by_id(contest_id, team_id, user_id)
 
         mock_repository.get_team_by_id.assert_not_called()
+
+
+class TestGetTeamMembers:
+    """Test get_team_members method."""
+
+    @pytest.mark.asyncio
+    async def test_get_team_members_success(
+        self,
+        team_service,
+        mock_repository,
+        mock_contest_team_repository,
+        mock_contest,
+        contest_id,
+        user_id,
+    ):
+        contest_team_id = uuid4()
+        mock_repository.get_contest_or_raise.return_value = mock_contest
+        
+        mock_contest_team = MagicMock()
+        mock_contest_team.leader_id = uuid4()
+        mock_contest_team_repository.get_contest_team_by_id_or_raise.return_value = mock_contest_team
+        
+        # Mock members
+        mock_member_user = MagicMock()
+        mock_member_user.id = uuid4()
+        mock_member_user.user_id = "user-1"
+        mock_member_user.name = "John Doe"
+        mock_member_user.email = "john@example.com"
+        mock_member_user.role = MagicMock(value="student")
+        
+        mock_ctm = MagicMock()
+        mock_ctm.user = mock_member_user
+        
+        from app.repositories.dto import PaginatedResult
+        mock_paginated_result = PaginatedResult(total=1, items=[mock_ctm])
+        mock_contest_team_repository.get_contest_team_members_paginated.return_value = mock_paginated_result
+        
+        total, members = await team_service.get_team_members(
+            contest_id, contest_team_id, user_id, search_term="John", skip=0, limit=10
+        )
+        
+        assert total == 1
+        assert len(members) == 1
+        assert members[0].name == "John Doe"
+        assert members[0].email == "john@example.com"
+        
+        # Verify repository was called correctly
+        from app.utils.enums import ContestTeamMemberStatus
+        mock_contest_team_repository.get_contest_team_members_paginated.assert_called_once()
+        call_kwargs = mock_contest_team_repository.get_contest_team_members_paginated.call_args[1]
+        assert call_kwargs["contest_team_id"] == contest_team_id
+        assert call_kwargs["status"] == [ContestTeamMemberStatus.ACCEPTED]
+        assert call_kwargs["search_term"] == "John"

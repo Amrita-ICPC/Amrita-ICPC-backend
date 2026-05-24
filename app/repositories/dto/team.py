@@ -52,5 +52,5 @@ class UpdateTeamData:
 @dataclass
 class TeamFilters:
     search_term: str | None = None
-    status: TeamStatus | None = None
+    status: list[TeamStatus] | None = None
     approval_status: TeamApprovalStatus | None = None

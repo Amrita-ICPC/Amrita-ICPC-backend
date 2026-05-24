@@ -1,17 +1,17 @@
+from sqlalchemy import Select
 from typing import List
 from app.exceptions.contest import ContestTeamMemberNotFoundException
 from app.utils.enums import TeamApprovalStatus
 from app.utils.enums import TeamStatus
 from sqlalchemy import case, func
 from fastapi import param_functions
-from app.models import Team
+from app.models import ContestTeam, ContestTeamMember, Team, User
 from sqlalchemy.orm import selectinload
 from app.exceptions.contest import ContestTeamNotFoundException
 from sqlalchemy import select, and_
 from uuid import UUID
-from app.models import ContestTeamMember
-from app.models import ContestTeam
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.repositories.dto import PaginatedResult, PaginationParams, TeamFilters
 
 from app.utils.enums import ContestTeamMemberStatus
 class ContestTeamRepository:
@@ -167,6 +167,33 @@ class ContestTeamRepository:
         result = await self.db.execute(stmt)
         return int(result.scalar_one())
 
+    async def count_teams_by_status(self, contest_id: UUID) -> dict[str, int]:
+        """Count the number of approved, waiting, disqualified, and rejected teams in a contest.
+
+        Args:
+            contest_id: The ID of the contest.
+
+        Returns:
+            dict[str, int]: A dictionary containing counts for approved, waiting, disqualified, and rejected teams.
+        """
+        stmt = (
+            select(
+                func.sum(case((ContestTeam.approval_status == TeamApprovalStatus.APPROVED, 1), else_=0)).label("approved"),
+                func.sum(case((and_(ContestTeam.approval_status == TeamApprovalStatus.WAITING, ContestTeam.team_status == TeamStatus.CONFIRMED), 1), else_=0)).label("waiting"),
+                func.sum(case((ContestTeam.approval_status == TeamApprovalStatus.REJECTED, 1), else_=0)).label("rejected"),
+                func.sum(case((ContestTeam.team_status == TeamStatus.DISQUALIFIED, 1), else_=0)).label("disqualified"),
+            )
+            .where(ContestTeam.contest_id == contest_id)
+        )
+        result = await self.db.execute(stmt)
+        row = result.one()
+        return {
+            "approved_count": int(row.approved or 0),
+            "waiting_count": int(row.waiting or 0),
+            "rejected_count": int(row.rejected or 0),
+            "disqualified_count": int(row.disqualified or 0),
+        }
+
     async def get_contest_team_member_or_raise(self, contest_team_member_id: UUID) -> ContestTeamMember:
         """Get a contest team member by its ID or raise an exception if not found.
 
@@ -212,6 +239,8 @@ class ContestTeamRepository:
         if user_ids is not None:
             query = query.where(ContestTeamMember.user_id.in_(user_ids))
 
+        query = query.options(selectinload(ContestTeamMember.user))
+
         result = await self.db.execute(query)
 
         return list(result.scalars())
@@ -251,3 +280,141 @@ class ContestTeamRepository:
         
         await self.db.execute(stmt)
         await self.db.flush()
+
+    async def get_contest_teams(
+        self,
+        contest_id: UUID,
+        filters: TeamFilters,
+        pagination: PaginationParams,
+    ) -> PaginatedResult:
+        """Retrieve paginated and filtered list of contest teams for a contest.
+
+        Args:
+            contest_id: The ID of the contest.
+            filters: TeamFilters containing search, status, and approval status filters.
+            pagination: PaginationParams containing skip and limit values.
+
+        Returns:
+            PaginatedResult: Total count and list of ContestTeam objects.
+        """
+        # Base query
+        query = (
+            select(ContestTeam)
+            .where(ContestTeam.contest_id == contest_id)
+        )
+
+        query = self._apply_filters(query, filters)
+
+        # Count query
+        count_query = (
+            select(func.count(ContestTeam.id))
+            .where(ContestTeam.contest_id == contest_id)
+        )
+
+        count_query = self._apply_filters(count_query, filters)
+
+        # Execute count
+        total_result = await self.db.execute(count_query)
+        total = int(total_result.scalar_one())
+
+        # Pagination + eager loading
+        query = (
+            query.order_by(ContestTeam.enrolled_at.desc(), ContestTeam.id.desc())
+            .offset(pagination.skip)
+            .limit(pagination.limit)
+            .options(
+                selectinload(ContestTeam.leader),
+                selectinload(ContestTeam.contest_team_member).selectinload(ContestTeamMember.user),
+                selectinload(ContestTeam.team).selectinload(Team.members)
+            )
+        )
+
+        # Execute query
+        result = await self.db.execute(query)
+        contest_teams = result.scalars().all()
+
+        return PaginatedResult(total=total, items=list(contest_teams))
+
+    def _apply_filters(self, query: Select, filters: TeamFilters):
+        if filters.search_term:
+            query = query.where(ContestTeam.name.ilike(f"%{filters.search_term}%"))
+
+        if filters.status is not None:
+            query = query.where(ContestTeam.team_status.in_(filters.status))
+
+        if filters.approval_status is not None:
+            query = query.where(ContestTeam.approval_status == filters.approval_status)
+        
+        return query
+
+    async def get_contest_team_members_paginated(
+        self,
+        contest_team_id: UUID,
+        pagination: PaginationParams,
+        status: list[ContestTeamMemberStatus] | None = None,
+        search_term: str | None = None,
+    ) -> PaginatedResult:
+        """Retrieve paginated list of contest team members with search and status filters.
+
+        Args:
+            contest_team_id: The ID of the contest team.
+            pagination: PaginationParams containing skip and limit values.
+            status: Optional list of member statuses to filter by.
+            search_term: Optional search term for user name or email.
+
+        Returns:
+            PaginatedResult: Total count and list of ContestTeamMember objects.
+        """
+        # Base query
+        query = (
+            select(ContestTeamMember)
+            .join(User, ContestTeamMember.user_id == User.id)
+            .where(ContestTeamMember.contest_team_id == contest_team_id)
+        )
+
+        # Filters
+        if status is not None:
+            query = query.where(ContestTeamMember.status.in_(status))
+
+        if search_term:
+            query = query.where(
+                (User.name.ilike(f"%{search_term}%")) | 
+                (User.email.ilike(f"%{search_term}%"))
+            )
+
+        # Count query
+        count_query = (
+            select(func.count(ContestTeamMember.id))
+            .join(User, ContestTeamMember.user_id == User.id)
+            .where(ContestTeamMember.contest_team_id == contest_team_id)
+        )
+        if status is not None:
+            count_query = count_query.where(ContestTeamMember.status.in_(status))
+        if search_term:
+            count_query = count_query.where(
+                (User.name.ilike(f"%{search_term}%")) | 
+                (User.email.ilike(f"%{search_term}%"))
+            )
+
+        # Execute count
+        total_result = await self.db.execute(count_query)
+        total = int(total_result.scalar_one())
+
+        # Execute paginated query with user loaded
+        query = (
+            query.order_by(
+                case(
+                    (ContestTeamMember.status == ContestTeamMemberStatus.ACCEPTED, 1),
+                    (ContestTeamMember.status == ContestTeamMemberStatus.INVITED, 2),
+                    else_=3
+                ),
+                ContestTeamMember.id.desc()
+            )
+            .offset(pagination.skip)
+            .limit(pagination.limit)
+            .options(selectinload(ContestTeamMember.user))
+        )
+        result = await self.db.execute(query)
+        members = result.scalars().all()
+
+        return PaginatedResult(total=total, items=list(members))

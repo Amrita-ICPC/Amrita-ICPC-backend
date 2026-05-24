@@ -14,7 +14,7 @@ from app.schema.team import (
 from app.utils.enums import TeamApprovalMode, TeamApprovalStatus, UserRole
 
 if TYPE_CHECKING:
-    from app.models.contest import ContestTeam
+    from app.models.contest import ContestTeam, ContestTeamMember
     from app.models.team import Team
     from app.models.user import User
 
@@ -60,8 +60,13 @@ def build_leader_update_dto(
     )
 
 
-def to_contest_team_response(contest_team: "ContestTeam") -> ContestTeamResponse:
+def to_contest_team_response(
+    contest_team: "ContestTeam",
+    members: list["ContestTeamMember"] | None = None,
+) -> ContestTeamResponse:
     """Map contest team ORM object to response schema."""
+    if members is not None:
+        return ContestTeamResponse.from_contest_team(contest_team, members=members)
     return ContestTeamResponse.from_contest_team(contest_team)
 
 
@@ -76,11 +81,16 @@ def to_team_list_response(
     total: int,
     contest_teams: list["ContestTeam"],
     status_counts: dict[str, int],
+    team_members_map: dict[UUID, list["ContestTeamMember"]] | None = None,
 ) -> TeamListResponse:
     """Map contest team list and counts to TeamListResponse."""
+    teams_responses = []
+    for team in contest_teams:
+        members = team_members_map.get(team.id) if team_members_map else None
+        teams_responses.append(to_contest_team_response(team, members))
     return TeamListResponse(
         total=total,
-        teams=to_contest_team_response_list(contest_teams),
+        teams=teams_responses,
         approved_count=status_counts.get("approved_count", 0),
         waiting_count=status_counts.get("waiting_count", 0),
         rejected_count=status_counts.get("rejected_count", 0),
@@ -104,6 +114,25 @@ def to_team_member_responses(
             is_leader=(team.leader_id == user.id),
         )
         for user in users
+    ]
+
+
+def to_contest_team_member_responses(
+    contest_team_members: list["ContestTeamMember"],
+    *,
+    leader_id: UUID | None,
+) -> list[TeamMemberResponse]:
+    """Map ContestTeamMember list to team member responses."""
+    return [
+        TeamMemberResponse(
+            id=ctm.user.id,
+            user_id=ctm.user.user_id,
+            name=ctm.user.name,
+            email=ctm.user.email,
+            role=ctm.user.role.value,
+            is_leader=(leader_id == ctm.user.id),
+        )
+        for ctm in contest_team_members
     ]
 
 
