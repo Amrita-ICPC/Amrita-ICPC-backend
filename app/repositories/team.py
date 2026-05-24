@@ -1,3 +1,4 @@
+from sqlalchemy import and_
 from uuid import UUID
 
 from sqlalchemy import delete, func, select
@@ -471,6 +472,9 @@ class TeamRepository:
             )
             .join(Team, ContestTeam.team_id == Team.id)
             .filter(ContestTeam.contest_id == contest_id)
+            .where(
+                and_(ContestTeam.team_status != TeamStatus.DRAFT,ContestTeam.team_status != TeamStatus.CANCELLED)
+            )
         )
 
         # Apply search filter if provided
