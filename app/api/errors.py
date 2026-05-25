@@ -70,6 +70,7 @@ from app.exceptions.team import (
     StudentTeamUserNotFoundError,
     TeamNotHavingRequiredNumberOfMembersException,
     LeaderMustBeMemberError,
+    IndividualModeActionNotAllowedError,
 )
 from app.exceptions.student.teams import (
     TeamStatusNotAllowedForUpdatingContestTeamMemberStatusException,
@@ -616,6 +617,19 @@ def setup_exception_handlers(app: FastAPI) -> None:
             status_code=exc.status_code,
             message=exc.message,
             error_code="LEADER_MUST_BE_MEMBER",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(IndividualModeActionNotAllowedError)
+    async def individual_mode_action_not_allowed_handler(
+        request: Request, exc: IndividualModeActionNotAllowedError
+    ):
+        logger.warning(f"Individual mode action not allowed: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="INDIVIDUAL_MODE_ACTION_NOT_ALLOWED",
             details=[exc.detail] if exc.detail else None,
         )
 

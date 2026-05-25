@@ -14,6 +14,7 @@ from app.utils.enums import (
     TeamApprovalMode,
     TeamApprovalStatus,
     TeamStatus,
+    ContestMode,
 )
 from app.exceptions.student.teams import (
     TeamStatusNotAllowedForUpdatingContestTeamMemberStatusException,
@@ -83,6 +84,8 @@ class ContestTeamService:
         """
         # Fetch the team and contest
         contest = await self.contest_repository.get_contest_or_raise(contest_id)
+
+        TeamValidator.validate_team_operations_allowed(contest.contest_mode, "import team")
 
         ContestValidator.validate_registration_date_past(contest.registration_start,contest.registration_end)
 
@@ -203,11 +206,22 @@ class ContestTeamService:
         # Keep team_id=None (as it's not a standard team)
         # Set team_status=DRAFT (default)
         # Set leader_id=user_id
+        team_status = TeamStatus.DRAFT
+        approval_status = TeamApprovalStatus.APPROVED
+
+        if contest.contest_mode == ContestMode.INDIVIDUAL:
+            team_status = TeamStatus.CONFIRMED
+            if contest.team_approval_mode == TeamApprovalMode.AUTO_APPROVE:
+                approval_status = TeamApprovalStatus.APPROVED
+            else:
+                approval_status = TeamApprovalStatus.WAITING
+
         contest_team = ContestTeam(
             contest_id=contest_id,
             name=contest_team_create.name,
             leader_id=user_id,
-            team_status=TeamStatus.DRAFT,
+            team_status=team_status,
+            approval_status=approval_status,
             team_id=None,
         )
         contest_team = await self.repository.create_contest_team(contest_team)
@@ -476,6 +490,8 @@ class ContestTeamService:
         """
         contest = await self.contest_repository.get_contest_or_raise(contest_id)
         contest_team = await self.repository.get_contest_team_by_id_or_raise(contest_team_id)
+
+        TeamValidator.validate_team_operations_allowed(contest.contest_mode, "invite members")
 
         # Validate registration timeframe
         ContestValidator.validate_registration_date_past(contest.registration_start, contest.registration_end)

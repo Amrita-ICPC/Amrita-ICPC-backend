@@ -13,6 +13,7 @@ from app.exceptions.team import (
     TeamAlreadyExistsError,
     TeamIsConfirmedError,
     LeaderMustBeMemberError,
+    IndividualModeActionNotAllowedError,
 )
 from app.models.contest import Contest
 from app.models.team import Team
@@ -203,3 +204,15 @@ class TeamValidator:
         """
         if leader_id not in member_ids:
             raise LeaderMustBeMemberError(str(leader_id), team_name)
+
+    @staticmethod
+    def validate_team_operations_allowed(
+        contest_mode: ContestMode,
+        action: str,
+    ) -> None:
+        """
+        Validates that the contest mode is not individual when performing team operations.
+        """
+        if contest_mode == ContestMode.INDIVIDUAL:
+            raise IndividualModeActionNotAllowedError(action)
+
