@@ -3,9 +3,10 @@
 Re-exports contest exceptions with student-specific context.
 """
 
-from app.exceptions.contest import ContestNotFoundError
-from app.exceptions.base import AppBaseException
 from fastapi import status
+
+from app.exceptions.base import AppBaseException
+from app.exceptions.contest import ContestNotFoundError
 
 
 class NoContestTeamMemberFoundError(AppBaseException):

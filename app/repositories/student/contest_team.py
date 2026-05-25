@@ -1,18 +1,18 @@
-from sqlalchemy import Select
-from app.exceptions.contest import ContestTeamMemberNotFoundException
-from app.utils.enums import TeamApprovalStatus
-from app.utils.enums import TeamStatus
-from sqlalchemy import case, func
-from fastapi import param_functions
-from app.models import ContestTeam, ContestTeamMember, Team, User
-from sqlalchemy.orm import selectinload
-from app.exceptions.contest import ContestTeamNotFoundException
-from sqlalchemy import select, and_
 from uuid import UUID
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.repositories.dto import PaginatedResult, PaginationParams, TeamFilters
 
-from app.utils.enums import ContestTeamMemberStatus
+from sqlalchemy import Select, and_, case, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.exceptions.contest import (
+    ContestTeamMemberNotFoundException,
+    ContestTeamNotFoundException,
+)
+from app.models import ContestTeam, ContestTeamMember, Team, User
+from app.repositories.dto import PaginatedResult, PaginationParams, TeamFilters
+from app.utils.enums import ContestTeamMemberStatus, TeamApprovalStatus, TeamStatus
+
+
 class ContestTeamRepository:
 
     def __init__(self, db: AsyncSession) -> None:
@@ -111,10 +111,10 @@ class ContestTeamRepository:
                 stmt = stmt.where(ContestTeamMember.status.in_(contest_team_member_statuses))
             else:
                 stmt = stmt.where(ContestTeamMember.status == contest_team_member_statuses)
-            
+
         result = await self.db.execute(stmt)
         return int(result.scalar_one())
-    
+
     async def get_contest_team_member_by_user_id(self, user_id: UUID, stauts: ContestTeamMemberStatus | None) -> ContestTeamMember | None:
         """Get the contest team member record for a given user ID.
 
@@ -139,11 +139,11 @@ class ContestTeamRepository:
         (ContestTeamMember.status == ContestTeamMemberStatus.REJECTED, 4),
         (ContestTeamMember.status == ContestTeamMemberStatus.REMOVED, 5),
         (ContestTeamMember.status == ContestTeamMemberStatus.CANCELLED, 6),
-         ),                
+         ),
         ))
         if stauts is not None:
             stmt = stmt.where(ContestTeamMember.status == stauts)
-        
+
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
@@ -234,7 +234,7 @@ class ContestTeamRepository:
 
         if contestTeamMemberStatus is not None:
             query = query.where(ContestTeamMember.status.in_(contestTeamMemberStatus))
-        
+
         if user_ids is not None:
             query = query.where(ContestTeamMember.user_id.in_(user_ids))
 
@@ -276,7 +276,7 @@ class ContestTeamRepository:
         )
         if exclude_user_id is not None:
             stmt = stmt.where(ContestTeamMember.user_id != exclude_user_id)
-        
+
         await self.db.execute(stmt)
         await self.db.flush()
 
@@ -343,7 +343,7 @@ class ContestTeamRepository:
 
         if filters.approval_status is not None:
             query = query.where(ContestTeam.approval_status == filters.approval_status)
-        
+
         return query
 
     async def get_contest_team_members_paginated(
@@ -377,7 +377,7 @@ class ContestTeamRepository:
 
         if search_term:
             query = query.where(
-                (User.name.ilike(f"%{search_term}%")) | 
+                (User.name.ilike(f"%{search_term}%")) |
                 (User.email.ilike(f"%{search_term}%"))
             )
 
@@ -391,7 +391,7 @@ class ContestTeamRepository:
             count_query = count_query.where(ContestTeamMember.status.in_(status))
         if search_term:
             count_query = count_query.where(
-                (User.name.ilike(f"%{search_term}%")) | 
+                (User.name.ilike(f"%{search_term}%")) |
                 (User.email.ilike(f"%{search_term}%"))
             )
 

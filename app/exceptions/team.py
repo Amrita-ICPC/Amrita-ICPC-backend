@@ -1,4 +1,5 @@
 from uuid import UUID
+
 from app.exceptions.base import AppBaseException
 
 

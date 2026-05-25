@@ -18,11 +18,10 @@ from app.schema.bank import (
 )
 from app.schema.base import PaginationResponse
 from app.schema.question import (
-    BankQuestionMetadataResponse,
     QuestionUpdate,
 )
-from app.utils.enums import BankQuestionSortBy, QuestionDifficulty, SortOrder
 from app.service.bank_question_service import BankQuestionService
+from app.utils.enums import BankQuestionSortBy, QuestionDifficulty, SortOrder
 from app.validators.bank import BankValidator
 
 router = APIRouter()

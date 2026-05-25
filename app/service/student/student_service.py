@@ -1,10 +1,6 @@
-from typing import List
 from uuid import UUID
 
-from sqlalchemy import func, select
-
 from app.mappers.student.student import to_user_invitation_response
-from app.models.contest import ContestTeam
 from app.repositories.student.contest_team import ContestTeamRepository
 from app.schema.user import UserInvitationResponse
 from app.utils.enums import (

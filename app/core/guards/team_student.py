@@ -1,13 +1,13 @@
-from app.models import ContestTeam
-from app.models import TeamUser
-from sqlalchemy import and_
-from sqlalchemy import exists
-from sqlalchemy import select
 from uuid import UUID
+
+from sqlalchemy import and_, exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Team
-from app.exceptions.student.teams import TeamLeaderAccessDeniedError, TeamMemberAccessDeniedError
+from app.exceptions.student.teams import (
+    TeamLeaderAccessDeniedError,
+    TeamMemberAccessDeniedError,
+)
+from app.models import ContestTeam, Team, TeamUser
 
 
 class TeamStudentGuard:
@@ -45,4 +45,3 @@ class TeamStudentGuard:
         if not is_member:
             raise TeamMemberAccessDeniedError(team_id=str(team_id), user_id=str(user_id))
 
-        

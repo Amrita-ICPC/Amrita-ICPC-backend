@@ -1,12 +1,21 @@
-from app.utils.enums import TeamApprovalStatus
-from app.utils.enums import TeamStatus
-from app.utils.enums import TeamMemberRole
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
+
 from pydantic import BaseModel, Field, field_validator, model_validator
-from app.utils.enums import ContestMode, ContestRunStatus, ContestStatus, TeamApprovalMode, RegistrationState
+
 from app.schema.contest import ContestAudienceResponse
+from app.utils.enums import (
+    ContestMode,
+    ContestRunStatus,
+    ContestStatus,
+    RegistrationState,
+    TeamApprovalMode,
+    TeamApprovalStatus,
+    TeamMemberRole,
+    TeamStatus,
+)
+
 
 class StudentContestRegistrationRequest(BaseModel):
     registered: bool | None = None

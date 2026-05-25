@@ -9,11 +9,6 @@ import httpx
 from app.core.config import config
 from app.core.logger import logger
 from app.exceptions.judge0 import (
-    Judge0APIError,
-    Judge0ClientError,
-    Judge0ConnectionError,
-    Judge0ServiceUnavailableError,
-    Judge0TimeoutError,
     Judge0NotInitializedError,
 )
 
@@ -93,7 +88,7 @@ async def init_judge0() -> None:
             )
 
             logger.info(
-                f"Judge0 client initialized successfully",
+                "Judge0 client initialized successfully",
                 extra={
                     "api_url": config.JUDGE0_API_URL,
                     "timeout": config.JUDGE0_API_TIMEOUT,

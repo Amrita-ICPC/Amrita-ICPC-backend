@@ -213,7 +213,7 @@ class AccessDeniedTeamStatusError(AppBaseException):
 class TeamDisqualifiedError(AppBaseException):
     def __init__(self):
         super().__init__(
-            message=f"Team is disqualified",
+            message="Team is disqualified",
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 

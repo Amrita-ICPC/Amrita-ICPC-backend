@@ -1,20 +1,4 @@
 #TODO: Implement RBAC auth gaurd
-from app.schema.student.contest_team import (
-    ContestTeamStatusUpdate,
-    ContestTeamLeaderTransfer,
-    ContestTeamUpdate,
-    ContestTeamMemberStatusUpdate,
-    ContestTeamInviteRequest,
-)
-from app.core.guards.contest_student import ContestStudentGuard
-from app.repositories.team import TeamRepository
-from app.repositories.contest import ContestRepository
-from app.schema.student.contests import (
-    StudentContestRegistrationRequest, 
-    StudentContestListResponse, 
-    StudentContestDetailsResponse,
-    StudentContestStatusResponse
-)
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -22,18 +6,33 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user_id
 from app.core.clients.database import get_db
-from app.core.response import create_api_response
-from app.repositories.student.contest import StudentContestRepository
-from app.repositories.dto.pagination import PaginationParams
-from app.schema.base import APIResponse
-from app.service.student.contests import StudentContestService
-from app.utils.pagination import get_pagination
+from app.core.guards.contest_student import ContestStudentGuard
 from app.core.guards.team_student import TeamStudentGuard
-from app.repositories.student.team import StudentTeamRepository
-from app.repositories.student.contest_team import ContestTeamRepository
-from app.service.student.contest_team import ContestTeamService
-from app.schema.team import ContestTeamImport, ContestTeamCreate
 from app.core.logger import logger
+from app.core.response import create_api_response
+from app.repositories.contest import ContestRepository
+from app.repositories.dto.pagination import PaginationParams
+from app.repositories.student.contest import StudentContestRepository
+from app.repositories.student.contest_team import ContestTeamRepository
+from app.repositories.student.team import StudentTeamRepository
+from app.repositories.team import TeamRepository
+from app.schema.base import APIResponse
+from app.schema.student.contest_team import (
+    ContestTeamInviteRequest,
+    ContestTeamLeaderTransfer,
+    ContestTeamMemberStatusUpdate,
+    ContestTeamStatusUpdate,
+    ContestTeamUpdate,
+)
+from app.schema.student.contests import (
+    StudentContestDetailsResponse,
+    StudentContestListResponse,
+    StudentContestRegistrationRequest,
+    StudentContestStatusResponse,
+)
+from app.schema.team import ContestTeamCreate, ContestTeamImport
+from app.service.student.contest_team import ContestTeamService
+from app.service.student.contests import StudentContestService
 
 router = APIRouter()
 

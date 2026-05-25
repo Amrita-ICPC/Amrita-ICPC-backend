@@ -6,11 +6,9 @@ data transfer without exposing ORM models directly. They represent the minimal
 data needed for student-facing queries and operations.
 """
 
-from dataclasses import dataclass, field
-from datetime import datetime
-from uuid import UUID
+from dataclasses import dataclass
 
-from app.utils.enums import ContestMode, ContestRunStatus, ContestStatus, TeamApprovalMode
+from app.utils.enums import ContestRunStatus, ContestStatus
 
 
 @dataclass

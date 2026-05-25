@@ -1,30 +1,35 @@
-from app.repositories.student.contest_team import ContestTeamRepository
-from app.utils.enums import TeamApprovalStatus
-from app.repositories.team import TeamRepository
-from app.repositories.student.contest import StudentContestRepository
-from uuid import UUID
 from datetime import datetime, timezone
-from app.repositories.contest import ContestRepository
-from app.repositories.dto.pagination import PaginationParams
-from app.repositories.dto.student.contests import StudentContestFilters
-from app.schema.contest import ContestSummaryResponse
-from app.schema.student.contests import (
-    StudentContestRegistrationRequest, 
-    StudentContestListResponse,
-    StudentContestDetailsResponse,
-    StudentContestStatusResponse,
-)
-from app.utils.enums import ContestRunStatus, ContestStatus, TeamStatus, TeamMemberRole, ContestTeamMemberStatus, RegistrationState
+from uuid import UUID
+
 from app.core.cache.decorators import cache_get
+from app.core.guards.contest_student import ContestStudentGuard
 from app.mappers.student.contest_mappers import (
     to_student_available_contests_list_response,
     to_student_contest_details_response,
-    to_student_contest_status_response,
     to_student_contest_not_registered_response,
+    to_student_contest_status_response,
     to_team_member_status,
 )
+from app.repositories.contest import ContestRepository
+from app.repositories.dto.pagination import PaginationParams
+from app.repositories.dto.student.contests import StudentContestFilters
+from app.repositories.student.contest import StudentContestRepository
+from app.repositories.student.contest_team import ContestTeamRepository
+from app.repositories.team import TeamRepository
+from app.schema.student.contests import (
+    StudentContestDetailsResponse,
+    StudentContestListResponse,
+    StudentContestRegistrationRequest,
+    StudentContestStatusResponse,
+)
 from app.utils.contest import compute_run_status
-from app.core.guards.contest_student import ContestStudentGuard
+from app.utils.enums import (
+    ContestTeamMemberStatus,
+    RegistrationState,
+    TeamApprovalStatus,
+    TeamMemberRole,
+    TeamStatus,
+)
 
 
 class StudentContestService:
@@ -57,7 +62,7 @@ class StudentContestService:
         self.contest_team_repository = contest_team_reposiotry
 
     @cache_get(
-        key_builder=lambda self, user_id, request, search, pagination: 
+        key_builder=lambda self, user_id, request, search, pagination:
         f"student:contests:user:{user_id}:reg:{request.registered}:status:{','.join(request.status) if request.status else 'any'}:search:{search or 'none'}:skip:{pagination.skip}:limit:{pagination.limit}:min_team:{request.min_team_size}:max_team:{request.max_team_size}",
         ttl=300
     )
@@ -125,7 +130,7 @@ class StudentContestService:
         # Check if the student is eligible for the contest (if the contest is private then check if the student is part of the audience)
         await self.contest_student_guard.check_student_eligibility(user_id=user_id, contest=contest)
         run_status = compute_run_status(contest.start_time, contest.end_time)
-        
+
         # Get team count (approved and confirmed teams)
         teams_count = await self.contest_team_repository.count_teams(
             contest_id=contest_id,
@@ -162,7 +167,7 @@ class StudentContestService:
         # Check if the student is eligible for the contest
         contest = await self.contest_repository.get_contest_or_raise(contest_id)
         await self.contest_student_guard.check_student_eligibility(user_id=user_id, contest=contest)
-        
+
         # Check if the user is in contest_team_member table
         contest_team_member = await self.repository.get_contest_team_member(contest_id=contest_id, user_id=user_id)
 
@@ -239,4 +244,4 @@ class StudentContestService:
             team_approval_status=contest_team.approval_status,
             status= contest_team.team_status,
             team_id=contest_team.team_id
-        )        
+        )

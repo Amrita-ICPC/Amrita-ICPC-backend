@@ -21,48 +21,45 @@ Key Principles:
     - Reusability: Share common transformation logic
 """
 
-from datetime import datetime
 from collections.abc import Callable
+from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
 from app.schema.student.contests import (
+    ReadinessStatus,
+    RegistrationStatus,
     StudentContestAvailableResponse,
     StudentContestDetailsResponse,
     StudentContestListResponse,
     StudentContestStatusResponse,
-    RegistrationStatus,
-    ReadinessStatus,
     TeamMemberStatus,
     TeamParticipationStatus,
 )
 
 if TYPE_CHECKING:
-    from app.models.contest import ContestQuestion
     from app.repositories.dto import PaginatedResult
 
 from app.models.contest import Contest, ContestTeam, ContestTeamMember
 from app.models.team import Team
+from app.schema.contest import ContestAudienceResponse
 from app.utils.enums import (
     ContestRunStatus,
-    TeamMemberRole,
-    RegistrationState,
-    TeamStatus,
-    TeamApprovalStatus,
-    TeamApprovalMode,
-    TeamInvitationStatus,
     ContestTeamMemberStatus,
+    RegistrationState,
+    TeamApprovalMode,
+    TeamApprovalStatus,
+    TeamMemberRole,
+    TeamStatus,
 )
 from app.utils.image import image_object_key_to_url
-from app.schema.contest import ContestAudienceResponse
-
 
 # Response Mappers: ORM → API Schemas
 
 
 def to_student_available_contest_response(
-    contest: "Contest", 
-    *, 
+    contest: "Contest",
+    *,
     teams_count: int = 0,
     run_status: ContestRunStatus
 ) -> StudentContestAvailableResponse:
@@ -107,17 +104,17 @@ def to_student_available_contests_list_response(
     """
     contests = [
         to_student_available_contest_response(
-            contest, 
+            contest,
             teams_count=teams_count_dict.get(contest.id, 0),
             run_status=run_status_calculator(contest.start_time, contest.end_time)
         )
         for contest in paginated_result.items
     ]
-    
+
     total = paginated_result.total
     has_more = (skip + limit) < total
     current_page = (skip // limit) + 1 if limit > 0 else 1
-    
+
     return StudentContestListResponse(
         contests=contests,
         total=total,
@@ -128,8 +125,8 @@ def to_student_available_contests_list_response(
 
 
 def to_student_contest_details_response(
-    contest: "Contest", 
-    *, 
+    contest: "Contest",
+    *,
     teams_count: int = 0,
     run_status: ContestRunStatus
 ) -> StudentContestDetailsResponse:
@@ -207,7 +204,7 @@ def to_team_member_status(
 def to_student_contest_status_response(
     contest_team_id: UUID,
     team_name: str,
-    
+
     members: list[TeamMemberStatus],
     approved_count: int,
     min_team_size: int,

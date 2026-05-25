@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 from app.exceptions.contest import (
@@ -11,7 +11,6 @@ from app.exceptions.contest import (
 )
 from app.models.contest import ContestInstructor
 from app.utils.enums import ContestStatus
-from datetime import datetime, UTC
 
 
 class ContestValidator:
@@ -100,7 +99,7 @@ class ContestValidator:
         if registration_end is not None:
             if datetime.now(UTC) > registration_end.astimezone(UTC):
                 raise InvalidContestError("Registration has ended")
-        
+
 
     @staticmethod
     def validate_team_size_constraints(min_size: int, max_size: int) -> None:

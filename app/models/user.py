@@ -12,8 +12,8 @@ from app.models.base import Base
 from app.utils.enums import UserRole
 
 if TYPE_CHECKING:
-    from app.models.audience import UserAudience
     from app.models import ContestTeamMember
+    from app.models.audience import UserAudience
 
 
 class User(Base):

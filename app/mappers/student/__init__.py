@@ -10,9 +10,9 @@ from app.mappers.student.contest_mappers import (
 )
 from app.mappers.student.team_mappers import (
     to_student_team_card_response,
-    to_student_team_list_response,
-    to_student_team_invitation_response,
     to_student_team_invitation_list_response,
+    to_student_team_invitation_response,
+    to_student_team_list_response,
 )
 
 __all__ = [

@@ -1,16 +1,21 @@
-from app.utils.enums import ContestTeamMemberStatus
-from app.models.contest import ContestTeamMember
-from app.models import ContestAudience
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.models import Contest, TeamUser, ContestTeam
-from sqlalchemy import and_, case, func, or_, select
-from app.utils.enums import ContestRunStatus, ContestStatus, TeamApprovalStatus
-from uuid import UUID
-from app.repositories.dto import PaginationParams
-from sqlalchemy.orm import selectinload
 from datetime import datetime, timezone
-from app.repositories.dto import PaginatedResult
+from uuid import UUID
+
+from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.models import Contest, ContestTeam, TeamUser
+from app.models.contest import ContestTeamMember
+from app.repositories.dto import PaginatedResult, PaginationParams
 from app.repositories.dto.student.contests import StudentContestFilters
+from app.utils.enums import (
+    ContestRunStatus,
+    ContestStatus,
+    ContestTeamMemberStatus,
+    TeamApprovalStatus,
+)
+
 
 class StudentContestRepository:
     def __init__(self, db: AsyncSession) -> None:
@@ -53,7 +58,7 @@ class StudentContestRepository:
                 ContestAudience.contest_id == Contest.id,
                 ContestAudience.audience_id.in_(user_audience_ids)
             ).exists()
-            
+
             base_query = base_query.filter(
                 or_(
                     Contest.is_public.is_(True),
@@ -72,7 +77,7 @@ class StudentContestRepository:
         # Team size filters
         if filters.min_team_size is not None:
             base_query = base_query.filter(Contest.min_team_size >= filters.min_team_size)
-        
+
         if filters.max_team_size is not None:
             base_query = base_query.filter(Contest.max_team_size <= filters.max_team_size)
 
@@ -88,7 +93,7 @@ class StudentContestRepository:
                 )
             if ContestRunStatus.ENDED in filters.run_statuses:
                 run_status_conditions.append(Contest.end_time < now)
-            
+
             if run_status_conditions:
                 base_query = base_query.filter(or_(*run_status_conditions))
 
@@ -99,12 +104,12 @@ class StudentContestRepository:
                 select(TeamUser.team_id)
                 .filter(TeamUser.user_id == user_id)
             )
-            
+
             registered_condition = select(ContestTeam).filter(
                 ContestTeam.contest_id == Contest.id,
                 ContestTeam.team_id.in_(team_user_subquery)
             ).exists()
-            
+
             if filters.registered:
                 base_query = base_query.filter(registered_condition)
             else:
@@ -129,11 +134,11 @@ class StudentContestRepository:
             base_query.offset(pagination.skip).limit(pagination.limit)
         )
         contests = list(result.unique().scalars().all())
-        
+
         # Calculate registration counts
         contest_ids = [c.id for c in contests]
         teams_count_dict = {}
-        
+
         if contest_ids:
             # Count registered teams
             count_result = await self.db.execute(
@@ -146,7 +151,7 @@ class StudentContestRepository:
             )
             teams_count_dict = {cid: count for cid, count in count_result.all()}
 
-        return PaginatedResult(total=total, items=contests), teams_count_dict  
+        return PaginatedResult(total=total, items=contests), teams_count_dict
 
     async def get_contest_team_member(self, contest_id: UUID, user_id: UUID)->ContestTeamMember | None:
         # Check if the user is in contest_team_member table

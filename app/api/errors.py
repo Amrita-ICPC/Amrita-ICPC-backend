@@ -1,7 +1,3 @@
-from app.exceptions.contest import ContestTeamMemberNotFoundException
-from app.exceptions.contest import TeamDisqualifiedError
-from app.exceptions.contest import AccessDeniedTeamStatusError
-from app.exceptions.contest import ContestTeamNotFoundException
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, Request, status
@@ -23,10 +19,14 @@ from app.exceptions.bank import (
 from app.exceptions.bank_validation import BankValidationError
 from app.exceptions.base import AppBaseException
 from app.exceptions.contest import (
+    AccessDeniedTeamStatusError,
     AudienceNotAssignedToContestError,
     ContestAlreadyExistsError,
+    ContestMaxTeamsReachedError,
     ContestNotFoundError,
     ContestOperationError,
+    ContestTeamMemberNotFoundException,
+    ContestTeamNotFoundException,
     DuplicateQuestionOrderError,
     InstructorAlreadyAssignedError,
     InstructorNotAssignedError,
@@ -36,10 +36,10 @@ from app.exceptions.contest import (
     InvalidContestStateError,
     QuestionAlreadyInContestError,
     QuestionNotInContestError,
-    StudentNotEligibleForContestError,
     StudentAlreadyInContestError,
+    StudentNotEligibleForContestError,
     TeamAlreadyInContestError,
-    ContestMaxTeamsReachedError,
+    TeamDisqualifiedError,
 )
 from app.exceptions.execution import (
     CodeExecutionError,
@@ -62,23 +62,22 @@ from app.exceptions.question import (
     TagNotFoundError,
     TemplateAlreadyExistsError,
 )
+from app.exceptions.student.contests import NoContestTeamMemberFoundError
+from app.exceptions.student.teams import (
+    InvalidContestTeamMemberStatusUpdateException,
+    TeamStatusNotAllowedForUpdatingContestTeamMemberStatusException,
+)
 from app.exceptions.team import (
+    IndividualModeActionNotAllowedError,
+    LeaderMustBeMemberError,
+    StudentTeamInvitationError,
+    StudentTeamInvitationNotFoundError,
+    StudentTeamUserNotFoundError,
     TeamIsConfirmedError,
     TeamNotFoundError,
-    StudentTeamInvitationNotFoundError,
-    StudentTeamInvitationError,
-    StudentTeamUserNotFoundError,
     TeamNotHavingRequiredNumberOfMembersException,
-    LeaderMustBeMemberError,
-    IndividualModeActionNotAllowedError,
 )
-from app.exceptions.student.teams import (
-    TeamStatusNotAllowedForUpdatingContestTeamMemberStatusException,
-    InvalidContestTeamMemberStatusUpdateException,
-)
-from app.exceptions.student.contests import NoContestTeamMemberFoundError
 from app.schema.base import APIErrorResponse, ErrorDetails, MetaResponse
-
 from app.schema.execution import CompilationErrorResponse
 
 
@@ -246,7 +245,7 @@ def setup_exception_handlers(app: FastAPI) -> None:
             error_code="STUDENT_NOT_ELIGIBLE_FOR_CONTEST",
             details=[exc.detail] if exc.detail else None,
         )
-    
+
     @app.exception_handler(ContestTeamNotFoundException)
     async def contest_team_not_found_handler(
         request: Request, exc: ContestTeamNotFoundException
@@ -311,7 +310,7 @@ def setup_exception_handlers(app: FastAPI) -> None:
             error_code="TEAM_DISQUALIFIED",
             details=[exc.detail] if exc.detail else None,
         )
-    
+
     @app.exception_handler(TeamIsConfirmedError)
     async def team_is_confirmed_handler(
         request: Request, exc: TeamIsConfirmedError

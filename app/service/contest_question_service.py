@@ -23,16 +23,18 @@ from app.mappers.question import (
     build_update_testcase_dtos,
 )
 from app.models.question import Question
+from app.repositories.bank import BankRepository
 from app.repositories.contest import ContestRepository
 from app.repositories.dto import (
     ContestQuestionFilters,
     PaginationParams,
 )
+from app.repositories.dto.contest_question import AddContestQuestionData
 from app.repositories.dto.question import CreateQuestionTemplateData
-from app.repositories.bank import BankRepository
 from app.repositories.language import LanguageRepository
 from app.repositories.question import QuestionRepository
 from app.schema.contest import (
+    AddContestQuestionRequest,
     AddContestQuestionsRequest,
     ContestBankCloneRequest,
     ContestQuestionResponse,
@@ -54,8 +56,6 @@ from app.utils.question_clone import deep_copy_question_for_clone
 from app.validators.bank import BankValidator
 from app.validators.contest import ContestValidator
 from app.validators.question import QuestionValidator
-from app.repositories.dto.contest_question import AddContestQuestionData
-from app.schema.contest import AddContestQuestionRequest
 
 
 class ContestQuestionService:
