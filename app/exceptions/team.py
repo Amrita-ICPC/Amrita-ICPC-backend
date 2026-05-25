@@ -198,4 +198,16 @@ class LeaderMustBeMemberError(AppBaseException):
         )
 
 
+class IndividualModeActionNotAllowedError(AppBaseException):
+    """Raised when trying to perform team actions in individual contest mode."""
+
+    def __init__(self, action: str):
+        super().__init__(
+            message=f"Cannot {action} when the contest mode is individual",
+            status_code=400,
+            detail=f"Operation '{action}' is not permitted in individual contest mode.",
+        )
+
+
+
 
