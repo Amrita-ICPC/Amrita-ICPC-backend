@@ -16,6 +16,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -270,7 +271,7 @@ class ContestTeam(Base):
             "contest_id",
             "team_id",
             unique=True,
-            postgresql_where="approval_status IN ('WAITING', 'APPROVED') OR team_status IN ('DRAFT', 'CONFIRMED')",
+            postgresql_where=text("approval_status IN ('WAITING', 'APPROVED') OR team_status IN ('DRAFT', 'CONFIRMED')"),
         ),
     )
 
@@ -327,7 +328,7 @@ class ContestTeamMember(Base):
             "contest_team_id",
             "user_id",
             unique=True,
-            postgresql_where="status IN ('ACCEPTED', 'INVITED')",
+            postgresql_where=text("status IN ('ACCEPTED', 'INVITED')"),
         ),
     )
 

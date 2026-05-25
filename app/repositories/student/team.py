@@ -615,7 +615,8 @@ class StudentTeamRepository:
             query = query.where(TeamUser.joined_at <= joined_before)
 
         # Ordering / Sorting
-        sort_col = TeamUser.joined_at
+        from typing import Any
+        sort_col: Any = TeamUser.joined_at
         if sort_by == "name":
             sort_col = User.name
         elif sort_by == "email":

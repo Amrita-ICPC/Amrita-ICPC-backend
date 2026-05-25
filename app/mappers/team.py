@@ -84,7 +84,7 @@ def to_team_list_response(
     team_members_map: dict[UUID, list["ContestTeamMember"]] | None = None,
 ) -> TeamListResponse:
     """Map contest team list and counts to TeamListResponse."""
-    teams_responses = []
+    teams_responses: list[ContestTeamResponse] = []
     for team in contest_teams:
         members = team_members_map.get(team.id) if team_members_map else None
         teams_responses.append(to_contest_team_response(team, members))

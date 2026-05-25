@@ -177,7 +177,14 @@ class StudentContestService:
         is_draft = contest_team.team_status == TeamStatus.DRAFT
         registered = True
         is_approved = contest_team.approval_status == TeamApprovalStatus.APPROVED
-        registration_status = RegistrationState.NOT_REGISTERED if is_draft else (RegistrationState.PENDING_APPROVAL if contest_team.approval_status == TeamApprovalStatus.WAITING else RegistrationState.APPROVED)
+        if is_draft:
+            registration_status = RegistrationState.NOT_REGISTERED
+        elif contest_team.approval_status == TeamApprovalStatus.WAITING:
+            registration_status = RegistrationState.PENDING_APPROVAL
+        elif contest_team.approval_status == TeamApprovalStatus.APPROVED:
+            registration_status = RegistrationState.APPROVED
+        else:
+            registration_status = RegistrationState.NOT_REGISTERED
 
         # Determine readiness by evaluating start and end time relative to current time
         current_time = datetime.now(timezone.utc)

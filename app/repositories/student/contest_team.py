@@ -1,5 +1,4 @@
 from sqlalchemy import Select
-from typing import List
 from app.exceptions.contest import ContestTeamMemberNotFoundException
 from app.utils.enums import TeamApprovalStatus
 from app.utils.enums import TeamStatus
@@ -230,7 +229,7 @@ class ContestTeamRepository:
         await self.db.refresh(contest_team_member)
         return contest_team_member
 
-    async def get_contest_team_members(self, contest_team_id:UUID, contestTeamMemberStatus: list[ContestTeamMemberStatus] | None = None, user_ids:list[UUID] | None = None )->List[ContestTeamMember]:
+    async def get_contest_team_members(self, contest_team_id:UUID, contestTeamMemberStatus: list[ContestTeamMemberStatus] | None = None, user_ids:list[UUID] | None = None )->list[ContestTeamMember]:
         query = (select(ContestTeamMember).where(ContestTeamMember.contest_team_id == contest_team_id))
 
         if contestTeamMemberStatus is not None:

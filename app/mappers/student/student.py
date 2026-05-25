@@ -20,7 +20,7 @@ def to_user_invitation_response(
     contest = contest_team.contest
 
     can_accept = True
-    if contest.max_teams is not None:
+    if contest.max_teams is not None and contest.max_teams > 0:
         can_accept = registered_teams_count < contest.max_teams
 
     team_members = contest_team.contest_team_member

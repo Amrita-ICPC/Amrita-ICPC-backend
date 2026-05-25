@@ -380,7 +380,9 @@ class TeamService:
         await self.guard.check_read_team(user_id=user_id, contest=contest)
 
         # Delegate to repository
-        contest_team = await self.repository.get_team_by_id(contest_id, team_id)
+        contest_team = await self.contest_team_repository.get_contest_team_by_id_or_raise(
+            team_id
+        )
        
 
         return to_contest_team_response(contest_team)

@@ -22,7 +22,7 @@ class StudentService:
 
     async def get_user_invitations(
         self, user_id: UUID, status: ContestTeamMemberStatus | None
-    ) -> List[UserInvitationResponse]:
+    ) -> list[UserInvitationResponse]:
         """
         Get all contest invitations for a user.
 

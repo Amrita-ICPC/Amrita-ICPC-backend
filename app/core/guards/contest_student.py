@@ -39,7 +39,7 @@ class ContestStudentGuard:
         if result.fetchone() is None:
             raise StudentNotEligibleForContestError(user_id=str(user_id), contest_id=str(contest.id))
     
-    async def check_student_aduiences_for_contest(self,user_ids:list[UUID],contest_id: UUID):
+    async def check_student_aduiences_for_contest(self,user_ids:list[UUID],contest_id: UUID) -> None:
 
         # extract the audiences for the contest
         contest_audience_subquery = (
@@ -64,7 +64,7 @@ class ContestStudentGuard:
             raise StudentNotEligibleForContestError(user_id=str(list(set(user_ids) - eligible_user_ids)), contest_id=str(contest_id))
             
 
-    async def check_student_already_in_contest(self, contest_id: UUID, user_ids: list[UUID]):
+    async def check_student_already_in_contest(self, contest_id: UUID, user_ids: list[UUID]) -> None:
 
         query = select(ContestTeamMember.user_id).where(
             ContestTeamMember.contest_id == contest_id,
@@ -89,7 +89,7 @@ class ContestStudentGuard:
         if result:
             raise TeamAlreadyInContestError(team_id=str(team_id), contest_id=str(contest_id))
 
-    async def check_contest_team_member_exist(self,contest_team_id:UUID, user_id: UUID):
+    async def check_contest_team_member_exist(self,contest_team_id:UUID, user_id: UUID) -> None:
         query = select(ContestTeamMember.user_id).where(
             ContestTeamMember.contest_team_id == contest_team_id,
             ContestTeamMember.user_id == user_id,
