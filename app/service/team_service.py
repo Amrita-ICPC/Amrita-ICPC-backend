@@ -29,6 +29,7 @@ from app.utils.enums import (
     TeamStatus,
 )
 from app.validators.team import TeamValidator
+from app.validators.contest_team import ContestTeamValidator
 
 
 def get_team_key(team_id: UUID) -> str:
@@ -126,6 +127,13 @@ class TeamService:
 
         if contest_team.approval_status != TeamApprovalStatus.APPROVED:
             if contest.team_approval_mode == TeamApprovalMode.INSTRUCTOR_REVIEW:
+                if contest.max_teams is not None and isinstance(contest.max_teams, int) and contest.max_teams > 0:
+                    counts = await self.contest_team_repository.count_teams_by_status(contest_id)
+                    ContestTeamValidator.validate_max_teams(
+                        approved_teams_count=counts["approved_count"],
+                        max_teams=contest.max_teams,
+                        contest_id=contest_id,
+                    )
                 contest_team.approval_status = TeamApprovalStatus.APPROVED
                 contest_team = await self.contest_team_repository.update_contest_team(
                     contest_team

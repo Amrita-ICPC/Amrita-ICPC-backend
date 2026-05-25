@@ -124,11 +124,14 @@ class StudentContestService:
 
         # Check if the student is eligible for the contest (if the contest is private then check if the student is part of the audience)
         await self.contest_student_guard.check_student_eligibility(user_id=user_id, contest=contest)
-        # Get the contest details
         run_status = compute_run_status(contest.start_time, contest.end_time)
         
-        #Get team count
-        teams_count = await self.team_repository.get_contest_teams_count(contest_id=contest_id)
+        # Get team count (approved and confirmed teams)
+        teams_count = await self.contest_team_repository.count_teams(
+            contest_id=contest_id,
+            status=TeamStatus.CONFIRMED,
+            approval_status=TeamApprovalStatus.APPROVED
+        )
 
         return to_student_contest_details_response(
             contest=contest,

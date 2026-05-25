@@ -160,3 +160,61 @@ async def test_import_team_fails_when_leader_not_in_members(
             contest_team_import=contest_team_import,
             user_id=leader_id,
         )
+
+
+@pytest.mark.asyncio
+async def test_import_team_fails_when_max_teams_reached(
+    contest_team_service,
+    mock_contest_repository,
+    mock_student_team_repository,
+    mock_contest_team_repository,
+):
+    from app.exceptions.contest import ContestMaxTeamsReachedError
+    contest_id = uuid4()
+    team_id = uuid4()
+    leader_id = uuid4()
+    member2_id = uuid4()
+
+    # Mock contest with max_teams limit
+    now = datetime.datetime.now(datetime.timezone.utc)
+    mock_contest = MagicMock(spec=Contest)
+    mock_contest.registration_start = now - datetime.timedelta(days=1)
+    mock_contest.registration_end = now + datetime.timedelta(days=1)
+    mock_contest.is_public = True
+    mock_contest.max_teams = 5
+    mock_contest_repository.get_contest_or_raise.return_value = mock_contest
+
+    # Mock Team
+    mock_team = MagicMock(spec=Team)
+    mock_team.id = team_id
+    mock_team.name = "My Test Team"
+    mock_team.leader_id = leader_id
+
+    # Members on team
+    team_user1 = MagicMock(spec=TeamUser)
+    team_user1.user_id = leader_id
+    team_user2 = MagicMock(spec=TeamUser)
+    team_user2.user_id = member2_id
+    mock_team.members = [team_user1, team_user2]
+
+    mock_student_team_repository.get_student_team_by_id_or_raise.return_value = mock_team
+
+    # Mock repository to return 5 approved teams
+    mock_contest_team_repository.count_teams_by_status.return_value = {
+        "approved_count": 5,
+        "waiting_count": 0,
+        "rejected_count": 0,
+        "disqualified_count": 0,
+    }
+
+    contest_team_import = ContestTeamImport(
+        team_id=team_id,
+        member_ids=[leader_id, member2_id],
+    )
+
+    with pytest.raises(ContestMaxTeamsReachedError):
+        await contest_team_service.import_team(
+            contest_id=contest_id,
+            contest_team_import=contest_team_import,
+            user_id=leader_id,
+        )

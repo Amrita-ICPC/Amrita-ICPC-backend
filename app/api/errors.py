@@ -39,6 +39,7 @@ from app.exceptions.contest import (
     StudentNotEligibleForContestError,
     StudentAlreadyInContestError,
     TeamAlreadyInContestError,
+    ContestMaxTeamsReachedError,
 )
 from app.exceptions.execution import (
     CodeExecutionError,
@@ -358,6 +359,19 @@ def setup_exception_handlers(app: FastAPI) -> None:
             status_code=exc.status_code,
             message=exc.message,
             error_code="TEAM_ALREADY_IN_CONTEST",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(ContestMaxTeamsReachedError)
+    async def contest_max_teams_reached_handler(
+        request: Request, exc: ContestMaxTeamsReachedError
+    ):
+        logger.warning(f"Contest max teams reached: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="CONTEST_MAX_TEAMS_REACHED",
             details=[exc.detail] if exc.detail else None,
         )
 

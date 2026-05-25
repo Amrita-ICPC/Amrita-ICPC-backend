@@ -96,3 +96,40 @@ async def test_create_contest_team_success(
     assert len(created_members) == 1
     assert created_members[0].user_id == user_id
     assert created_members[0].status == ContestTeamMemberStatus.ACCEPTED
+
+
+@pytest.mark.asyncio
+async def test_create_contest_team_fails_when_max_teams_reached(
+    contest_team_service,
+    mock_contest_repository,
+    mock_contest_team_repository,
+):
+    from app.exceptions.contest import ContestMaxTeamsReachedError
+    contest_id = uuid4()
+    user_id = uuid4()
+
+    # Mock contest with max_teams limit
+    now = datetime.datetime.now(datetime.timezone.utc)
+    mock_contest = MagicMock(spec=Contest)
+    mock_contest.registration_start = now - datetime.timedelta(days=1)
+    mock_contest.registration_end = now + datetime.timedelta(days=1)
+    mock_contest.is_public = True
+    mock_contest.max_teams = 5
+    mock_contest_repository.get_contest_or_raise.return_value = mock_contest
+
+    # Mock repository to return 5 approved teams
+    mock_contest_team_repository.count_teams_by_status.return_value = {
+        "approved_count": 5,
+        "waiting_count": 0,
+        "rejected_count": 0,
+        "disqualified_count": 0,
+    }
+
+    # Call service method and expect failure
+    contest_team_create = ContestTeamCreate(name="Sparking Devs")
+    with pytest.raises(ContestMaxTeamsReachedError):
+        await contest_team_service.create_contest_team(
+            contest_id=contest_id,
+            contest_team_create=contest_team_create,
+            user_id=user_id,
+        )

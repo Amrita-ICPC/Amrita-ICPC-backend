@@ -125,6 +125,15 @@ class ContestTeamService:
                 contest_id=contest_id,
             )
 
+        # Validate max teams limit
+        if contest.max_teams is not None and isinstance(contest.max_teams, int) and contest.max_teams > 0:
+            counts = await self.repository.count_teams_by_status(contest_id)
+            ContestTeamValidator.validate_max_teams(
+                approved_teams_count=counts["approved_count"],
+                max_teams=contest.max_teams,
+                contest_id=contest_id,
+            )
+
         # Map and create ContestTeam
         contest_team = to_contest_team(
             contest_id=contest_id,
@@ -178,6 +187,15 @@ class ContestTeamService:
         if not contest.is_public:
             await self.contest_student_guard.check_student_aduiences_for_contest(
                 user_ids=[user_id],
+                contest_id=contest_id,
+            )
+
+        # Validate max teams limit
+        if contest.max_teams is not None and isinstance(contest.max_teams, int) and contest.max_teams > 0:
+            counts = await self.repository.count_teams_by_status(contest_id)
+            ContestTeamValidator.validate_max_teams(
+                approved_teams_count=counts["approved_count"],
+                max_teams=contest.max_teams,
                 contest_id=contest_id,
             )
 
