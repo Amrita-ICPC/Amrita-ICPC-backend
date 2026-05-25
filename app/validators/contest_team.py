@@ -8,7 +8,7 @@ from app.exceptions.student.teams import (
 from uuid import UUID
 
 class ContestTeamValidator:
-    def __init__(self):
+    def __init__(self)->None:
         pass
 
     @staticmethod
@@ -46,7 +46,7 @@ class ContestTeamValidator:
             raise InvalidContestTeamMemberStatusUpdateException()
     
     @staticmethod
-    def validate_team_status(team_status: TeamStatus):
+    def validate_team_status(team_status: TeamStatus)->None:
         """
         Raises if the team is canceled.
         """

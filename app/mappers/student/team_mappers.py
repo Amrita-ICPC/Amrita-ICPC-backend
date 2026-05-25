@@ -1,13 +1,17 @@
 from uuid import UUID
-from typing import List
+from typing import List, Tuple
+from datetime import datetime
 
+from app.models.user import User
 from app.models.team import Team, TeamInvitation
+from app.utils.enums import TeamMemberRole
 from app.schema.student.teams import (
     StudentTeamCardResponse,
     StudentTeamMemberSummaryResponse,
     StudentTeamListResponse,
     StudentTeamInvitationResponse,
     StudentTeamInvitationListResponse,
+    TeamMemberDetailResponse,
 )
 
 
@@ -144,4 +148,32 @@ def to_student_team_invitation_list_response(
         invitations=mapped_invitations,
         total=total,
     )
+
+
+def to_team_member_detail_responses(
+    members_data: List[Tuple[User, TeamMemberRole, datetime, bool | None]],
+) -> List[TeamMemberDetailResponse]:
+    """Map a list of team members data tuples to a list of TeamMemberDetailResponse schemas.
+
+    Args:
+        members_data: List of tuples (User, TeamMemberRole, joined_at, is_in_contest).
+
+    Returns:
+        List[TeamMemberDetailResponse]: List of mapped detailed team member schemas.
+    """
+    return [
+        TeamMemberDetailResponse(
+            id=user.id,
+            name=user.name,
+            email=user.email,
+            phone_no=user.phone_no,
+            gender=user.gender,
+            role=user.role,
+            team_role=team_role,
+            joined_at=joined_at,
+            is_in_contest=is_in_contest,
+        )
+        for user, team_role, joined_at, is_in_contest in members_data
+    ]
+
 

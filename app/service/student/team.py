@@ -20,6 +20,7 @@ from app.mappers.student.team_mappers import (
     to_student_team_card_response,
     to_student_team_list_response,
     to_student_team_invitation_list_response,
+    to_team_member_detail_responses,
 )
 from app.core.cache.decorators import cache_get, cache_delete
 from app.utils.enums import TeamInvitationStatus, InvitationType, TeamMemberRole
@@ -595,20 +596,7 @@ class StudentTeamService:
             contest_id=contest_id,
         )
 
-        return [
-            TeamMemberDetailResponse(
-                id=user.id,
-                name=user.name,
-                email=user.email,
-                phone_no=user.phone_no,
-                gender=user.gender,
-                role=user.role,
-                team_role=team_role,
-                joined_at=joined_at,
-                is_in_contest=is_in_contest,
-            )
-            for user, team_role, joined_at, is_in_contest in members_data
-        ]
+        return to_team_member_detail_responses(members_data)
 
 
 

@@ -1,9 +1,4 @@
 from app.utils.enums import TeamStatus, ContestTeamMemberStatus
-from app.exceptions.student.teams import (
-    TeamStatusNotAllowedForUpdatingContestTeamMemberStatusException,
-    InvalidContestTeamMemberStatusUpdateException,
-)
-from typing import Optional
 from uuid import UUID
 from pydantic import BaseModel, Field
 

@@ -148,7 +148,7 @@ class TeamValidator:
 
 
     @staticmethod
-    def validate_team_confirmation(team_status: TeamStatus, team_name: str):
+    def validate_team_confirmation(team_status: TeamStatus, team_name: str)->None:
         """
         Raises if the team is confirmed.
         """
@@ -156,7 +156,7 @@ class TeamValidator:
             raise TeamIsConfirmedError(team_name)
 
     @staticmethod
-    def validate_allowed_student_team_status(team_status:TeamStatus):
+    def validate_allowed_student_team_status(team_status:TeamStatus)->None:
         allowed_team_statuses = {TeamStatus.CONFIRMED, TeamStatus.DRAFT, TeamStatus.CANCELLED}
         if team_status not in allowed_team_statuses:
             raise AccessDeniedTeamStatusError(team_status)

@@ -68,6 +68,8 @@ from app.exceptions.team import (
     StudentTeamInvitationNotFoundError,
     StudentTeamInvitationError,
     StudentTeamUserNotFoundError,
+    TeamNotHavingRequiredNumberOfMembersException,
+    LeaderMustBeMemberError,
 )
 from app.exceptions.student.teams import (
     TeamStatusNotAllowedForUpdatingContestTeamMemberStatusException,
@@ -588,6 +590,32 @@ def setup_exception_handlers(app: FastAPI) -> None:
             status_code=exc.status_code,
             message=exc.message,
             error_code="TEAM_NOT_FOUND",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(TeamNotHavingRequiredNumberOfMembersException)
+    async def team_not_having_required_number_of_members_handler(
+        request: Request, exc: TeamNotHavingRequiredNumberOfMembersException
+    ):
+        logger.warning(f"Team not having required number of members: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="TEAM_NOT_HAVING_REQUIRED_NUMBER_OF_MEMBERS",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(LeaderMustBeMemberError)
+    async def leader_must_be_member_handler(
+        request: Request, exc: LeaderMustBeMemberError
+    ):
+        logger.warning(f"Leader must be member: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="LEADER_MUST_BE_MEMBER",
             details=[exc.detail] if exc.detail else None,
         )
 

@@ -1,5 +1,4 @@
-from app.models import Contest
-from app.models import ContestTeamMember
+from app.models import Contest, ContestTeam, ContestTeamMember
 from app.validators.contest_team import ContestTeamValidator
 from app.exceptions.team import (
     InvalidTeamSizeError,
@@ -9,9 +8,13 @@ from app.exceptions.team import (
     StudentTeamNotFoundError,
 )
 from app.exceptions.contest import ContestTeamNotFoundException, StudentAlreadyInContestError
-from app.utils.enums import ContestTeamMemberStatus
 from app.exceptions.team import TeamNotHavingRequiredNumberOfMembersException
-from app.utils.enums import TeamApprovalMode, TeamApprovalStatus, TeamStatus
+from app.utils.enums import (
+    ContestTeamMemberStatus,
+    TeamApprovalMode,
+    TeamApprovalStatus,
+    TeamStatus,
+)
 from app.exceptions.student.teams import (
     TeamStatusNotAllowedForUpdatingContestTeamMemberStatusException,
 )
@@ -23,11 +26,8 @@ from app.validators.team import TeamValidator
 from app.core.guards.team_student import TeamStudentGuard
 from app.repositories.student.team import StudentTeamRepository
 from app.schema.team import ContestTeamImport, ContestTeamCreate
-from app.models.contest import ContestTeam, ContestTeamMember
-from app.utils.enums import TeamStatus, ContestTeamMemberStatus
 from uuid import UUID
 from datetime import datetime, timezone
-from app.models import ContestTeam
 from app.repositories.student.contest_team import ContestTeamRepository
 from app.mappers.student.contest_mappers import to_contest_team, to_contest_team_members
 from app.core.cache.decorators import cache_delete
@@ -307,7 +307,7 @@ class ContestTeamService:
                     contest_team.approval_status = TeamApprovalStatus.APPROVED
             else:
                 raise TeamNotHavingRequiredNumberOfMembersException(
-                    team_name=contest_team.team.name,   
+                    team_name=contest_team.name,   
                     team_member_count=team_member_count, 
                     min_team_size=contest.min_team_size, 
                     max_team_size=contest.max_team_size
@@ -315,8 +315,10 @@ class ContestTeamService:
         elif contest_team_status == TeamStatus.CANCELLED:
             await self._cancel_contest_team(contest_team)
             return None
+        else:
+            # Only CONFIRMED and CANCELLED are allowed student-initiated status changes
+            raise ValueError(f"Invalid team status transition: {contest_team_status}")
 
-        contest_team.team_status = contest_team_status
         await self.repository.update_contest_team(contest_team)
 
         return None
@@ -394,7 +396,9 @@ class ContestTeamService:
         
         # The team leader cannot remove themselves
         if contest_team_member.user_id == contest_team.leader_id:
-            raise CannotRemoveTeamLeaderError(team_name=contest_team.team.name if contest_team.team else "Team")
+            raise CannotRemoveTeamLeaderError(
+                team_name=contest_team.team.name if contest_team.team else contest_team.name
+            )
 
     async def _handle_member_left(
         self,
