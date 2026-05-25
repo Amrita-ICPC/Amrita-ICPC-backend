@@ -1,5 +1,4 @@
 from __future__ import annotations
-from app.utils.enums import ContestTeamMemberStatus
 
 import uuid
 from datetime import datetime, timezone
@@ -26,6 +25,7 @@ from app.models.team import Team
 from app.utils.enums import (
     ContestMode,
     ContestStatus,
+    ContestTeamMemberStatus,
     ScoringType,
     TeamApprovalMode,
     TeamApprovalStatus,
@@ -309,7 +309,7 @@ class ContestTeam(Base):
     contest_team_member:Mapped[list["ContestTeamMember"]] = relationship("ContestTeamMember", back_populates="contest_team", cascade="all, delete-orphan")
 
 
-    
+
     progress = relationship(
         "ContestTeamProgress",
         back_populates="contest_team",

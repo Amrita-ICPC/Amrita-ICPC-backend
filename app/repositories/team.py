@@ -1,13 +1,11 @@
-from sqlalchemy import and_
 from uuid import UUID
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import and_, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
 from app.exceptions.contest import ContestNotFoundError
 from app.exceptions.team import TeamNotFoundError
-from app.exceptions.user import UserNotFoundError
 from app.models.audience import Audience, ContestAudience, UserAudience
 from app.models.contest import Contest, ContestTeam, ContestTeamProgress
 from app.models.team import Team, TeamUser

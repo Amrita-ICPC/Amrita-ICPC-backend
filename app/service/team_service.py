@@ -1,6 +1,3 @@
-from app.repositories.contest import ContestRepository
-from app.repositories.user import UserRepository
-from typing import Optional
 from uuid import UUID
 
 from app.core.cache.decorators import cache_delete, cache_get
@@ -10,16 +7,14 @@ from app.mappers.team import (
     to_contest_team_member_responses,
     to_contest_team_response,
     to_team_list_response,
-    to_team_member_responses,
 )
+from app.repositories.contest import ContestRepository
 from app.repositories.dto import PaginationParams, TeamFilters
 from app.repositories.student.contest_team import ContestTeamRepository
 from app.repositories.team import TeamRepository
 from app.schema.team import (
     ContestTeamResponse,
     TeamListResponse,
-    TeamMemberAdd,
-    TeamMemberRemove,
     TeamMemberResponse,
 )
 from app.utils.enums import (
@@ -28,8 +23,8 @@ from app.utils.enums import (
     TeamApprovalStatus,
     TeamStatus,
 )
-from app.validators.team import TeamValidator
 from app.validators.contest_team import ContestTeamValidator
+from app.validators.team import TeamValidator
 
 
 def get_team_key(team_id: UUID) -> str:
@@ -383,7 +378,7 @@ class TeamService:
         contest_team = await self.contest_team_repository.get_contest_team_by_id_or_raise(
             team_id
         )
-       
+
 
         return to_contest_team_response(contest_team)
 

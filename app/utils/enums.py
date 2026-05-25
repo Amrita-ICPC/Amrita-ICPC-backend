@@ -376,7 +376,7 @@ class InvitationType(str, enum.Enum):
 
     REQUEST = "REQUEST"
     INVITE = "INVITE"
-    
+
 
 class RegistrationState(str, enum.Enum):
     """

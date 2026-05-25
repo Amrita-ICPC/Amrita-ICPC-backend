@@ -506,10 +506,10 @@ class BankRepository:
         if filters:
             if filters.title:
                 base_query = base_query.filter(Question.title.ilike(f"%{filters.title}%"))
-            
+
             if filters.difficulty:
                 base_query = base_query.filter(Question.difficulty == filters.difficulty)
-            
+
             if filters.tag:
                 tag_subquery = (
                     select(QuestionTag.question_id)
@@ -525,7 +525,7 @@ class BankRepository:
                 sort_attr = Question.title
             elif filters.sort_by == BankQuestionSortBy.DIFFICULTY:
                 sort_attr = Question.difficulty
-            
+
             if sort_attr is not None:
                 if filters.sort_order == SortOrder.DESC:
                    base_query = base_query.order_by(sort_attr.desc(), Question.id.asc())

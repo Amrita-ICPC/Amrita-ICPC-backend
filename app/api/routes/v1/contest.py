@@ -1,4 +1,3 @@
-from app.utils.enums import SortOrder
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, status
@@ -46,7 +45,12 @@ from app.schema.question import (
 )
 from app.service.contest_question_service import ContestQuestionService
 from app.service.contest_service import ContestService
-from app.utils.enums import ContestRunStatus, ContestStatus, QuestionDifficulty
+from app.utils.enums import (
+    ContestRunStatus,
+    ContestStatus,
+    QuestionDifficulty,
+    SortOrder,
+)
 from app.utils.pagination import get_pagination
 from app.validators.contest import ContestValidator
 

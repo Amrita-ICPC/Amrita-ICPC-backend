@@ -1,4 +1,3 @@
-from app.models import Audience
 from typing import Any
 from uuid import UUID
 
@@ -7,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.exceptions.user import UserNotFoundError
+from app.models import Audience
 from app.models.audience import UserAudience
 from app.models.user import User
 from app.repositories.dto.pagination import PaginatedResult
@@ -177,7 +177,7 @@ class UserRepository:
         users = list(result.scalars().all())
         return PaginatedResult(total=total, items=users)
 
-    
+
     async def get_users_audience(self,user_id:UUID) -> list[Audience]:
         stmt = (
             select(Audience)

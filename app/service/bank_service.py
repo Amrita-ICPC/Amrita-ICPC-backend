@@ -1,4 +1,3 @@
-from app.schema.user import UserBasicInfo, UserResponse
 from typing import List
 from uuid import UUID
 
@@ -7,7 +6,6 @@ from app.exceptions.bank import BankOwnerUnshareError
 from app.mappers.bank import (
     build_bank_entity,
     build_bank_query_params,
-    clone_bank_detail_response,
     to_bank_detail_response,
     to_bank_response,
     to_bank_response_list,
@@ -22,6 +20,7 @@ from app.schema.bank import (
     BankShareUserResponse,
     BankUpdate,
 )
+from app.schema.user import UserBasicInfo
 from app.utils.enums import BankPermission
 from app.validators.bank import BankValidator
 
@@ -464,14 +463,14 @@ class BankService:
             PermissionDeniedError: If user lacks manage permission.
         """
         bank = await self.repository.get_bank_or_raise(bank_id)
-        
+
         # Filter out owner and ownership attempts
         filtered_updates = [
             BankShareItem(user_id=u.user_id, permission=u.permission)
             for u in updates
             if u.user_id != bank.created_by and u.permission != BankPermission.owner
         ]
-        
+
         await self.manage_bank_shares(
             bank_id=bank_id,
             shares=filtered_updates,

@@ -3,7 +3,7 @@ from uuid import UUID
 from app.models.bank import Bank
 from app.repositories.dto.bank import BankFilters
 from app.repositories.dto.pagination import PaginationParams
-from app.schema.bank import BankDetailResponse, BankResponse, BankShareBase
+from app.schema.bank import BankDetailResponse, BankResponse
 from app.utils.enums import QuestionDifficulty
 
 
@@ -32,12 +32,12 @@ def to_bank_response_list(banks: list["Bank"]) -> list[BankResponse]:
 def to_bank_detail_response(bank: "Bank") -> BankDetailResponse:
     """Map bank ORM object to detail response schema."""
     questions = bank.questions or []
-    
+
     total_count = len(questions)
     easy_count = 0
     medium_count = 0
     hard_count = 0
-    
+
     for link in questions:
         if link.question:
             if link.question.difficulty == QuestionDifficulty.EASY:
@@ -48,7 +48,7 @@ def to_bank_detail_response(bank: "Bank") -> BankDetailResponse:
                 hard_count += 1
 
     shares = bank.shares or []
-    
+
     return BankDetailResponse(
         id=bank.id,
         name=bank.name,

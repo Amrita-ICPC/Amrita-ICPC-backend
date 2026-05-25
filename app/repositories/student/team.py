@@ -1,29 +1,27 @@
 from datetime import datetime
+from uuid import UUID
+
+from sqlalchemy import and_, delete, exists, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.exceptions.team import (
+    StudentTeamInvitationError,
+    StudentTeamInvitationNotFoundError,
+    StudentTeamNotFoundError,
+    StudentTeamUserNotFoundError,
+)
+from app.models.contest import ContestTeamMember
+from app.models.team import Team, TeamInvitation, TeamUser
+from app.models.user import User
+from app.repositories.dto.pagination import PaginatedResult, PaginationParams
+from app.repositories.dto.student.teams import StudentTeamFilters
 from app.utils.enums import (
+    ContestTeamMemberStatus,
     InvitationType,
     TeamInvitationStatus,
     TeamMemberRole,
-    ContestTeamMemberStatus,
 )
-from app.models.user import User
-from app.models.team import TeamInvitation
-from app.models.contest import ContestTeamMember
-from app.exceptions.team import (
-    StudentTeamNotFoundError,
-    StudentTeamInvitationNotFoundError,
-    StudentTeamInvitationError,
-    StudentTeamUserNotFoundError,
-)
-from sqlalchemy import delete
-from sqlalchemy.orm import aliased
-from uuid import UUID
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_, func, exists, case
-from sqlalchemy.orm import selectinload
-
-from app.models.team import Team, TeamUser
-from app.repositories.dto.pagination import PaginationParams, PaginatedResult
-from app.repositories.dto.student.teams import StudentTeamFilters
 
 
 class StudentTeamRepository:
@@ -185,7 +183,7 @@ class StudentTeamRepository:
 
         if team is None:
             raise StudentTeamNotFoundError(team_id)
-        
+
         return team
 
     async def create_student_team(self, team: Team) -> Team:
@@ -203,7 +201,7 @@ class StudentTeamRepository:
             user_id = team.leader_id,
         )
         self.db.add(team_user)
-        await self.db.flush()        
+        await self.db.flush()
 
         query = (
         select(Team)
@@ -255,7 +253,7 @@ class StudentTeamRepository:
 
         await self.db.flush()
 
-        return 
+        return
 
     async def get_pending_student_invitations_count(
         self, user_id: UUID, invitation_type: InvitationType, team_id: UUID | None
@@ -280,14 +278,14 @@ class StudentTeamRepository:
         )
         if invitation_type == InvitationType.INVITE:
             query = query.where(TeamInvitation.reciever_id == user_id)
-        
+
         if team_id:
             query = query.where(TeamInvitation.team_id == team_id)
-        
+
         result = await self.db.execute(query)
         return result.scalar_one()
 
-    
+
     async def get_student_team_invitations(
         self,
         user_id: UUID,
@@ -353,7 +351,7 @@ class StudentTeamRepository:
         """
         if invitation_type == InvitationType.INVITE and reciever_id is None:
             raise StudentTeamInvitationError("Receiver ID is required for invite invitations")
-        
+
         team_invitation = TeamInvitation(
             team_id = team_id,
             reciever_id = reciever_id,
@@ -461,12 +459,12 @@ class StudentTeamRepository:
         if name_query.isdigit() and len(name_query) == 6:
             # First attempt exact code match (must be public)
             code_filter = and_(Team.code == name_query, Team.is_public == True)
-            
+
             # Count query for code match
             count_query = select(func.count(Team.id)).where(code_filter)
             total_result = await self.db.execute(count_query)
             total = total_result.scalar() or 0
-            
+
             if total > 0:
                 # Retrieve the team matching the code
                 query = (
@@ -549,7 +547,7 @@ class StudentTeamRepository:
 
         return requested_team_ids, requests_count
 
-    
+
     async def leave_team(self,team_id: UUID,user_id:UUID):
         """Remove a user from a team.
 
@@ -656,8 +654,7 @@ class StudentTeamRepository:
 
 
 
-        
 
-    
-        
-        
+
+
+

@@ -4,9 +4,13 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.schema.question import QuestionResponse
-from app.schema.user import UserBasicInfo, UserResponse
-from app.utils.enums import BankPermission, BankQuestionSortBy, QuestionDifficulty, SortOrder
+from app.schema.user import UserBasicInfo
+from app.utils.enums import (
+    BankPermission,
+    BankQuestionSortBy,
+    QuestionDifficulty,
+    SortOrder,
+)
 
 
 class BankBase(BaseModel):

@@ -7,7 +7,6 @@ enforce domain-specific constraints.
 """
 
 from app.exceptions.execution import (
-    CodeExecutionError,
     InvalidCodeError,
     InvalidLanguageError,
     InvalidSubmissionTokenError,

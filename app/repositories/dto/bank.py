@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 from typing import Optional
-from uuid import UUID
 
 from app.utils.enums import BankQuestionSortBy, QuestionDifficulty, SortOrder
 

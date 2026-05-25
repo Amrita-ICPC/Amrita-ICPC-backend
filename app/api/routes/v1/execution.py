@@ -70,7 +70,7 @@ async def run_code(
         HTTPException: 502 if Judge0 service fails
     """
     logger.info(
-        f"Code run initiated",
+        "Code run initiated",
         extra={
             "question_id": request.question_id,
             "language_id": request.language_id,
@@ -91,7 +91,7 @@ async def run_code(
     )
 
     logger.info(
-        f"Code run completed successfully",
+        "Code run completed successfully",
         extra={
             "question_id": request.question_id,
             "total": result.total,

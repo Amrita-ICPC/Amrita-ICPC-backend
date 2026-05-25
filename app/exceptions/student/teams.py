@@ -3,18 +3,18 @@
 Re-exports team exceptions with student-specific context.
 """
 
-from app.exceptions.team import (
-    TeamNotFoundError,
-    MemberAlreadyInTeamError,
-    InvalidTeamSizeError,
-    TeamLeaderAccessDeniedError,
-    StudentTeamNotFoundError,
-    StudentTeamInvitationNotFoundError,
-    StudentTeamInvitationError,
-    TeamMemberAccessDeniedError,
-    StudentTeamUserNotFoundError,
-)
 from app.exceptions.base import AppBaseException
+from app.exceptions.team import (
+    InvalidTeamSizeError,
+    MemberAlreadyInTeamError,
+    StudentTeamInvitationError,
+    StudentTeamInvitationNotFoundError,
+    StudentTeamNotFoundError,
+    StudentTeamUserNotFoundError,
+    TeamLeaderAccessDeniedError,
+    TeamMemberAccessDeniedError,
+    TeamNotFoundError,
+)
 
 
 class TeamStatusNotAllowedForUpdatingContestTeamMemberStatusException(AppBaseException):

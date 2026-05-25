@@ -1,11 +1,16 @@
-from app.exceptions.contest import TeamDisqualifiedError, TeamCanceledError, ContestMaxTeamsReachedError
-from app.utils.enums import TeamStatus
-from app.utils.enums import ContestTeamMemberStatus
+from uuid import UUID
+
+from app.exceptions.contest import (
+    ContestMaxTeamsReachedError,
+    TeamCanceledError,
+    TeamDisqualifiedError,
+)
 from app.exceptions.student.teams import (
     InvalidContestTeamMemberStatusUpdateException,
     TeamMemberAccessDeniedError,
 )
-from uuid import UUID
+from app.utils.enums import ContestTeamMemberStatus, TeamStatus
+
 
 class ContestTeamValidator:
     def __init__(self)->None:
@@ -44,7 +49,7 @@ class ContestTeamValidator:
 
         if upcoming_status not in ALLOWED_LIFE_CYCLE_TRANSITIONS[current_status]:
             raise InvalidContestTeamMemberStatusUpdateException()
-    
+
     @staticmethod
     def validate_team_status(team_status: TeamStatus)->None:
         """

@@ -1,4 +1,3 @@
-from app.schema.bank import BankShareItem
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, status
@@ -20,6 +19,7 @@ from app.schema.bank import (
     BankCreate,
     BankDetailResponse,
     BankResponse,
+    BankShareItem,
     BankShareRequest,
     BankSharesResponse,
     BankUpdate,

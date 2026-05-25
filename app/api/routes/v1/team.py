@@ -1,7 +1,6 @@
-from app.repositories.contest import ContestRepository
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import (
@@ -13,15 +12,13 @@ from app.core.clients.database import get_db
 from app.core.guards.team import TeamOperationGuard
 from app.core.logger import logger
 from app.core.response import create_api_response
+from app.repositories.contest import ContestRepository
 from app.repositories.student.contest_team import ContestTeamRepository
 from app.repositories.team import TeamRepository
-from app.repositories.user import UserRepository
 from app.schema.base import APIResponse
 from app.schema.team import (
     ContestTeamResponse,
     TeamListResponse,
-    TeamMemberAdd,
-    TeamMemberRemove,
     TeamMemberResponse,
 )
 from app.service.team_service import TeamService

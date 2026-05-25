@@ -9,7 +9,6 @@ from app.schema.question import (
 )
 from app.schema.tag import TagResponse
 
-
 if TYPE_CHECKING:
     from app.models.question import Question
 

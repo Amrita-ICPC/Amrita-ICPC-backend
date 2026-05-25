@@ -14,7 +14,6 @@ from . import (
 )
 from .students import router as students_router
 
-
 api_v1_router = APIRouter()
 
 api_v1_router.include_router(user.router, prefix="/users", tags=["Users"])

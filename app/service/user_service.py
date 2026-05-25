@@ -14,7 +14,7 @@ from app.models.audience import UserAudience
 from app.models.user import User
 from app.repositories.dto.user import UserListFilters
 from app.repositories.user import UserRepository
-from app.schema.user import UserResponse, StudentUserSearchResponse
+from app.schema.user import StudentUserSearchResponse, UserResponse
 from app.utils.enums import UserRole
 
 
@@ -273,7 +273,7 @@ class UserService:
         member_ids = set()
         invited_ids = set()
         if team_id:
-            from app.models.team import TeamUser, TeamInvitation
+            from app.models.team import TeamInvitation, TeamUser
             from app.utils.enums import TeamInvitationStatus
 
             stmt = select(TeamUser.user_id).where(TeamUser.team_id == team_id)

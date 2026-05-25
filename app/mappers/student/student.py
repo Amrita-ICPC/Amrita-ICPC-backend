@@ -1,5 +1,4 @@
-from typing import List
-from app.models.contest import ContestTeam, ContestTeamMember
+from app.models.contest import ContestTeamMember
 from app.schema.user import (
     ContestInfoForInvitation,
     ContestTeamInfo,

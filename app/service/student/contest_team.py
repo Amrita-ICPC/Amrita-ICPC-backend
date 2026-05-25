@@ -1,37 +1,40 @@
-from app.models import Contest, ContestTeam, ContestTeamMember
-from app.validators.contest_team import ContestTeamValidator
-from app.exceptions.team import (
-    InvalidTeamSizeError,
-    CannotRemoveTeamLeaderError,
-    TeamMemberAccessDeniedError,
-    MemberAlreadyInTeamError,
-    StudentTeamNotFoundError,
-)
-from app.exceptions.contest import ContestTeamNotFoundException, StudentAlreadyInContestError
-from app.exceptions.team import TeamNotHavingRequiredNumberOfMembersException
-from app.utils.enums import (
-    ContestTeamMemberStatus,
-    TeamApprovalMode,
-    TeamApprovalStatus,
-    TeamStatus,
-    ContestMode,
+from datetime import datetime, timezone
+from uuid import UUID
+
+from app.core.cache.decorators import cache_delete
+from app.core.guards.contest_student import ContestStudentGuard
+from app.core.guards.team_student import TeamStudentGuard
+from app.exceptions.contest import (
+    ContestTeamNotFoundException,
+    StudentAlreadyInContestError,
 )
 from app.exceptions.student.teams import (
     TeamStatusNotAllowedForUpdatingContestTeamMemberStatusException,
 )
-from app.schema.student.contest_team import ContestTeamUpdate
-from app.validators.contest import ContestValidator
-from app.core.guards.contest_student import ContestStudentGuard
-from app.repositories.contest import ContestRepository
-from app.validators.team import TeamValidator
-from app.core.guards.team_student import TeamStudentGuard
-from app.repositories.student.team import StudentTeamRepository
-from app.schema.team import ContestTeamImport, ContestTeamCreate
-from uuid import UUID
-from datetime import datetime, timezone
-from app.repositories.student.contest_team import ContestTeamRepository
+from app.exceptions.team import (
+    CannotRemoveTeamLeaderError,
+    InvalidTeamSizeError,
+    MemberAlreadyInTeamError,
+    TeamMemberAccessDeniedError,
+    TeamNotHavingRequiredNumberOfMembersException,
+)
 from app.mappers.student.contest_mappers import to_contest_team, to_contest_team_members
-from app.core.cache.decorators import cache_delete
+from app.models import Contest, ContestTeam, ContestTeamMember
+from app.repositories.contest import ContestRepository
+from app.repositories.student.contest_team import ContestTeamRepository
+from app.repositories.student.team import StudentTeamRepository
+from app.schema.student.contest_team import ContestTeamUpdate
+from app.schema.team import ContestTeamCreate, ContestTeamImport
+from app.utils.enums import (
+    ContestMode,
+    ContestTeamMemberStatus,
+    TeamApprovalMode,
+    TeamApprovalStatus,
+    TeamStatus,
+)
+from app.validators.contest import ContestValidator
+from app.validators.contest_team import ContestTeamValidator
+from app.validators.team import TeamValidator
 
 
 class ContestTeamService:
@@ -93,7 +96,7 @@ class ContestTeamService:
 
         # Check if the user is leader
         self.team_student_guard.check_is_leader(team=team, user_id=user_id)
-        
+
         existing_members_ids = set([team_user.user_id for team_user in team.members])
 
         TeamValidator.validate_members_in_team(
@@ -111,16 +114,16 @@ class ContestTeamService:
 
         #Check if the team is already in the contest
         await self.contest_student_guard.check_team_already_in_contest(
-            team_id=team.id, 
+            team_id=team.id,
             contest_id=contest_id
         )
 
         #Check if the student is already in the contest
         await self.contest_student_guard.check_student_already_in_contest(
-            contest_id=contest_id, 
+            contest_id=contest_id,
             user_ids=contest_team_import.member_ids
         )
-        
+
         # Check the audiences of the members
         if not contest.is_public:
             await self.contest_student_guard.check_student_aduiences_for_contest(
@@ -240,12 +243,12 @@ class ContestTeamService:
         return None
 
     async def update_contest_team(
-        self, 
-        contest_team_id: UUID, 
+        self,
+        contest_team_id: UUID,
         contest_team_update: ContestTeamUpdate,
         user_id: UUID
     ) -> None:
-    
+
         # Fetch the contest team
         contest_team = await self.repository.get_contest_team_by_id_or_raise(contest_team_id)
 
@@ -258,7 +261,7 @@ class ContestTeamService:
 
         #update the name
         contest_team.name = contest_team_update.name
-        
+
         await self.repository.update_contest_team(contest_team)
 
         return None
@@ -286,13 +289,13 @@ class ContestTeamService:
 
         #check if the new leader is a member of the contest team
         await self.contest_student_guard.check_contest_team_member_exist(
-            contest_team_id=contest_team_id, 
-            user_id=new_leader_id   
+            contest_team_id=contest_team_id,
+            user_id=new_leader_id
         )
-        
+
         #Transfer the team leader
         contest_team.leader_id = new_leader_id
-        
+
         await self.repository.update_contest_team(contest_team)
 
         return None
@@ -321,9 +324,9 @@ class ContestTeamService:
                     contest_team.approval_status = TeamApprovalStatus.APPROVED
             else:
                 raise TeamNotHavingRequiredNumberOfMembersException(
-                    team_name=contest_team.name,   
-                    team_member_count=team_member_count, 
-                    min_team_size=contest.min_team_size, 
+                    team_name=contest_team.name,
+                    team_member_count=team_member_count,
+                    min_team_size=contest.min_team_size,
                     max_team_size=contest.max_team_size
                 )
         elif contest_team_status == TeamStatus.CANCELLED:
@@ -383,7 +386,7 @@ class ContestTeamService:
         await self.repository.update_contest_team_member(contest_team_member)
 
         return None
-    
+
     async def _cancel_contest_team(self, contest_team: ContestTeam, exclude_user_id: UUID | None = None) -> None:
         """Helper to cancel a contest team and all its invited/accepted members."""
         await self.repository.update_contest_team_members_status(
@@ -407,7 +410,7 @@ class ContestTeamService:
         """Helper to handle removing a team member by the leader."""
         # Check if the user is the leader of the team
         self.team_student_guard.check_is_contest_team_leader(contest_team=contest_team, user_id=user_id)
-        
+
         # The team leader cannot remove themselves
         if contest_team_member.user_id == contest_team.leader_id:
             raise CannotRemoveTeamLeaderError(
@@ -431,7 +434,7 @@ class ContestTeamService:
             # Find all accepted members
             all_accepted = await self.repository.get_contest_team_members(contest_team_id, [ContestTeamMemberStatus.ACCEPTED])
             other_accepted = [m for m in all_accepted if m.user_id != contest_team_member.user_id]
-            
+
             if other_accepted:
                 # Sort other_accepted members to find the earliest accepted member
                 late_datetime = datetime.max.replace(tzinfo=timezone.utc)
@@ -541,7 +544,7 @@ class ContestTeamService:
         for member in existing_members:
             if member.status in (ContestTeamMemberStatus.INVITED, ContestTeamMemberStatus.ACCEPTED):
                 raise MemberAlreadyInTeamError(
-                    user_id=str(member.user_id), 
+                    user_id=str(member.user_id),
                     team_name=contest_team.name
                 )
 
@@ -576,4 +579,3 @@ class ContestTeamService:
         ]
         await self.repository.create_contest_team_members(new_members)
 
-   

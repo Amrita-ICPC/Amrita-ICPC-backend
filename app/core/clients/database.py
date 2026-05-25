@@ -1,4 +1,3 @@
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.config import config
@@ -6,7 +5,6 @@ from app.core.logger import logger
 
 # Import all models to ensure they are registered with Base.metadata
 from app.models.base import Base
-import app.models
 
 # Construct the database URL
 DATABASE_URL = f"postgresql+asyncpg://{config.DATABASE_USERNAME}:{config.DATABASE_PASSWORD}@{config.DATABASE_HOST}:{config.DATABASE_PORT}/{config.DATABASE_NAME}"
@@ -37,7 +35,7 @@ async def init_db():
             logger.info("Migrations enabled; creating tables via metadata.")
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
-                
+
             logger.info("Database tables created successfully.")
         else:
             logger.warning("Migrations disabled; skipping metadata schema sync.")

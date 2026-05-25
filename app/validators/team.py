@@ -1,19 +1,17 @@
 # app/validators/team.py
-from app.exceptions.contest import TeamDisqualifiedError
-from app.exceptions.contest import AccessDeniedTeamStatusError
-from app.exceptions.contest import TeamCanceledError
 from uuid import UUID
 
+from app.exceptions.contest import AccessDeniedTeamStatusError
 from app.exceptions.team import (
     CannotRemoveTeamLeaderError,
+    IndividualModeActionNotAllowedError,
     InvalidLeaderAssignmentError,
     InvalidTeamSizeByModeError,
     InvalidTeamSizeError,
+    LeaderMustBeMemberError,
     MemberNotInTeamError,
     TeamAlreadyExistsError,
     TeamIsConfirmedError,
-    LeaderMustBeMemberError,
-    IndividualModeActionNotAllowedError,
 )
 from app.models.contest import Contest
 from app.models.team import Team

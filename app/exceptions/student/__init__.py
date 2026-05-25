@@ -10,13 +10,13 @@ Usage:
 
 from app.exceptions.student.contests import ContestNotFoundError
 from app.exceptions.student.teams import (
-    TeamNotFoundError,
-    MemberAlreadyInTeamError,
     InvalidTeamSizeError,
-    TeamLeaderAccessDeniedError,
+    MemberAlreadyInTeamError,
     StudentTeamNotFoundError,
-    TeamMemberAccessDeniedError,
     StudentTeamUserNotFoundError,
+    TeamLeaderAccessDeniedError,
+    TeamMemberAccessDeniedError,
+    TeamNotFoundError,
 )
 
 __all__ = [

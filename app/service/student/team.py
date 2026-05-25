@@ -1,29 +1,30 @@
 from datetime import datetime
-from app.repositories.user import UserRepository
-from app.models.team import TeamInvitation
 from uuid import UUID
 
-from app.models import Team
-from app.repositories.student.team import StudentTeamRepository
-from app.repositories.dto.student.teams import StudentTeamFilters
-from app.repositories.dto.pagination import PaginationParams
-from app.schema.student.teams import (
-    StudentTeamCardResponse,
-    StudentTeamListResponse,
-    StudentTeamInvitationListResponse,
-    TeamMemberDetailResponse,
-)
-from app.exceptions.base import AppBaseException
-from app.exceptions.student.teams import StudentTeamNotFoundError, StudentTeamInvitationError
+from app.core.cache.decorators import cache_delete, cache_get
 from app.core.guards.team_student import TeamStudentGuard
+from app.exceptions.base import AppBaseException
+from app.exceptions.student.teams import (
+    StudentTeamInvitationError,
+)
 from app.mappers.student.team_mappers import (
     to_student_team_card_response,
-    to_student_team_list_response,
     to_student_team_invitation_list_response,
+    to_student_team_list_response,
     to_team_member_detail_responses,
 )
-from app.core.cache.decorators import cache_get, cache_delete
-from app.utils.enums import TeamInvitationStatus, InvitationType, TeamMemberRole
+from app.models import Team
+from app.repositories.dto.pagination import PaginationParams
+from app.repositories.dto.student.teams import StudentTeamFilters
+from app.repositories.student.team import StudentTeamRepository
+from app.repositories.user import UserRepository
+from app.schema.student.teams import (
+    StudentTeamCardResponse,
+    StudentTeamInvitationListResponse,
+    StudentTeamListResponse,
+    TeamMemberDetailResponse,
+)
+from app.utils.enums import InvitationType, TeamInvitationStatus
 
 
 class StudentTeamService:
@@ -399,7 +400,7 @@ class StudentTeamService:
             TeamLeaderAccessDeniedError: If the student is not the team leader for a REQUEST type.
         """
         team_invitation = await self.repository.get_student_team_invitation_or_raise(invitation_id)
-        
+
         if status == TeamInvitationStatus.CANCELLED:
             if team_invitation.status != TeamInvitationStatus.PENDING:
                 raise StudentTeamInvitationError("Only pending invitations or requests can be cancelled")
@@ -412,9 +413,9 @@ class StudentTeamService:
             # Check permission: Only team leader can approve/reject request to join
             team = await self.repository.get_student_team_by_id_or_raise(user_id, team_invitation.team_id)
             self.guard.check_is_leader(user_id=user_id, team=team)
-            
+
         await self.repository.update_team_invitation_status(team_invitation, status)
-        return 
+        return
 
     @cache_delete(
         key_builder=lambda self, user_id, team_id, new_leader_id: [
@@ -446,7 +447,7 @@ class StudentTeamService:
 
         #Check if user_id is the leader
         self.guard.check_is_leader(user_id=user_id, team=team)
-        
+
         #Check if new_leader_id is a member of the team
         await self.guard.check_is_member(team_id=team_id, user_id=new_leader_id)
 
@@ -487,7 +488,7 @@ class StudentTeamService:
         team = await self.repository.get_student_team_by_id_or_raise(user_id, team_id)
 
         if user_id != leave_member_id:
-            self.guard.check_is_leader(user_id=user_id, team=team) 
+            self.guard.check_is_leader(user_id=user_id, team=team)
 
         if team.leader_id == leave_member_id:
             #Transfer ownership if only two members are there
@@ -498,7 +499,7 @@ class StudentTeamService:
                 await self.repository.update_student_team(team)
             else:
                 raise StudentTeamInvitationError("Cannot leave team with only one member")
-        
+
         await self.repository.leave_team(team_id, leave_member_id)
 
     @cache_get(
@@ -601,6 +602,5 @@ class StudentTeamService:
 
 
 
-        
 
-        
+

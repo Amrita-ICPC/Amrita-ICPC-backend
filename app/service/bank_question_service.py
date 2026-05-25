@@ -1,4 +1,3 @@
-from app.schema.question import BankQuestionMetadataResponse
 import asyncio
 import uuid
 from typing import List
@@ -30,6 +29,7 @@ from app.repositories.dto import (
 from app.repositories.language import LanguageRepository
 from app.repositories.question import QuestionRepository
 from app.schema.question import (
+    BankQuestionMetadataResponse,
     QuestionResponse,
     QuestionUpdate,
 )

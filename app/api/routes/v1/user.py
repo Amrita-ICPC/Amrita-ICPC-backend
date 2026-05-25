@@ -12,15 +12,15 @@ from app.repositories.dto.user import UserListFilters
 from app.repositories.student.contest_team import ContestTeamRepository
 from app.schema.base import APIResponse
 from app.schema.user import (
+    StudentUserSearchResponse,
+    UserInvitationResponse,
     UserProfile,
     UserResponse,
     UserSyncResponse,
-    StudentUserSearchResponse,
-    UserInvitationResponse,
 )
 from app.service.student.student_service import StudentService
 from app.service.user_service import UserService
-from app.utils.enums import UserRole, ContestTeamMemberStatus
+from app.utils.enums import ContestTeamMemberStatus, UserRole
 from app.utils.pagination import get_pagination
 
 router = APIRouter()

@@ -1,14 +1,12 @@
 from __future__ import annotations
-from sqlalchemy import Boolean
 
-
-from sqlalchemy import CheckConstraint
-from app.utils.enums import InvitationType
-from typing import TYPE_CHECKING
-from sqlalchemy import Enum
-from app.utils.enums import TeamInvitationStatus
 import uuid
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
+
+from sqlalchemy import Boolean, CheckConstraint, Enum
+
+from app.utils.enums import InvitationType, TeamInvitationStatus
 
 if TYPE_CHECKING:
     from app.models.user import User

@@ -1,6 +1,9 @@
-from app.utils.enums import TeamStatus, ContestTeamMemberStatus
 from uuid import UUID
+
 from pydantic import BaseModel, Field
+
+from app.utils.enums import ContestTeamMemberStatus, TeamStatus
+
 
 class ContestTeamUpdate(BaseModel):
     """Schema for updating a contest team."""
@@ -22,4 +25,3 @@ class ContestTeamInviteRequest(BaseModel):
     """Schema for inviting members to a contest team."""
     user_ids: list[UUID] = Field(..., description="List of user IDs to invite")
 
-    

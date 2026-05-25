@@ -5,23 +5,17 @@ These schemas expose team cards and membership overviews optimized for display i
 """
 
 from datetime import datetime
-from typing import List, Optional, Literal
+from typing import List, Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.utils.enums import (
-    TeamApprovalStatus,
-    TeamInvitationStatus,
     InvitationType,
+    TeamInvitationStatus,
     TeamMemberRole,
     UserRole,
 )
-
-from datetime import datetime
-from typing import List, Optional
-from uuid import UUID
-from pydantic import BaseModel, Field, ConfigDict
 
 
 class StudentTeamMemberSummaryResponse(BaseModel):

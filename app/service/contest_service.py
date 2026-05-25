@@ -10,7 +10,6 @@ from app.exceptions.contest import (
     AudienceNotAssignedToContestError,
     ContestNotFoundError,
     InvalidContestError,
-    InvalidContestStateError,
 )
 from app.mappers.contest import (
     apply_contest_updates,
