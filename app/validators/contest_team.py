@@ -1,5 +1,4 @@
-from app.exceptions.contest import TeamDisqualifiedError
-from app.exceptions.contest import TeamCanceledError
+from app.exceptions.contest import TeamDisqualifiedError, TeamCanceledError, ContestMaxTeamsReachedError
 from app.utils.enums import TeamStatus
 from app.utils.enums import ContestTeamMemberStatus
 from app.exceptions.student.teams import (
@@ -56,3 +55,12 @@ class ContestTeamValidator:
 
         if team_status == TeamStatus.DISQUALIFIED:
             raise TeamDisqualifiedError()
+
+    @staticmethod
+    def validate_max_teams(
+        approved_teams_count: int, max_teams: int | None, contest_id: UUID
+    ) -> None:
+        """Validate that the number of approved teams does not exceed the contest limit."""
+        if max_teams is not None and max_teams > 0:
+            if approved_teams_count >= max_teams:
+                raise ContestMaxTeamsReachedError(str(contest_id), max_teams)

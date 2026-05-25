@@ -224,3 +224,12 @@ class ContestTeamMemberNotFoundException(AppBaseException):
             message=f"Contest team member with ID {contest_team_member_id} not found",
             status_code=status.HTTP_404_NOT_FOUND,
         )
+
+
+class ContestMaxTeamsReachedError(AppBaseException):
+    """Raised when the contest has reached its maximum allowed number of teams."""
+    def __init__(self, contest_id: str, max_teams: int):
+        super().__init__(
+            message=f"Contest {contest_id} has reached its maximum allowed limit of {max_teams} teams.",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
