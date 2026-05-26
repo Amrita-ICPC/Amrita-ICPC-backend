@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from app.models.user import User
+from app.utils.enums import ContestRuntimeStatus
+
 import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
@@ -202,6 +205,36 @@ class ContestQuestion(Base):
     creator = relationship("User", back_populates="creator_contest_questions")
 
 
+class ContestRuntime(Base):
+    __tablename__ = "contest_runtime"
+
+    contest_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("contest.id", ondelete="CASCADE"), primary_key=True
+    )
+    runtime_status: Mapped[ContestRuntimeStatus] = mapped_column(
+        Enum(ContestRuntimeStatus, name="contest_run_time_status"),
+        nullable=False,
+        default=ContestRuntimeStatus.SCHEDULED,
+    )
+
+    end_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    paused_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    total_paused_duration: Mapped[int] = mapped_column(Integer, default=0)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    scoreboard_frozen: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"),nullable=True)
+    updated_user: Mapped["User"] = relationship(
+        "User", lazy="joined", foreign_keys=[updated_by]
+    )
+
+
 class ContestTeamProgress(Base):
     """
     Model representing the progress and status of a team in a contest.
@@ -226,8 +259,13 @@ class ContestTeamProgress(Base):
     team_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey(Team.id, ondelete="CASCADE"), primary_key=True
     )
-
+    
+    # Scoring related fields
     score: Mapped[int] = mapped_column(Integer, default=0)
+    penalty: Mapped[int] = mapped_column(Integer, default=0)
+    solved_questions_count: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Flagging related fields
     is_flagged: Mapped[bool] = mapped_column(Boolean, default=False)
     flagged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     flagged_by: Mapped[uuid.UUID | None] = mapped_column(
@@ -235,8 +273,16 @@ class ContestTeamProgress(Base):
     )
     flagged_reason: Mapped[str | None] = mapped_column(Text)
 
-    start_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Time related fields
     end_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    #Editor field
+    current_editor_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    current_editor_user: Mapped["User"] = relationship(
+        "User", lazy="joined", foreign_keys=[current_editor_user_id]
+    )
 
     contest_team = relationship(
         "ContestTeam",
@@ -246,6 +292,15 @@ class ContestTeamProgress(Base):
         primaryjoin="and_(ContestTeamProgress.contest_id==ContestTeam.contest_id, ContestTeamProgress.team_id==ContestTeam.team_id)",
     )
     flagger = relationship("User", foreign_keys=[flagged_by])
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
 
 
 class ContestTeam(Base):
