@@ -8,6 +8,7 @@ from app.models.contest import (
     ContestTeamMember,
     ContestTeamProgress,
     ContestTeamViolation,
+    ContestRuntime,
 )
 from app.models.language import Language
 from app.models.question import Question
@@ -28,6 +29,7 @@ __all__ = [
     "ContestTeamMember",
     "ContestTeamProgress",
     "ContestTeamViolation",
+    "ContestRuntime",
     "Language",
     "Question",
     "QuestionTag",
