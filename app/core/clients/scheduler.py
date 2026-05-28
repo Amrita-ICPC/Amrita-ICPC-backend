@@ -6,6 +6,15 @@ from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 
 
 def create_scheduler() -> AsyncIOScheduler:
+    """
+    Create and configure an asynchronous job scheduler.
+
+    The scheduler is configured with a SQLAlchemy job store using the configured
+    database URL, UTC timezone, and defaults for misfire handling.
+
+    Returns:
+        AsyncIOScheduler: The configured asynchronous scheduler instance.
+    """
     jobstores = {
         "default": SQLAlchemyJobStore(url=config.DATABASE_URL)
     }

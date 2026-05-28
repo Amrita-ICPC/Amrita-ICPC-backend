@@ -9,10 +9,21 @@ from uuid import UUID
 from app.models.contest import ContestRuntime
 
 class ContestJobs:
+    """Background jobs related to contest management and execution."""
 
     @staticmethod
-    async def auto_start_contest(contest_id: UUID):
+    async def auto_start_contest(contest_id: UUID) -> None:
+        """
+        Automatically start a scheduled contest.
 
+        Updates the contest runtime status to RUNNING.
+
+        Args:
+            contest_id: The UUID of the contest to start.
+
+        Raises:
+            ContestNotFoundError: If no contest runtime is found for the given ID.
+        """
         async with SessionLocal() as db:
             run_time: ContestRuntime | None = await db.get(
                 ContestRuntime,
@@ -31,10 +42,16 @@ class ContestJobs:
             await db.commit()
 
     @staticmethod
-    async def finish_contest(contest_id: UUID):
+    async def finish_contest(contest_id: UUID) -> None:
+        """
+        Finish an active contest.
 
+        Updates the contest runtime status to FINISHED and sets the finish time.
+
+        Args:
+            contest_id: The UUID of the contest to finish.
+        """
         async with SessionLocal() as db:
-
             runtime: ContestRuntime | None = await db.get(
                 ContestRuntime,
                 contest_id,
