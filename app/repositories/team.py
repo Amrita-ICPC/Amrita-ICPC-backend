@@ -1,3 +1,4 @@
+from sqlalchemy import or_
 from uuid import UUID
 
 from sqlalchemy import and_, delete, func, select
@@ -259,6 +260,7 @@ class TeamRepository:
             select(func.count())
             .select_from(ContestTeam)
             .filter(ContestTeam.contest_id == contest_id)
+            .where(ContestTeam.team_status == TeamStatus.CONFIRMED)
         )
         return int(result.scalar() or 0)
 
@@ -279,6 +281,7 @@ class TeamRepository:
             .select_from(ContestTeam)
             .join(TeamUser, TeamUser.team_id == ContestTeam.team_id)
             .filter(ContestTeam.contest_id == contest_id)
+            .where(ContestTeam.team_status == TeamStatus.CONFIRMED)
         )
         return int(result.scalar() or 0)
 
