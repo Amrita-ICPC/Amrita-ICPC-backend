@@ -1,3 +1,4 @@
+from app.core.clients import scheduler
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -35,6 +36,9 @@ async def lifespan(app: FastAPI):
     # Initialize Judge0
     await init_judge0()
 
+    #Start the scheduler 
+    scheduler.start()
+
     yield
 
     # Close Judge0
@@ -45,6 +49,9 @@ async def lifespan(app: FastAPI):
 
     # Close Redis
     await close_redis()
+
+    #Stop the scheduler
+    scheduler.shutdown()
 
     logger.info("Shutting down application")
 

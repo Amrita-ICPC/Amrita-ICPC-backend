@@ -308,62 +308,6 @@ class ContestValidator:
                 str(contest_id), "publish", status, ContestStatus.DRAFT
             )
 
-    @staticmethod
-    def validate_contest_can_be_paused(
-        status: ContestStatus, contest_id: UUID
-    ) -> None:
-        """
-        Validate that contest is in PUBLISHED status before pausing.
-
-        Args:
-            status: Current contest status
-            contest_id: ID of the contest
-
-        Raises:
-            InvalidContestStateError: If contest is not in PUBLISHED status
-        """
-        if status != ContestStatus.PUBLISHED:
-            raise InvalidContestStateError(
-                str(contest_id), "pause", status, ContestStatus.PUBLISHED
-            )
-
-    @staticmethod
-    def validate_contest_can_be_resumed(
-        status: ContestStatus, contest_id: UUID
-    ) -> None:
-        """
-        Validate that contest is in PAUSED status before resuming.
-
-        Args:
-            status: Current contest status
-            contest_id: ID of the contest
-
-        Raises:
-            InvalidContestStateError: If contest is not in PAUSED status
-        """
-        if status != ContestStatus.PAUSED:
-            raise InvalidContestStateError(
-                str(contest_id), "resume", status, ContestStatus.PAUSED
-            )
-
-    @staticmethod
-    def validate_contest_can_be_cancelled(
-        status: ContestStatus, contest_id: UUID
-    ) -> None:
-        """
-        Validate that contest is not already CANCELLED before cancelling.
-
-        Args:
-            status: Current contest status
-            contest_id: ID of the contest
-
-        Raises:
-            InvalidContestStateError: If contest is already CANCELLED
-        """
-        if status == ContestStatus.CANCELLED:
-            raise InvalidContestStateError(
-                str(contest_id), "cancel", status, f"any status except {ContestStatus.CANCELLED}"
-            )
 
     @staticmethod
     def validate_contest_can_be_restored(

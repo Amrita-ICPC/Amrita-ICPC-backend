@@ -67,14 +67,10 @@ class ContestStatus(str, enum.Enum):
     Attributes:
         DRAFT: Contest is being configured and not visible to participants.
         PUBLISHED: Contest is published and visible to participants.
-        PAUSED: Contest is temporarily halted, submissions disabled.
-        CANCELLED: Contest has been cancelled and will not proceed.
     """
 
     DRAFT = "DRAFT"
     PUBLISHED = "PUBLISHED"
-    PAUSED = "PAUSED"
-    CANCELLED = "CANCELLED"
 
 
 class ContestRunStatus(str, enum.Enum):
@@ -93,6 +89,25 @@ class ContestRunStatus(str, enum.Enum):
     UPCOMING = "UPCOMING"
     LIVE = "LIVE"
     ENDED = "ENDED"
+
+
+class ContestRuntimeStatus(str, enum.Enum):
+    """
+    Enumeration of contest runtime status.
+
+    Attributes:
+        SCHEDULED: Contest is scheduled but not started.
+        RUNNING: Contest is currently running.
+        PAUSED: Contest is paused.
+        FINISHED: Contest has finished.
+        CANCELLED: Contest has been cancelled.
+    """
+
+    SCHEDULED = "SCHEDULED"
+    RUNNING = "RUNNING"
+    PAUSED = "PAUSED"
+    FINISHED = "FINISHED"
+    CANCELLED = "CANCELLED"
 
 
 class SortOrder(str, enum.Enum):
