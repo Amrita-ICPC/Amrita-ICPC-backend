@@ -25,6 +25,8 @@ dependencies = [
     "minio>=7.2.20",
     "httpx>=0.28.1",
     "python-multipart>=0.0.26",
+    "apscheduler>=3.11.2",
+    "psycopg2-binary>=2.9.12",
 ]
 
 [dependency-groups]

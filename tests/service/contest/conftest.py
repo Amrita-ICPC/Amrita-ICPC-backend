@@ -51,7 +51,9 @@ def mock_contest_repository():
     Returns:
         AsyncMock: Mock ContestRepository instance
     """
-    return AsyncMock(spec=ContestRepository)
+    mock_repo = AsyncMock(spec=ContestRepository)
+    mock_repo.db = AsyncMock()
+    return mock_repo
 
 
 @pytest.fixture
