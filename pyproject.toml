@@ -21,7 +21,6 @@ dependencies = [
     "pytest-asyncio>=1.3.0",
     "asyncpg>=0.31.0",
     "greenlet>=3.3.0",
-    "mypy>=1.20.0",
     "minio>=7.2.20",
     "httpx>=0.28.1",
     "python-multipart>=0.0.26",
@@ -32,6 +31,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pre-commit>=4.5.1",
+    "pyrefly>=1.0.0",
     "ruff>=0.14.12",
 ]
 
@@ -62,6 +62,12 @@ files = ["app"]
 [[tool.mypy.overrides]]
 module = "fastapi_keycloak_middleware"
 ignore_missing_imports = true
+
+[tool.pyrefly]
+project-includes = ["app"]
+python-version = "3.13.0"
+preset = "legacy"
+ignore-missing-imports = ["fastapi_keycloak_middleware"]
 
 [[tool.mypy.overrides]]
 module = "app.core.clients.database"

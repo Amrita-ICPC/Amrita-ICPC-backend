@@ -90,18 +90,17 @@ class AudienceService:
         return to_audience_response(created)
 
     @cache_get(
-        key_builder=lambda self, *, skip, limit, query=None, actor_id: (
+        key_builder=lambda self, actor_id, skip, limit, query=None: (
             f"audiences:user:{actor_id}:skip:{skip}:limit:{limit}:q:{query or ''}"
         ),
         ttl=60,
     )
     async def list_audiences(
         self,
-        *,
+        actor_id: UUID,
         skip: int,
         limit: int,
         query: str | None = None,
-        actor_id: UUID,
     ) -> tuple[int, list[AudienceResponse]]:
         """List audiences.
 
@@ -125,14 +124,13 @@ class AudienceService:
         return result.total, audiences
 
     @cache_get(
-        key_builder=lambda self, *, actor_id, is_admin, skip, limit, query=None: (
+        key_builder=lambda self, actor_id, is_admin, skip, limit, query=None: (
             f"audiences:brief:{'admin' if is_admin else 'user'}:{actor_id}:skip:{skip}:limit:{limit}:q:{query or ''}"
         ),
         ttl=60,
     )
     async def list_audience_briefs_for_actor(
         self,
-        *,
         actor_id: UUID,
         is_admin: bool,
         skip: int,
@@ -313,14 +311,7 @@ class AudienceService:
         return await self.repository.remove_users_from_audience(audience_id, normalized)
 
     @cache_get(
-        key_builder=lambda self,
-        audience_id,
-        *,
-        skip,
-        limit,
-        actor_id,
-        role=None,
-        query=None: (
+        key_builder=lambda self, audience_id, skip, limit, actor_id, role=None, query=None: (
             f"audience_users:user:{actor_id}:{audience_id}:skip:{skip}:limit:{limit}:role:{role or ''}:q:{query or ''}"
         ),
         ttl=60,
@@ -328,7 +319,6 @@ class AudienceService:
     async def list_audience_users(
         self,
         audience_id: UUID,
-        *,
         skip: int,
         limit: int,
         actor_id: UUID,
