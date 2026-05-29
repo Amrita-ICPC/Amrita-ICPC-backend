@@ -1,12 +1,11 @@
-
-
-from app.repositories.contest_runtime import ContestRuntimeRepository
 from datetime import datetime, timezone
-from app.utils.enums import ContestRuntimeStatus
-from app.exceptions.contest import ContestNotFoundError
-from app.core.clients.database import SessionLocal
 from uuid import UUID
+
+from app.core.clients.database import SessionLocal
+from app.exceptions.contest import ContestNotFoundError
 from app.models.contest import ContestRuntime
+from app.utils.enums import ContestRuntimeStatus
+
 
 class ContestJobs:
     """Background jobs related to contest management and execution."""
@@ -25,13 +24,10 @@ class ContestJobs:
             ContestNotFoundError: If no contest runtime is found for the given ID.
         """
         async with SessionLocal() as db:
-            run_time: ContestRuntime | None = await db.get(
-                ContestRuntime,
-                contest_id
-            )
+            run_time: ContestRuntime | None = await db.get(ContestRuntime, contest_id)
 
             if not run_time:
-                raise ContestNotFoundError(f"Contest {contest_id} not found")
+                raise ContestNotFoundError(str(id))
 
             if run_time.runtime_status != ContestRuntimeStatus.SCHEDULED:
                 return
@@ -68,7 +64,3 @@ class ContestJobs:
             runtime.updated_at = datetime.now(timezone.utc)
 
             await db.commit()
-
-            
-            
-        

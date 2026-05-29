@@ -1,4 +1,4 @@
-#TODO: Implement RBAC auth gaurd
+# TODO: Implement RBAC auth gaurd
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -11,6 +11,8 @@ from app.core.guards.team_student import TeamStudentGuard
 from app.core.logger import logger
 from app.core.response import create_api_response
 from app.repositories.contest import ContestRepository
+from app.repositories.contest_runtime import ContestRuntimeRepository
+from app.repositories.contest_team_progress import ContestTeamProgressRepository
 from app.repositories.dto.pagination import PaginationParams
 from app.repositories.student.contest import StudentContestRepository
 from app.repositories.student.contest_team import ContestTeamRepository
@@ -24,15 +26,14 @@ from app.schema.student.contest_team import (
     ContestTeamStatusUpdate,
     ContestTeamUpdate,
 )
+from app.schema.student.contest_team_progress import ContestTeamProgressResponse
 from app.schema.student.contests import (
     StudentContestDetailsResponse,
     StudentContestListResponse,
     StudentContestRegistrationRequest,
     StudentContestStatusResponse,
 )
-from app.schema.student.contest_team_progress import ContestTeamProgressResponse
 from app.schema.team import ContestTeamCreate, ContestTeamImport
-from app.repositories.contest_team_progress import ContestTeamProgressRepository
 from app.service.student.contest_team import ContestTeamService
 from app.service.student.contests import StudentContestService
 
@@ -48,6 +49,7 @@ def get_student_contest_service(
     contest_student_guard = ContestStudentGuard(db)
     contest_team_repository = ContestTeamRepository(db)
     contest_team_progress_repository = ContestTeamProgressRepository(db)
+    contest_runtime_repository = ContestRuntimeRepository(db)
     return StudentContestService(
         repository,
         contest_repository,
@@ -55,7 +57,9 @@ def get_student_contest_service(
         team_repository,
         contest_student_guard,
         contest_team_progress_repository,
+        contest_runtime_repository,
     )
+
 
 def get_contest_team_service(
     db: AsyncSession = Depends(get_db),
@@ -72,6 +76,7 @@ def get_contest_team_service(
         contest_repository=contest_repository,
         contest_student_guard=contest_student_guard,
     )
+
 
 @router.get(
     "/",
@@ -109,6 +114,7 @@ async def get_student_contests(
         message="Student contests fetched successfully",
     )
 
+
 @router.get(
     "/{contest_id}",
     response_model=APIResponse[StudentContestDetailsResponse],
@@ -129,6 +135,7 @@ async def get_student_contest_by_id(
         data=result,
         message="Student contest details fetched successfully",
     )
+
 
 @router.get(
     "/{contest_id}/participation/me",
@@ -151,6 +158,7 @@ async def get_student_contest_status(
         message="Student contest status fetched successfully",
     )
 
+
 @router.post(
     "/{contest_id}/teams/import",
     response_model=APIResponse[None],
@@ -171,7 +179,9 @@ async def import_student_team(
         contest_team_import=contest_team_import,
         user_id=user_id,
     )
-    logger.info(f"Successfully imported team {contest_team_import.team_id} into contest {contest_id} by user {user_id}")
+    logger.info(
+        f"Successfully imported team {contest_team_import.team_id} into contest {contest_id} by user {user_id}"
+    )
     return create_api_response(
         request,
         data=None,
@@ -199,7 +209,9 @@ async def create_contest_team(
         contest_team_create=contest_team_create,
         user_id=user_id,
     )
-    logger.info(f"Successfully created contest team {contest_team_create.name} in contest {contest_id} by user {user_id}")
+    logger.info(
+        f"Successfully created contest team {contest_team_create.name} in contest {contest_id} by user {user_id}"
+    )
     return create_api_response(
         request,
         data=None,
@@ -228,7 +240,9 @@ async def update_contest_team(
         contest_team_update=contest_team_update,
         user_id=user_id,
     )
-    logger.info(f"Successfully updated team {contest_team_id} in contest {contest_id} by user {user_id}")
+    logger.info(
+        f"Successfully updated team {contest_team_id} in contest {contest_id} by user {user_id}"
+    )
     return create_api_response(
         request,
         data=None,
@@ -257,12 +271,15 @@ async def transfer_contest_team_leader(
         user_id=user_id,
         new_leader_id=contest_team_leader_transfer.new_leader_id,
     )
-    logger.info(f"Successfully transferred team leadership for team {contest_team_id} in contest {contest_id} by user {user_id}")
+    logger.info(
+        f"Successfully transferred team leadership for team {contest_team_id} in contest {contest_id} by user {user_id}"
+    )
     return create_api_response(
         request,
         data=None,
         message="Team leadership transferred successfully",
     )
+
 
 @router.patch(
     "/{contest_id}/teams/{contest_team_id}/status",
@@ -286,7 +303,9 @@ async def update_contest_team_status(
         contest_team_status=contest_team_status.status,
         user_id=user_id,
     )
-    logger.info(f"Successfully updated team status for team {contest_team_id} in contest {contest_id} by user {user_id}")
+    logger.info(
+        f"Successfully updated team status for team {contest_team_id} in contest {contest_id} by user {user_id}"
+    )
     return create_api_response(
         request,
         data=None,
@@ -305,7 +324,7 @@ async def update_contest_team_member_status(
     contest_team_id: UUID,
     contest_team_member_id: UUID,
     contest_team_member_status_update: ContestTeamMemberStatusUpdate,
-    user_id:UUID = Depends(get_current_user_id),
+    user_id: UUID = Depends(get_current_user_id),
     service: ContestTeamService = Depends(get_contest_team_service),
 ):
     """
@@ -318,7 +337,9 @@ async def update_contest_team_member_status(
         contest_team_member_id=contest_team_member_id,
         contest_team_member_status=contest_team_member_status_update.status,
     )
-    logger.info(f"Successfully updated team member {contest_team_member_id} status for team {contest_team_id} in contest {contest_id}")
+    logger.info(
+        f"Successfully updated team member {contest_team_member_id} status for team {contest_team_id} in contest {contest_id}"
+    )
     return create_api_response(
         request,
         data=None,
@@ -348,7 +369,9 @@ async def invite_members_to_contest_team(
         invite_user_ids=invite_request.user_ids,
         user_id=user_id,
     )
-    logger.info(f"Successfully invited members {invite_request.user_ids} to contest team {contest_team_id} in contest {contest_id}")
+    logger.info(
+        f"Successfully invited members {invite_request.user_ids} to contest team {contest_team_id} in contest {contest_id}"
+    )
     return create_api_response(
         request,
         data=None,
@@ -383,6 +406,7 @@ async def start_contest_session(
         message="Contest session started successfully",
     )
 
+
 @router.get(
     "/{contest_id}/runtime",
     response_model=APIResponse[ContestTeamProgressResponse],
@@ -409,5 +433,3 @@ async def get_runtime_session(
         data=result,
         message="Contest session fetched successfully",
     )
-
-

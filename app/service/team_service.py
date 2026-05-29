@@ -116,14 +116,22 @@ class TeamService:
         contest = await self.contest_repository.get_contest_or_raise(contest_id)
         await self.guard.check_update_team(user_id=approved_by, contest=contest)
 
-        contest_team = await self.contest_team_repository.get_contest_team_by_id_or_raise(
-            contest_team_id
+        contest_team = (
+            await self.contest_team_repository.get_contest_team_by_id_or_raise(
+                contest_team_id
+            )
         )
 
         if contest_team.approval_status != TeamApprovalStatus.APPROVED:
             if contest.team_approval_mode == TeamApprovalMode.INSTRUCTOR_REVIEW:
-                if contest.max_teams is not None and isinstance(contest.max_teams, int) and contest.max_teams > 0:
-                    counts = await self.contest_team_repository.count_teams_by_status(contest_id)
+                if (
+                    contest.max_teams is not None
+                    and isinstance(contest.max_teams, int)
+                    and contest.max_teams > 0
+                ):
+                    counts = await self.contest_team_repository.count_teams_by_status(
+                        contest_id
+                    )
                     ContestTeamValidator.validate_max_teams(
                         approved_teams_count=counts["approved_count"],
                         max_teams=contest.max_teams,
@@ -139,7 +147,7 @@ class TeamService:
         # Fetch unique accepted members for response
         members = await self.contest_team_repository.get_contest_team_members(
             contest_team_id=contest_team.id,
-            contestTeamMemberStatus=[ContestTeamMemberStatus.ACCEPTED],
+            contest_team_member_status=[ContestTeamMemberStatus.ACCEPTED],
         )
         seen_users = set()
         unique_members = []
@@ -173,8 +181,10 @@ class TeamService:
         contest = await self.contest_repository.get_contest_or_raise(contest_id)
         await self.guard.check_update_team(user_id=rejected_by, contest=contest)
 
-        contest_team = await self.contest_team_repository.get_contest_team_by_id_or_raise(
-            contest_team_id
+        contest_team = (
+            await self.contest_team_repository.get_contest_team_by_id_or_raise(
+                contest_team_id
+            )
         )
 
         if contest.team_approval_mode != TeamApprovalMode.INSTRUCTOR_REVIEW:
@@ -189,7 +199,7 @@ class TeamService:
         # Fetch unique accepted members for response
         members = await self.contest_team_repository.get_contest_team_members(
             contest_team_id=contest_team.id,
-            contestTeamMemberStatus=[ContestTeamMemberStatus.ACCEPTED],
+            contest_team_member_status=[ContestTeamMemberStatus.ACCEPTED],
         )
         seen_users = set()
         unique_members = []
@@ -223,8 +233,10 @@ class TeamService:
         contest = await self.contest_repository.get_contest_or_raise(contest_id)
         await self.guard.check_update_team(user_id=disqualified_by, contest=contest)
 
-        contest_team = await self.contest_team_repository.get_contest_team_by_id_or_raise(
-            contest_team_id
+        contest_team = (
+            await self.contest_team_repository.get_contest_team_by_id_or_raise(
+                contest_team_id
+            )
         )
 
         if contest_team.team_status != TeamStatus.DISQUALIFIED:
@@ -236,7 +248,7 @@ class TeamService:
         # Fetch unique accepted members for response
         members = await self.contest_team_repository.get_contest_team_members(
             contest_team_id=contest_team.id,
-            contestTeamMemberStatus=[ContestTeamMemberStatus.ACCEPTED],
+            contest_team_member_status=[ContestTeamMemberStatus.ACCEPTED],
         )
         seen_users = set()
         unique_members = []
@@ -248,14 +260,9 @@ class TeamService:
         return to_contest_team_response(contest_team, members=unique_members)
 
     @cache_get(
-        key_builder=lambda self,
-        contest_id,
-        user_id,
-        search_term=None,
-        status=None,
-        approval_status=None,
-        skip=0,
-        limit=100: f"contest:{contest_id}:teams:user:{user_id}:search:{search_term}:status:{status}:approval:{approval_status}:skip:{skip}:limit:{limit}",
+        key_builder=lambda self, contest_id, user_id, search_term=None, status=None, approval_status=None, skip=0, limit=100: (
+            f"contest:{contest_id}:teams:user:{user_id}:search:{search_term}:status:{status}:approval:{approval_status}:skip:{skip}:limit:{limit}"
+        ),
         ttl=300,
     )
     async def get_contest_teams(
@@ -302,9 +309,15 @@ class TeamService:
 
         await self.guard.check_read_team(user_id=user_id, contest=contest)
 
-        status_filter = [status] if status is not None else [TeamStatus.DISQUALIFIED, TeamStatus.CONFIRMED]
+        status_filter = (
+            [status]
+            if status is not None
+            else [TeamStatus.DISQUALIFIED, TeamStatus.CONFIRMED]
+        )
         filters = TeamFilters(
-            search_term=search_term, status=status_filter, approval_status=approval_status
+            search_term=search_term,
+            status=status_filter,
+            approval_status=approval_status,
         )
         pagination = PaginationParams(skip=skip, limit=limit)
 
@@ -317,7 +330,7 @@ class TeamService:
         for team in result.items:
             members = await self.contest_team_repository.get_contest_team_members(
                 contest_team_id=team.id,
-                contestTeamMemberStatus=[ContestTeamMemberStatus.ACCEPTED],
+                contest_team_member_status=[ContestTeamMemberStatus.ACCEPTED],
             )
             # Ensure uniqueness by user_id
             seen_users = set()
@@ -329,17 +342,18 @@ class TeamService:
             team_members_map[team.id] = unique_members
 
         # Get status counts
-        status_counts = await self.contest_team_repository.count_teams_by_status(contest_id)
+        status_counts = await self.contest_team_repository.count_teams_by_status(
+            contest_id
+        )
 
         return to_team_list_response(
             result.total, result.items, status_counts, team_members_map
         )
 
     @cache_get(
-        key_builder=lambda self,
-        contest_id,
-        team_id,
-        user_id: f"contest:{contest_id}:team:{team_id}:user:{user_id}",
+        key_builder=lambda self, contest_id, team_id, user_id: (
+            f"contest:{contest_id}:team:{team_id}:user:{user_id}"
+        ),
         ttl=300,
     )
     async def get_team_by_id(
@@ -375,22 +389,16 @@ class TeamService:
         await self.guard.check_read_team(user_id=user_id, contest=contest)
 
         # Delegate to repository
-        contest_team = await self.contest_team_repository.get_contest_team_by_id_or_raise(
-            team_id
+        contest_team = (
+            await self.contest_team_repository.get_contest_team_by_id_or_raise(team_id)
         )
-
 
         return to_contest_team_response(contest_team)
 
-
     @cache_get(
-        key_builder=lambda self,
-        contest_id,
-        contest_team_id,
-        user_id,
-        search_term=None,
-        skip=0,
-        limit=100: f"team:{contest_team_id}:members:user:{user_id}:search:{search_term}:skip:{skip}:limit:{limit}",
+        key_builder=lambda self, contest_id, contest_team_id, user_id, search_term=None, skip=0, limit=100: (
+            f"team:{contest_team_id}:members:user:{user_id}:search:{search_term}:skip:{skip}:limit:{limit}"
+        ),
         ttl=300,
     )
     async def get_team_members(
@@ -434,16 +442,20 @@ class TeamService:
         contest = await self.contest_repository.get_contest_or_raise(contest_id)
         await self.guard.check_read_team(user_id=user_id, contest=contest)
 
-        contest_team = await self.contest_team_repository.get_contest_team_by_id_or_raise(
-            contest_team_id
+        contest_team = (
+            await self.contest_team_repository.get_contest_team_by_id_or_raise(
+                contest_team_id
+            )
         )
 
         pagination = PaginationParams(skip=skip, limit=limit)
-        paginated_result = await self.contest_team_repository.get_contest_team_members_paginated(
-            contest_team_id=contest_team_id,
-            pagination=pagination,
-            status=[ContestTeamMemberStatus.ACCEPTED],
-            search_term=search_term,
+        paginated_result = (
+            await self.contest_team_repository.get_contest_team_members_paginated(
+                contest_team_id=contest_team_id,
+                pagination=pagination,
+                status=[ContestTeamMemberStatus.ACCEPTED],
+                search_term=search_term,
+            )
         )
 
         # Transform to response objects

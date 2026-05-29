@@ -14,7 +14,6 @@ from app.utils.enums import ContestTeamMemberStatus, TeamApprovalStatus, TeamSta
 
 
 class ContestTeamRepository:
-
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
@@ -47,7 +46,9 @@ class ContestTeamRepository:
         await self.db.flush()
         return contest_team_members
 
-    async def get_contest_team_by_id_or_raise(self, contest_team_id: UUID) -> ContestTeam:
+    async def get_contest_team_by_id_or_raise(
+        self, contest_team_id: UUID
+    ) -> ContestTeam:
         """Get a contest team by its ID or raise an exception if not found.
 
         Args:
@@ -61,16 +62,15 @@ class ContestTeamRepository:
         """
         stmt = (
             select(ContestTeam)
-            .options(
-                selectinload(ContestTeam.team)
-                .selectinload(Team.members)
-            )
+            .options(selectinload(ContestTeam.team).selectinload(Team.members))
             .where(ContestTeam.id == contest_team_id)
         )
         result = await self.db.execute(stmt)
         contest_team = result.scalar_one_or_none()
         if contest_team is None:
-            raise ContestTeamNotFoundException(f"Contest team not found with ID: {contest_team_id}")
+            raise ContestTeamNotFoundException(
+                f"Contest team not found with ID: {contest_team_id}"
+            )
         return contest_team
 
     async def update_contest_team(self, contest_team: ContestTeam) -> ContestTeam:
@@ -87,19 +87,12 @@ class ContestTeamRepository:
         await self.db.refresh(contest_team)
         return contest_team
 
-    async def lock_contest_team(self, contest_team_id: UUID) -> None:
-        """Acquire a row-level lock on the contest team to prevent race conditions.
-
-        Args:
-            contest_team_id: The ID of the contest team to lock.
-        """
-        lock_stmt = select(ContestTeam).where(ContestTeam.id == contest_team_id).with_for_update()
-        await self.db.execute(lock_stmt)
-
     async def count_contest_team_members(
         self,
         contest_team_id: UUID,
-        contest_team_member_statuses: list[ContestTeamMemberStatus] | ContestTeamMemberStatus | None = None,
+        contest_team_member_statuses: list[ContestTeamMemberStatus]
+        | ContestTeamMemberStatus
+        | None = None,
     ) -> int:
         """Count the number of members in a contest team.
 
@@ -110,21 +103,26 @@ class ContestTeamRepository:
         Returns:
             int: The number of members in the contest team.
         """
-        stmt = (
-            select(func.count(ContestTeamMember.id))
-            .where(ContestTeamMember.contest_team_id == contest_team_id)
+        stmt = select(func.count(ContestTeamMember.id)).where(
+            ContestTeamMember.contest_team_id == contest_team_id
         )
 
         if contest_team_member_statuses is not None:
             if isinstance(contest_team_member_statuses, list):
-                stmt = stmt.where(ContestTeamMember.status.in_(contest_team_member_statuses))
+                stmt = stmt.where(
+                    ContestTeamMember.status.in_(contest_team_member_statuses)
+                )
             else:
-                stmt = stmt.where(ContestTeamMember.status == contest_team_member_statuses)
+                stmt = stmt.where(
+                    ContestTeamMember.status == contest_team_member_statuses
+                )
 
         result = await self.db.execute(stmt)
         return int(result.scalar_one())
 
-    async def get_contest_team_member_by_user_id(self, user_id: UUID, stauts: ContestTeamMemberStatus | None) -> ContestTeamMember | None:
+    async def get_contest_team_member_by_user_id(
+        self, user_id: UUID, stauts: ContestTeamMemberStatus | None
+    ) -> ContestTeamMember | None:
         """Get the contest team member record for a given user ID.
 
         Args:
@@ -139,24 +137,30 @@ class ContestTeamRepository:
             .where(ContestTeamMember.user_id == user_id)
             .options(
                 selectinload(ContestTeamMember.contest),
-                selectinload(ContestTeamMember.contest_team).selectinload(ContestTeam.contest_team_member).selectinload(ContestTeamMember.user)
-            ).order_by(
-        case(
-        (ContestTeamMember.status == ContestTeamMemberStatus.INVITED, 1),
-        (ContestTeamMember.status == ContestTeamMemberStatus.ACCEPTED, 2),
-        (ContestTeamMember.status == ContestTeamMemberStatus.LEFT, 3),
-        (ContestTeamMember.status == ContestTeamMemberStatus.REJECTED, 4),
-        (ContestTeamMember.status == ContestTeamMemberStatus.REMOVED, 5),
-        (ContestTeamMember.status == ContestTeamMemberStatus.CANCELLED, 6),
-         ),
-        ))
+                selectinload(ContestTeamMember.contest_team)
+                .selectinload(ContestTeam.contest_team_member)
+                .selectinload(ContestTeamMember.user),
+            )
+            .order_by(
+                case(
+                    (ContestTeamMember.status == ContestTeamMemberStatus.INVITED, 1),
+                    (ContestTeamMember.status == ContestTeamMemberStatus.ACCEPTED, 2),
+                    (ContestTeamMember.status == ContestTeamMemberStatus.LEFT, 3),
+                    (ContestTeamMember.status == ContestTeamMemberStatus.REJECTED, 4),
+                    (ContestTeamMember.status == ContestTeamMemberStatus.REMOVED, 5),
+                    (ContestTeamMember.status == ContestTeamMemberStatus.CANCELLED, 6),
+                ),
+            )
+        )
         if stauts is not None:
             stmt = stmt.where(ContestTeamMember.status == stauts)
 
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def count_teams(self, contest_id: UUID, status: TeamStatus, approval_status: TeamApprovalStatus) -> int:
+    async def count_teams(
+        self, contest_id: UUID, status: TeamStatus, approval_status: TeamApprovalStatus
+    ) -> int:
         """Count the number of teams in a contest with the specified status and approval status.
 
         Args:
@@ -184,15 +188,35 @@ class ContestTeamRepository:
         Returns:
             dict[str, int]: A dictionary containing counts for approved, waiting, disqualified, and rejected teams.
         """
-        stmt = (
-            select(
-                func.sum(case((ContestTeam.approval_status == TeamApprovalStatus.APPROVED, 1), else_=0)).label("approved"),
-                func.sum(case((and_(ContestTeam.approval_status == TeamApprovalStatus.WAITING, ContestTeam.team_status == TeamStatus.CONFIRMED), 1), else_=0)).label("waiting"),
-                func.sum(case((ContestTeam.approval_status == TeamApprovalStatus.REJECTED, 1), else_=0)).label("rejected"),
-                func.sum(case((ContestTeam.team_status == TeamStatus.DISQUALIFIED, 1), else_=0)).label("disqualified"),
-            )
-            .where(ContestTeam.contest_id == contest_id)
-        )
+        stmt = select(
+            func.sum(
+                case(
+                    (ContestTeam.approval_status == TeamApprovalStatus.APPROVED, 1),
+                    else_=0,
+                )
+            ).label("approved"),
+            func.sum(
+                case(
+                    (
+                        and_(
+                            ContestTeam.approval_status == TeamApprovalStatus.WAITING,
+                            ContestTeam.team_status == TeamStatus.CONFIRMED,
+                        ),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ).label("waiting"),
+            func.sum(
+                case(
+                    (ContestTeam.approval_status == TeamApprovalStatus.REJECTED, 1),
+                    else_=0,
+                )
+            ).label("rejected"),
+            func.sum(
+                case((ContestTeam.team_status == TeamStatus.DISQUALIFIED, 1), else_=0)
+            ).label("disqualified"),
+        ).where(ContestTeam.contest_id == contest_id)
         result = await self.db.execute(stmt)
         row = result.one()
         return {
@@ -202,7 +226,9 @@ class ContestTeamRepository:
             "disqualified_count": int(row.disqualified or 0),
         }
 
-    async def get_contest_team_member_or_raise(self, contest_team_member_id: UUID) -> ContestTeamMember:
+    async def get_contest_team_member_or_raise(
+        self, contest_team_member_id: UUID
+    ) -> ContestTeamMember:
         """Get a contest team member by its ID or raise an exception if not found.
 
         Args:
@@ -214,17 +240,20 @@ class ContestTeamRepository:
         Raises:
             ContestTeamMemberNotFoundException: If no contest team member is found with the given ID.
         """
-        stmt = (
-            select(ContestTeamMember)
-            .where(ContestTeamMember.id == contest_team_member_id)
+        stmt = select(ContestTeamMember).where(
+            ContestTeamMember.id == contest_team_member_id
         )
         result = await self.db.execute(stmt)
         contest_team_member = result.scalar_one_or_none()
         if contest_team_member is None:
-            raise ContestTeamMemberNotFoundException(f"Contest team member not found with ID: {contest_team_member_id}")
+            raise ContestTeamMemberNotFoundException(
+                f"Contest team member not found with ID: {contest_team_member_id}"
+            )
         return contest_team_member
 
-    async def update_contest_team_member(self, contest_team_member: ContestTeamMember) -> ContestTeamMember:
+    async def update_contest_team_member(
+        self, contest_team_member: ContestTeamMember
+    ) -> ContestTeamMember:
         """Update an existing contest team member record in the database.
 
         Args:
@@ -238,11 +267,20 @@ class ContestTeamRepository:
         await self.db.refresh(contest_team_member)
         return contest_team_member
 
-    async def get_contest_team_members(self, contest_team_id:UUID, contestTeamMemberStatus: list[ContestTeamMemberStatus] | None = None, user_ids:list[UUID] | None = None )->list[ContestTeamMember]:
-        query = (select(ContestTeamMember).where(ContestTeamMember.contest_team_id == contest_team_id))
+    async def get_contest_team_members(
+        self,
+        contest_team_id: UUID,
+        contest_team_member_status: list[ContestTeamMemberStatus] | None = None,
+        user_ids: list[UUID] | None = None,
+    ) -> list[ContestTeamMember]:
+        query = select(ContestTeamMember).where(
+            ContestTeamMember.contest_team_id == contest_team_id
+        )
 
-        if contestTeamMemberStatus is not None:
-            query = query.where(ContestTeamMember.status.in_(contestTeamMemberStatus))
+        if contest_team_member_status is not None:
+            query = query.where(
+                ContestTeamMember.status.in_(contest_team_member_status)
+            )
 
         if user_ids is not None:
             query = query.where(ContestTeamMember.user_id.in_(user_ids))
@@ -253,16 +291,17 @@ class ContestTeamRepository:
 
         return list(result.scalars())
 
-    async def get_active_members_in_contest(self, contest_id: UUID, user_ids: list[UUID]) -> list[ContestTeamMember]:
+    async def get_active_members_in_contest(
+        self, contest_id: UUID, user_ids: list[UUID]
+    ) -> list[ContestTeamMember]:
         """Get active (INVITED or ACCEPTED) contest team members for a list of users in a contest."""
-        stmt = (
-            select(ContestTeamMember)
-            .where(
-                and_(
-                    ContestTeamMember.contest_id == contest_id,
-                    ContestTeamMember.user_id.in_(user_ids),
-                    ContestTeamMember.status.in_([ContestTeamMemberStatus.INVITED, ContestTeamMemberStatus.ACCEPTED])
-                )
+        stmt = select(ContestTeamMember).where(
+            and_(
+                ContestTeamMember.contest_id == contest_id,
+                ContestTeamMember.user_id.in_(user_ids),
+                ContestTeamMember.status.in_(
+                    [ContestTeamMemberStatus.INVITED, ContestTeamMemberStatus.ACCEPTED]
+                ),
             )
         )
         result = await self.db.execute(stmt)
@@ -277,6 +316,7 @@ class ContestTeamRepository:
     ) -> None:
         """Bulk update status of contest team members."""
         from sqlalchemy import update
+
         stmt = (
             update(ContestTeamMember)
             .where(ContestTeamMember.contest_team_id == contest_team_id)
@@ -306,17 +346,13 @@ class ContestTeamRepository:
             PaginatedResult: Total count and list of ContestTeam objects.
         """
         # Base query
-        query = (
-            select(ContestTeam)
-            .where(ContestTeam.contest_id == contest_id)
-        )
+        query = select(ContestTeam).where(ContestTeam.contest_id == contest_id)
 
         query = self._apply_filters(query, filters)
 
         # Count query
-        count_query = (
-            select(func.count(ContestTeam.id))
-            .where(ContestTeam.contest_id == contest_id)
+        count_query = select(func.count(ContestTeam.id)).where(
+            ContestTeam.contest_id == contest_id
         )
 
         count_query = self._apply_filters(count_query, filters)
@@ -332,8 +368,10 @@ class ContestTeamRepository:
             .limit(pagination.limit)
             .options(
                 selectinload(ContestTeam.leader),
-                selectinload(ContestTeam.contest_team_member).selectinload(ContestTeamMember.user),
-                selectinload(ContestTeam.team).selectinload(Team.members)
+                selectinload(ContestTeam.contest_team_member).selectinload(
+                    ContestTeamMember.user
+                ),
+                selectinload(ContestTeam.team).selectinload(Team.members),
             )
         )
 
@@ -386,8 +424,8 @@ class ContestTeamRepository:
 
         if search_term:
             query = query.where(
-                (User.name.ilike(f"%{search_term}%")) |
-                (User.email.ilike(f"%{search_term}%"))
+                (User.name.ilike(f"%{search_term}%"))
+                | (User.email.ilike(f"%{search_term}%"))
             )
 
         # Count query
@@ -400,8 +438,8 @@ class ContestTeamRepository:
             count_query = count_query.where(ContestTeamMember.status.in_(status))
         if search_term:
             count_query = count_query.where(
-                (User.name.ilike(f"%{search_term}%")) |
-                (User.email.ilike(f"%{search_term}%"))
+                (User.name.ilike(f"%{search_term}%"))
+                | (User.email.ilike(f"%{search_term}%"))
             )
 
         # Execute count
@@ -414,9 +452,9 @@ class ContestTeamRepository:
                 case(
                     (ContestTeamMember.status == ContestTeamMemberStatus.ACCEPTED, 1),
                     (ContestTeamMember.status == ContestTeamMemberStatus.INVITED, 2),
-                    else_=3
+                    else_=3,
                 ),
-                ContestTeamMember.id.desc()
+                ContestTeamMember.id.desc(),
             )
             .offset(pagination.skip)
             .limit(pagination.limit)
