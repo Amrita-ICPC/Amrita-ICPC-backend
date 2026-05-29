@@ -146,10 +146,9 @@ class BankQuestionService:
         return question_response
 
     @cache_delete(
-        key_builder=lambda self,
-        bank_id,
-        *args,
-        **kwargs: self._get_bank_question_cache_keys(bank_id)
+        key_builder=lambda self, bank_id, question_ids, user_id: (
+            self._get_bank_question_cache_keys(bank_id)
+        )
     )
     async def add_questions_to_bank(
         self, bank_id: UUID, question_ids: List[UUID], user_id: UUID
@@ -184,19 +183,16 @@ class BankQuestionService:
         await self.repository.add_questions_to_bank(bank_id, question_ids, user_id)
 
     @cache_delete(
-        key_builder=lambda self,
-        source_bank_id,
-        target_bank_id,
-        *args,
-        **kwargs: self._get_bank_question_cache_keys(source_bank_id)
-        + self._get_bank_question_cache_keys(target_bank_id)
+        key_builder=lambda self, source_bank_id, target_bank_id, user_id, copy_all, question_ids: (
+            self._get_bank_question_cache_keys(source_bank_id)
+            + self._get_bank_question_cache_keys(target_bank_id)
+        )
     )
     async def clone_questions_between_banks(
         self,
         source_bank_id: UUID,
         target_bank_id: UUID,
         user_id: UUID,
-        *,
         copy_all: bool,
         question_ids: List[UUID] | None,
     ) -> int:
@@ -263,10 +259,9 @@ class BankQuestionService:
         return len(created_questions)
 
     @cache_delete(
-        key_builder=lambda self,
-        bank_id,
-        *args,
-        **kwargs: self._get_bank_question_cache_keys(bank_id)
+        key_builder=lambda self, bank_id, question_ids, user_id: (
+            self._get_bank_question_cache_keys(bank_id)
+        )
     )
     async def remove_questions_from_bank(
         self, bank_id: UUID, question_ids: List[UUID], user_id: UUID
@@ -296,12 +291,9 @@ class BankQuestionService:
         await self.repository.remove_questions_from_bank(existing)
 
     @cache_get(
-        key_builder=lambda self,
-        bank_id,
-        user_id,
-        skip=0,
-        limit=100,
-        filters=None: f"banks:questions:v2:{bank_id}:user:{user_id}:skip:{skip}:limit:{limit}:filters:{hash(str(filters))}",
+        key_builder=lambda self, bank_id, user_id, skip=0, limit=100, filters=None: (
+            f"banks:questions:v2:{bank_id}:user:{user_id}:skip:{skip}:limit:{limit}:filters:{hash(str(filters))}"
+        ),
         ttl=300,
     )
     async def get_bank_questions(
@@ -331,16 +323,17 @@ class BankQuestionService:
         self.validator.check_read_bank(user_id=user_id, bank=bank)
 
         pagination = PaginationParams(skip=skip, limit=limit)
-        result = await self.repository.get_questions_in_bank(bank_id, pagination, filters)
+        result = await self.repository.get_questions_in_bank(
+            bank_id, pagination, filters
+        )
 
         responses = to_bank_question_metadata_responses(result.items)
         return result.total, responses
 
     @cache_get(
-        key_builder=lambda self,
-        bank_id,
-        question_id,
-        user_id: f"bank:question:v2:{bank_id}:{question_id}:user:{user_id}",
+        key_builder=lambda self, bank_id, question_id, user_id: (
+            f"bank:question:v2:{bank_id}:{question_id}:user:{user_id}"
+        ),
         ttl=300,
     )
     async def get_bank_question(
@@ -376,10 +369,8 @@ class BankQuestionService:
         response = to_bank_question_response(question)
         return await self._hydrate_question_template_codes(response)
 
-
-
     @cache_delete(
-        key_builder=lambda self, bank_id, question_id, *args, **kwargs: [
+        key_builder=lambda self, bank_id, question_id, update_data, user_id: [
             f"question:{question_id}",
             f"question:{question_id}:*",
             f"bank:question:{bank_id}:{question_id}:*",
@@ -438,7 +429,11 @@ class BankQuestionService:
         if update_data.templates is not None:
             template_dtos = []
             for template in update_data.templates:
-                template_id = uuid.uuid4() if not hasattr(template, "id") or not template.id else template.id
+                template_id = (
+                    uuid.uuid4()
+                    if not hasattr(template, "id") or not template.id
+                    else template.id
+                )
                 mapped_template_dto = build_template_dto(
                     template_id=template_id,
                     template=template,
