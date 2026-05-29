@@ -47,6 +47,7 @@ class ContestBase(BaseModel):
     contest_mode: ContestMode = Field(
         default=ContestMode.INDIVIDUAL, description="Contest mode (individual or team)"
     )
+    duration: Optional[int] = Field(None, description="Contest duration in seconds")
 
     @model_validator(mode="after")
     def validate_dates(self):
@@ -112,6 +113,7 @@ class ContestUpdate(BaseModel):
     show_leaderboard: Optional[bool] = Field(
         None, description="Whether to show leaderboard"
     )
+    duration: Optional[int] = Field(None, description="Contest duration in seconds")
 
     @model_validator(mode="after")
     def validate_dates(self):
@@ -159,6 +161,7 @@ class ContestSummaryResponse(BaseModel):
     contest_mode: ContestMode = Field(
         ..., description="Contest mode (individual or team)"
     )
+    duration: Optional[int] = Field(None, description="Contest duration in seconds")
     audiences: list[ContestAudienceResponse] = Field(
         default_factory=list, description="List of audiences linked to this contest"
     )
@@ -194,6 +197,7 @@ class ContestDetailResponse(ContestBase):
     published_by: Optional[UUID] = Field(
         None, description="User ID who published the contest"
     )
+    duration: Optional[int] = Field(None, description="Contest duration in seconds")
 
     model_config = ConfigDict(from_attributes=True)
 

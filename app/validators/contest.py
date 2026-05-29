@@ -1,6 +1,7 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timezone
 from uuid import UUID
 
+from app.exceptions.base import AppBaseException
 from app.exceptions.contest import (
     ContestNotFoundError,
     InstructorAlreadyAssignedError,
@@ -9,8 +10,8 @@ from app.exceptions.contest import (
     InvalidContestStateError,
     QuestionNotInContestError,
 )
-from app.models.contest import ContestInstructor
-from app.utils.enums import ContestStatus
+from app.models.contest import ContestInstructor, ContestRuntime
+from app.utils.enums import ContestRuntimeStatus, ContestStatus
 
 
 class ContestValidator:
@@ -364,4 +365,58 @@ class ContestValidator:
         if new_orders != expected_orders:
             raise InvalidContestError(
                 "Question orders must be sequential starting from 1 with no duplicates"
+            )
+
+    @staticmethod
+    def validate_contest_is_published(status: ContestStatus, contest_id: UUID) -> None:
+        """
+        Validate that a contest is published.
+
+        Args:
+            status: Current status of the contest.
+            contest_id: UUID of the contest.
+
+        Raises:
+            InvalidContestStateError: If the contest is not published.
+        """
+        if status != ContestStatus.PUBLISHED:
+            raise InvalidContestStateError(
+                str(contest_id), "start session for", status, ContestStatus.PUBLISHED
+            )
+
+    @staticmethod
+    def validate_contest_runtime(contest_runtime: ContestRuntime | None, contest_id: UUID) -> None:
+        """
+        Validate the contest runtime status and expiration.
+
+        Args:
+            contest_runtime: The ContestRuntime model instance or None.
+            contest_id: UUID of the contest.
+
+        Raises:
+            AppBaseException: If the runtime is invalid, scheduled, cancelled, or expired.
+        """
+        if contest_runtime is None:
+            raise AppBaseException(
+                message="Contest runtime has not been initialized",
+                status_code=400,
+            )
+
+        if contest_runtime.runtime_status == ContestRuntimeStatus.CANCELLED or contest_runtime.cancelled_at is not None:
+            raise AppBaseException(
+                message="Contest has been cancelled",
+                status_code=400,
+            )
+
+        if contest_runtime.runtime_status == ContestRuntimeStatus.SCHEDULED:
+            raise AppBaseException(
+                message="Contest has not started yet",
+                status_code=400,
+            )
+
+        current_time = datetime.now(timezone.utc)
+        if contest_runtime.end_time is not None and current_time > contest_runtime.end_time:
+            raise AppBaseException(
+                message="Contest has already ended",
+                status_code=400,
             )

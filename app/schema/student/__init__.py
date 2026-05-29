@@ -10,6 +10,7 @@ from app.schema.student.contests import (
     StudentContestRegistrationResponse,
     StudentRegisteredContestListResponse,
     StudentRegisteredContestResponse,
+    ContestSessionStartRequest,
 )
 from app.schema.student.run import (
     StudentCodeRunRequest,
@@ -29,6 +30,15 @@ from app.schema.student.teams import (
     StudentTeamUpdateRequest,
     TeamMemberDetailResponse,
 )
+from app.schema.student.contest_team_progress import (
+    ContestSessionStatus,
+    ContestRuntimeDetails,
+    WorkspaceParticipant,
+    WorkspaceDetails,
+    TeamProgressDetails,
+    PermissionsDetails,
+    ContestTeamProgressResponse,
+)
 
 __all__ = [
     # Contest schemas - Available
@@ -44,6 +54,7 @@ __all__ = [
     # Contest schemas - Registration
     "StudentContestRegistrationRequest",
     "StudentContestRegistrationResponse",
+    "ContestSessionStartRequest",
     # Run schemas - Code execution
     "StudentCodeRunRequest",
     "StudentCodeRunResponse",
@@ -60,5 +71,13 @@ __all__ = [
     "StudentTeamInvitationUpdateRequest",
     "StudentTeamTransferLeaderRequest",
     "TeamMemberDetailResponse",
+    # Contest Team Progress schemas
+    "ContestSessionStatus",
+    "ContestRuntimeDetails",
+    "WorkspaceParticipant",
+    "WorkspaceDetails",
+    "TeamProgressDetails",
+    "PermissionsDetails",
+    "ContestTeamProgressResponse",
 ]
 

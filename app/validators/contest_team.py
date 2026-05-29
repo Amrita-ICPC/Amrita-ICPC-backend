@@ -1,20 +1,60 @@
 from uuid import UUID
 
+from fastapi import status
+
+from app.exceptions.base import AppBaseException
 from app.exceptions.contest import (
     ContestMaxTeamsReachedError,
+    ContestTeamNotFoundException,
     TeamCanceledError,
     TeamDisqualifiedError,
+    ContestRuntimeNotInitializedError,
+    ContestRuntimeCancelledError,
+    ContestRuntimeFinishedError,
+    ContestRuntimePausedError,
 )
 from app.exceptions.student.teams import (
     InvalidContestTeamMemberStatusUpdateException,
     TeamMemberAccessDeniedError,
 )
-from app.utils.enums import ContestTeamMemberStatus, TeamStatus
+from app.models import ContestTeam, ContestRuntime
+from app.utils.enums import ContestTeamMemberStatus, TeamApprovalStatus, TeamStatus, ContestRuntimeStatus
 
 
 class ContestTeamValidator:
     def __init__(self)->None:
         pass
+
+    @staticmethod
+    def validate_contest_runtime_for_session(contest_runtime: ContestRuntime | None) -> None:
+        """
+        Validate the contest runtime status and expiration for starting a session.
+
+        Args:
+            contest_runtime: The ContestRuntime model instance or None.
+
+        Raises:
+            ContestRuntimeNotInitializedError: If the runtime is None.
+            ContestRuntimeCancelledError: If the runtime is cancelled.
+            ContestRuntimeFinishedError: If the runtime is finished or ended.
+            ContestRuntimePausedError: If the runtime is paused.
+        """
+        if contest_runtime is None:
+            raise ContestRuntimeNotInitializedError()
+
+        if contest_runtime.runtime_status == ContestRuntimeStatus.CANCELLED or contest_runtime.cancelled_at is not None:
+            raise ContestRuntimeCancelledError()
+
+        if contest_runtime.runtime_status == ContestRuntimeStatus.FINISHED:
+            raise ContestRuntimeFinishedError()
+
+        if contest_runtime.runtime_status == ContestRuntimeStatus.PAUSED:
+            raise ContestRuntimePausedError()
+
+        from datetime import datetime, timezone
+        current_time = datetime.now(timezone.utc)
+        if contest_runtime.end_time is not None and current_time > contest_runtime.end_time:
+            raise ContestRuntimeFinishedError()
 
     @staticmethod
     def validate_members_are_in_team(team_member_ids: set[UUID], invitee_ids: list[UUID], team_name: str) -> None:
@@ -69,3 +109,37 @@ class ContestTeamValidator:
         if max_teams is not None and max_teams > 0:
             if approved_teams_count >= max_teams:
                 raise ContestMaxTeamsReachedError(str(contest_id), max_teams)
+
+    @staticmethod
+    def validate_contest_team_for_session(contest_team: ContestTeam, contest_id: UUID) -> None:
+        """
+        Validate a contest team status and approval for starting a session.
+
+        Args:
+            contest_team: ContestTeam model instance.
+            contest_id: UUID of the contest.
+
+        Raises:
+            ContestTeamNotFoundException: If the team does not belong to the contest.
+            AppBaseException: If the team is not approved or is in draft status.
+            TeamDisqualifiedError: If the team is disqualified.
+            TeamCanceledError: If the team is cancelled.
+        """
+        if contest_team.contest_id != contest_id:
+            raise ContestTeamNotFoundException(str(contest_team.id))
+
+        if contest_team.approval_status != TeamApprovalStatus.APPROVED:
+            raise AppBaseException(
+                message="Team is not approved by contest organizers",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if contest_team.team_status == TeamStatus.DRAFT:
+            raise AppBaseException(
+                message="Team is in draft status",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        elif contest_team.team_status == TeamStatus.DISQUALIFIED:
+            raise TeamDisqualifiedError()
+        elif contest_team.team_status == TeamStatus.CANCELLED:
+            raise TeamCanceledError()

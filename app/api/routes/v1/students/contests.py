@@ -30,7 +30,9 @@ from app.schema.student.contests import (
     StudentContestRegistrationRequest,
     StudentContestStatusResponse,
 )
+from app.schema.student.contest_team_progress import ContestTeamProgressResponse
 from app.schema.team import ContestTeamCreate, ContestTeamImport
+from app.repositories.contest_team_progress import ContestTeamProgressRepository
 from app.service.student.contest_team import ContestTeamService
 from app.service.student.contests import StudentContestService
 
@@ -45,7 +47,15 @@ def get_student_contest_service(
     team_repository = TeamRepository(db)
     contest_student_guard = ContestStudentGuard(db)
     contest_team_repository = ContestTeamRepository(db)
-    return StudentContestService(repository,contest_repository,contest_team_repository,team_repository,contest_student_guard)
+    contest_team_progress_repository = ContestTeamProgressRepository(db)
+    return StudentContestService(
+        repository,
+        contest_repository,
+        contest_team_repository,
+        team_repository,
+        contest_student_guard,
+        contest_team_progress_repository,
+    )
 
 def get_contest_team_service(
     db: AsyncSession = Depends(get_db),
@@ -343,6 +353,61 @@ async def invite_members_to_contest_team(
         request,
         data=None,
         message="Members invited successfully",
+    )
+
+
+@router.post(
+    "/{contest_id}/start",
+    response_model=APIResponse[ContestTeamProgressResponse],
+    summary="Start or resume a contest session for a team",
+)
+async def start_contest_session(
+    request: Request,
+    contest_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: StudentContestService = Depends(get_student_contest_service),
+):
+    """
+    Start or resume a contest session for a team.
+    """
+    result = await service.start_contest_session(
+        contest_id=contest_id,
+        user_id=user_id,
+    )
+    logger.info(
+        f"Successfully started/resumed session in contest {contest_id} by user {user_id}"
+    )
+    return create_api_response(
+        request,
+        data=result,
+        message="Contest session started successfully",
+    )
+
+@router.get(
+    "/{contest_id}/runtime",
+    response_model=APIResponse[ContestTeamProgressResponse],
+    summary="Get a contest session for a team",
+)
+async def get_runtime_session(
+    request: Request,
+    contest_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: StudentContestService = Depends(get_student_contest_service),
+):
+    """
+    Get a contest session for a team.
+    """
+    result = await service.get_runtime_session(
+        contest_id=contest_id,
+        user_id=user_id,
+    )
+    logger.info(
+        f"Successfully fetched session in contest {contest_id} by user {user_id}"
+    )
+    return create_api_response(
+        request,
+        data=result,
+        message="Contest session fetched successfully",
     )
 
 

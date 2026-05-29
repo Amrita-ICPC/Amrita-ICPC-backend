@@ -54,6 +54,14 @@ class Contest(Base):
             "(contest_mode = 'team')",
             name="check_mode_team_size_consistency",
         ),
+        CheckConstraint(
+            "duration IS NULL OR duration <= EXTRACT(EPOCH FROM (end_time - start_time))",
+            name="check_duration_less_than_contest_length",
+        ),
+        CheckConstraint(
+            "duration IS NULL OR duration <= EXTRACT(EPOCH FROM (end_time - start_time))",
+            name="check_duration_less_than_contest_length",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -133,6 +141,8 @@ class Contest(Base):
     )
     end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
+    duration: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
@@ -157,6 +167,9 @@ class Contest(Base):
         "ContestTeamMember", back_populates="contest", cascade="all, delete-orphan"
     )
 
+    progress: Mapped[list["ContestTeamProgress"]] = relationship(
+        "ContestTeamProgress", back_populates="contest", cascade="all, delete-orphan"
+    )
 
 class ContestInstructor(Base):
     __tablename__ = "contest_instructor"
@@ -256,8 +269,9 @@ class ContestTeamProgress(Base):
     contest_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("contest.id", ondelete="CASCADE"), primary_key=True
     )
-    team_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey(Team.id, ondelete="CASCADE"), primary_key=True
+
+    contest_team_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("contest_team.id", ondelete="CASCADE"), primary_key=True
     )
     
     # Scoring related fields
@@ -275,22 +289,25 @@ class ContestTeamProgress(Base):
 
     # Time related fields
     end_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    extra_time_seconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     #Editor field
     current_editor_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
     current_editor_user: Mapped["User"] = relationship(
-        "User", lazy="joined", foreign_keys=[current_editor_user_id]
-    )
+    "User",
+    foreign_keys=[current_editor_user_id],
+    lazy="selectin",
+)
 
     contest_team = relationship(
-        "ContestTeam",
-        back_populates="progress",
-        uselist=False,
-        foreign_keys=[contest_id, team_id],
-        primaryjoin="and_(ContestTeamProgress.contest_id==ContestTeam.contest_id, ContestTeamProgress.team_id==ContestTeam.team_id)",
+        "ContestTeam", back_populates="progress", uselist=False
     )
+
+    contest = relationship("Contest", back_populates="progress")
+    
+    # User relationships
     flagger = relationship("User", foreign_keys=[flagged_by])
 
     created_at: Mapped[datetime] = mapped_column(
@@ -362,17 +379,7 @@ class ContestTeam(Base):
     team = relationship("Team", back_populates="team_contests", foreign_keys=[team_id])
     leader = relationship("User", foreign_keys=[leader_id])
     contest_team_member:Mapped[list["ContestTeamMember"]] = relationship("ContestTeamMember", back_populates="contest_team", cascade="all, delete-orphan")
-
-
-
-    progress = relationship(
-        "ContestTeamProgress",
-        back_populates="contest_team",
-        uselist=False,
-        cascade="all, delete-orphan",
-        foreign_keys="[ContestTeamProgress.contest_id, ContestTeamProgress.team_id]",
-        primaryjoin="and_(ContestTeam.contest_id==ContestTeamProgress.contest_id, ContestTeam.team_id==ContestTeamProgress.team_id)",
-    )
+    progress = relationship("ContestTeamProgress", back_populates="contest_team", cascade="all, delete-orphan")
 
 class ContestTeamMember(Base):
     __tablename__ = "contest_team_member"

@@ -87,6 +87,15 @@ class ContestTeamRepository:
         await self.db.refresh(contest_team)
         return contest_team
 
+    async def lock_contest_team(self, contest_team_id: UUID) -> None:
+        """Acquire a row-level lock on the contest team to prevent race conditions.
+
+        Args:
+            contest_team_id: The ID of the contest team to lock.
+        """
+        lock_stmt = select(ContestTeam).where(ContestTeam.id == contest_team_id).with_for_update()
+        await self.db.execute(lock_stmt)
+
     async def count_contest_team_members(
         self,
         contest_team_id: UUID,
