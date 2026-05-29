@@ -48,7 +48,10 @@ class Config(BaseSettings):
     DATABASE_PORT: Optional[int] = Field(default=5432, description="Database port")
     DATABASE_POOL_SIZE: int = Field(default=5, description="Database pool size")
     DATABASE_MAX_OVERFLOW: int = Field(default=10, description="Database max overflow")
-    DATABASE_URL: str = Field(default="postgresql+psycopg2://postgres:postgres@localhost:5432/postgres", description="Database URL")
+    DATABASE_URL: str = Field(
+        default="",
+        description="Database URL (must be provided via environment in deployed environments)",
+    )
 
     # Redis configuration
     REDIS_HOST: Optional[str] = Field(default=None, description="Redis host")

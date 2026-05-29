@@ -1,8 +1,10 @@
 from uuid import UUID
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.contest import ContestTeamProgress
+
 from app.exceptions.contest import ContestTeamProgressNotFoundError
+from app.models.contest import ContestTeamProgress
 
 
 class ContestTeamProgressRepository:
@@ -45,20 +47,6 @@ class ContestTeamProgressRepository:
         result = await self.db.execute(stmt)
         return result.scalars().one_or_none()
 
-    async def lock_contest_team_progress(self, contest_id: UUID, contest_team_id: UUID) -> None:
-        """
-        Acquire a row-level lock on the contest team progress to prevent race conditions.
-
-        Args:
-            contest_id: The UUID of the contest.
-            contest_team_id: The UUID of the contest team to lock.
-        """
-        lock_stmt = select(ContestTeamProgress).where(
-            ContestTeamProgress.contest_id == contest_id,
-            ContestTeamProgress.contest_team_id == contest_team_id,
-        ).with_for_update()
-        await self.db.execute(lock_stmt)
-
     async def get_contest_team_progress_or_raise(
         self, contest_id: UUID, contest_team_id: UUID
     ) -> ContestTeamProgress:
@@ -75,9 +63,13 @@ class ContestTeamProgressRepository:
         Raises:
             ContestTeamProgressNotFoundError: If the progress record does not exist.
         """
-        progress = await self.get_contest_team_progress_by_id(contest_id, contest_team_id)
+        progress = await self.get_contest_team_progress_by_id(
+            contest_id, contest_team_id
+        )
         if not progress:
-            raise ContestTeamProgressNotFoundError(str(contest_id), str(contest_team_id))
+            raise ContestTeamProgressNotFoundError(
+                str(contest_id), str(contest_team_id)
+            )
         return progress
 
     async def create_contest_team_progress(

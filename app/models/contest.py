@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-from app.models.user import User
-from app.utils.enums import ContestRuntimeStatus
-
 import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
@@ -25,8 +22,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
 from app.models.team import Team
+from app.models.user import User
 from app.utils.enums import (
     ContestMode,
+    ContestRuntimeStatus,
     ContestStatus,
     ContestTeamMemberStatus,
     ScoringType,
@@ -53,10 +52,6 @@ class Contest(Base):
             "(contest_mode = 'individual' AND min_team_size = 1 AND max_team_size = 1) OR "
             "(contest_mode = 'team')",
             name="check_mode_team_size_consistency",
-        ),
-        CheckConstraint(
-            "duration IS NULL OR duration <= EXTRACT(EPOCH FROM (end_time - start_time))",
-            name="check_duration_less_than_contest_length",
         ),
         CheckConstraint(
             "duration IS NULL OR duration <= EXTRACT(EPOCH FROM (end_time - start_time))",
@@ -171,6 +166,7 @@ class Contest(Base):
         "ContestTeamProgress", back_populates="contest", cascade="all, delete-orphan"
     )
 
+
 class ContestInstructor(Base):
     __tablename__ = "contest_instructor"
 
@@ -230,19 +226,29 @@ class ContestRuntime(Base):
         default=ContestRuntimeStatus.SCHEDULED,
     )
 
-    end_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    end_time: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
-    paused_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    paused_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     total_paused_duration: Mapped[int] = mapped_column(Integer, default=0)
-    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     scoreboard_frozen: Mapped[bool] = mapped_column(Boolean, default=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
     )
-    updated_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"),nullable=True)
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
     updated_user: Mapped["User"] = relationship(
         "User", lazy="joined", foreign_keys=[updated_by]
     )
@@ -265,7 +271,7 @@ class ContestTeamProgress(Base):
     """
 
     __tablename__ = "contest_team_progress"
-
+    __table_args__ = (UniqueConstraint("contest_id", "contest_team_id"),)
     contest_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("contest.id", ondelete="CASCADE"), primary_key=True
     )
@@ -273,7 +279,7 @@ class ContestTeamProgress(Base):
     contest_team_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("contest_team.id", ondelete="CASCADE"), primary_key=True
     )
-    
+
     # Scoring related fields
     score: Mapped[int] = mapped_column(Integer, default=0)
     penalty: Mapped[int] = mapped_column(Integer, default=0)
@@ -291,22 +297,20 @@ class ContestTeamProgress(Base):
     end_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     extra_time_seconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
-    #Editor field
+    # Editor field
     current_editor_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
     current_editor_user: Mapped["User"] = relationship(
-    "User",
-    foreign_keys=[current_editor_user_id],
-    lazy="selectin",
-)
-
-    contest_team = relationship(
-        "ContestTeam", back_populates="progress", uselist=False
+        "User",
+        foreign_keys=[current_editor_user_id],
+        lazy="selectin",
     )
 
+    contest_team = relationship("ContestTeam", back_populates="progress", uselist=False)
+
     contest = relationship("Contest", back_populates="progress")
-    
+
     # User relationships
     flagger = relationship("User", foreign_keys=[flagged_by])
 
@@ -343,7 +347,9 @@ class ContestTeam(Base):
             "contest_id",
             "team_id",
             unique=True,
-            postgresql_where=text("approval_status IN ('WAITING', 'APPROVED') OR team_status IN ('DRAFT', 'CONFIRMED')"),
+            postgresql_where=text(
+                "approval_status IN ('WAITING', 'APPROVED') OR team_status IN ('DRAFT', 'CONFIRMED')"
+            ),
         ),
     )
 
@@ -378,8 +384,15 @@ class ContestTeam(Base):
     contest = relationship("Contest", back_populates="teams", foreign_keys=[contest_id])
     team = relationship("Team", back_populates="team_contests", foreign_keys=[team_id])
     leader = relationship("User", foreign_keys=[leader_id])
-    contest_team_member:Mapped[list["ContestTeamMember"]] = relationship("ContestTeamMember", back_populates="contest_team", cascade="all, delete-orphan")
-    progress = relationship("ContestTeamProgress", back_populates="contest_team", cascade="all, delete-orphan")
+    contest_team_member: Mapped[list["ContestTeamMember"]] = relationship(
+        "ContestTeamMember", back_populates="contest_team", cascade="all, delete-orphan"
+    )
+    progress = relationship(
+        "ContestTeamProgress",
+        back_populates="contest_team",
+        cascade="all, delete-orphan",
+    )
+
 
 class ContestTeamMember(Base):
     __tablename__ = "contest_team_member"
@@ -408,13 +421,19 @@ class ContestTeamMember(Base):
     )
 
     status: Mapped[ContestTeamMemberStatus] = mapped_column(
-        Enum(ContestTeamMemberStatus), nullable=False, default=ContestTeamMemberStatus.INVITED
+        Enum(ContestTeamMemberStatus),
+        nullable=False,
+        default=ContestTeamMemberStatus.INVITED,
     )
     confirmed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     contest = relationship("Contest", back_populates="team_members")
-    contest_team:Mapped[ContestTeam] = relationship("ContestTeam",back_populates="contest_team_member", foreign_keys=[contest_team_id])
+    contest_team: Mapped[ContestTeam] = relationship(
+        "ContestTeam",
+        back_populates="contest_team_member",
+        foreign_keys=[contest_team_id],
+    )
     user = relationship("User", back_populates="team_registration_members")
 
 
