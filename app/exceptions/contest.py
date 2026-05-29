@@ -196,6 +196,15 @@ class ContestTeamNotFoundException(AppBaseException):
         )
 
 
+class ContestTeamProgressNotFoundError(AppBaseException):
+    """Raised when contest team progress is not found."""
+    def __init__(self, contest_id: str, contest_team_id: str):
+        super().__init__(
+            message=f"Contest team progress for contest ID {contest_id} and contest team ID {contest_team_id} not found",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+
 class TeamCanceledError(AppBaseException):
     """Raised when team is canceled."""
     def __init__(self):
@@ -231,5 +240,41 @@ class ContestMaxTeamsReachedError(AppBaseException):
     def __init__(self, contest_id: str, max_teams: int):
         super().__init__(
             message=f"Contest {contest_id} has reached its maximum allowed limit of {max_teams} teams.",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+
+class ContestRuntimeNotInitializedError(AppBaseException):
+    """Raised when the contest runtime has not been initialized."""
+    def __init__(self):
+        super().__init__(
+            message="Contest runtime has not been initialized",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+
+class ContestRuntimeCancelledError(AppBaseException):
+    """Raised when the contest has been cancelled."""
+    def __init__(self):
+        super().__init__(
+            message="Contest has been cancelled",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+
+class ContestRuntimeFinishedError(AppBaseException):
+    """Raised when the contest has already ended/finished."""
+    def __init__(self):
+        super().__init__(
+            message="Contest has already ended",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+
+class ContestRuntimePausedError(AppBaseException):
+    """Raised when the contest is currently paused."""
+    def __init__(self):
+        super().__init__(
+            message="Contest is currently paused",
             status_code=status.HTTP_400_BAD_REQUEST,
         )

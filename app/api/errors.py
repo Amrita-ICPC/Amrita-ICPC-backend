@@ -1,3 +1,4 @@
+from app.exceptions.contest import ContestTeamProgressNotFoundError
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, Request, status
@@ -40,6 +41,10 @@ from app.exceptions.contest import (
     StudentNotEligibleForContestError,
     TeamAlreadyInContestError,
     TeamDisqualifiedError,
+    ContestRuntimeNotInitializedError,
+    ContestRuntimeCancelledError,
+    ContestRuntimeFinishedError,
+    ContestRuntimePausedError,
 )
 from app.exceptions.execution import (
     CodeExecutionError,
@@ -478,6 +483,50 @@ def setup_exception_handlers(app: FastAPI) -> None:
             details=[exc.detail] if exc.detail else None,
         )
 
+    @app.exception_handler(ContestRuntimeNotInitializedError)
+    async def contest_runtime_not_initialized_handler(request: Request, exc: ContestRuntimeNotInitializedError):
+        logger.warning(f"Contest runtime not initialized: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="CONTEST_RUNTIME_NOT_INITIALIZED",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(ContestRuntimeCancelledError)
+    async def contest_runtime_cancelled_handler(request: Request, exc: ContestRuntimeCancelledError):
+        logger.warning(f"Contest runtime cancelled: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="CONTEST_RUNTIME_CANCELLED",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(ContestRuntimeFinishedError)
+    async def contest_runtime_finished_handler(request: Request, exc: ContestRuntimeFinishedError):
+        logger.warning(f"Contest runtime finished: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="CONTEST_RUNTIME_FINISHED",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(ContestRuntimePausedError)
+    async def contest_runtime_paused_handler(request: Request, exc: ContestRuntimePausedError):
+        logger.warning(f"Contest runtime paused: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="CONTEST_RUNTIME_PAUSED",
+            details=[exc.detail] if exc.detail else None,
+        )
+
     @app.exception_handler(QuestionAlreadyInContestError)
     async def question_already_in_contest_handler(
         request: Request, exc: QuestionAlreadyInContestError
@@ -680,6 +729,17 @@ def setup_exception_handlers(app: FastAPI) -> None:
             message=exc.message,
             error_code="QUESTION_NOT_FOUND",
             details=[exc.detail] if exc.detail else None,
+        )
+    
+    @app.exception_handler(ContestTeamProgressNotFoundError)
+    async def contest_team_progress_not_found_error(request: Request, exc: ContestTeamProgressNotFoundError):
+        logger.warning(f"Contest Team Progress not found: {exc.message}")
+        return _create_error_response(
+              request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="CONTEST_TEAM_PROGRESS_NOT_FOUND",
+            details=[exc.detail] if exc.detail else None
         )
 
     @app.exception_handler(TemplateAlreadyExistsError)

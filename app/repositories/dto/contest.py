@@ -71,6 +71,7 @@ class CreateContestData:
     contest_mode: ContestMode
     audience_ids: list[UUID]
     created_by: UUID
+    duration: int | None
 
 
 @dataclass
@@ -98,6 +99,7 @@ class UpdateContestData:
     scoring_type: str | None | _UnsetType = UNSET
     team_approval_mode: TeamApprovalMode | None | _UnsetType = UNSET
     contest_mode: ContestMode | None | _UnsetType = UNSET
+    duration: int | None | _UnsetType = UNSET
 
 
 @dataclass

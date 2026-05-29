@@ -2,11 +2,16 @@ from uuid import UUID
 
 from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.exceptions.contest import (
     StudentAlreadyInContestError,
     StudentNotEligibleForContestError,
     TeamAlreadyInContestError,
+)
+from app.exceptions.student.teams import (
+    TeamLeaderAccessDeniedError,
+    TeamMemberAccessDeniedError,
 )
 from app.exceptions.student.contests import NoContestTeamMemberFoundError
 from app.models import (
@@ -99,4 +104,48 @@ class ContestStudentGuard:
         existing_user_ids = set(result.scalars().all())
         if len(existing_user_ids) == 0:
             raise NoContestTeamMemberFoundError(detail=f"User {user_id} is not a member of contest team {contest_team_id}")
+
+    async def check_user_belongs_to_contest_team(
+        self, contest_id: UUID, contest_team_id: UUID, user_id: UUID
+    ) -> ContestTeamMember:
+        """Check if the student is a member of the contest team and status is accepted.
+
+        Args:
+            contest_id: UUID of the contest.
+            contest_team_id: UUID of the contest team.
+            user_id: UUID of the student user.
+
+        Returns:
+            ContestTeamMember: The contest team member record if valid.
+
+        Raises:
+            TeamMemberAccessDeniedError: If not an accepted member of the contest team.
+        """
+        query = select(ContestTeamMember).where(
+            ContestTeamMember.contest_id == contest_id,
+            ContestTeamMember.user_id == user_id,
+            ContestTeamMember.status == ContestTeamMemberStatus.ACCEPTED
+        ).options(
+            selectinload(ContestTeamMember.contest_team)
+        )
+        result = await self.db.execute(query)
+        contest_team_member = result.scalars().first()
+
+        if not contest_team_member or contest_team_member.contest_team_id != contest_team_id:
+            raise TeamMemberAccessDeniedError(team_id=str(contest_team_id), user_id=str(user_id))
+
+        return contest_team_member
+
+    def check_is_contest_team_leader(self, user_id: UUID, contest_team: ContestTeam) -> None:
+        """Check if the requesting student is the leader of the contest team.
+
+        Args:
+            user_id: UUID of the student user.
+            contest_team: ContestTeam model instance.
+
+        Raises:
+            TeamLeaderAccessDeniedError: If the student is not the contest team leader.
+        """
+        if contest_team.leader_id != user_id:
+            raise TeamLeaderAccessDeniedError(team_id=str(contest_team.id), user_id=str(user_id))
 

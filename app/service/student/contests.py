@@ -1,21 +1,44 @@
-from datetime import datetime, timezone
+from app.repositories import contest_team_progress
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
+
+from fastapi import status
 
 from app.core.cache.decorators import cache_get
 from app.core.guards.contest_student import ContestStudentGuard
+from app.exceptions.base import AppBaseException
+from app.exceptions.contest import (
+    ContestRuntimeNotInitializedError,
+)
+from app.exceptions.student.contests import NoContestTeamMemberFoundError
 from app.mappers.student.contest_mappers import (
     to_student_available_contests_list_response,
     to_student_contest_details_response,
     to_student_contest_not_registered_response,
     to_student_contest_status_response,
     to_team_member_status,
+    build_workspace,
+    build_runtime_state,
+    build_permissions,
+    build_team_progress,
+    build_session_status,
+    build_contest_session_response,
 )
+from app.models import ContestTeamProgress, ContestRuntime, ContestTeam
 from app.repositories.contest import ContestRepository
+from app.repositories.contest_runtime import ContestRuntimeRepository
+from app.repositories.contest_team_progress import ContestTeamProgressRepository
 from app.repositories.dto.pagination import PaginationParams
 from app.repositories.dto.student.contests import StudentContestFilters
 from app.repositories.student.contest import StudentContestRepository
 from app.repositories.student.contest_team import ContestTeamRepository
 from app.repositories.team import TeamRepository
+from app.validators.contest import ContestValidator
+from app.validators.contest_team import ContestTeamValidator
+from app.utils.contest import calculate_effective_times
+from app.schema.student.contest_team_progress import (
+    ContestTeamProgressResponse,
+)
 from app.schema.student.contests import (
     StudentContestDetailsResponse,
     StudentContestListResponse,
@@ -24,6 +47,7 @@ from app.schema.student.contests import (
 )
 from app.utils.contest import compute_run_status
 from app.utils.enums import (
+    ContestRuntimeStatus,
     ContestTeamMemberStatus,
     RegistrationState,
     TeamApprovalStatus,
@@ -46,6 +70,7 @@ class StudentContestService:
         contest_team_reposiotry: ContestTeamRepository,
         team_repository: TeamRepository,
         contest_student_guard: ContestStudentGuard,
+        contest_team_progress_repository: ContestTeamProgressRepository
     ) -> None:
         """Initialize the StudentContestService with required dependencies.
 
@@ -60,6 +85,7 @@ class StudentContestService:
         self.contest_repository = contest_repository
         self.team_repository = team_repository
         self.contest_team_repository = contest_team_reposiotry
+        self.contest_team_progress_repository = contest_team_progress_repository
 
     @cache_get(
         key_builder=lambda self, user_id, request, search, pagination:
@@ -245,3 +271,137 @@ class StudentContestService:
             status= contest_team.team_status,
             team_id=contest_team.team_id
         )
+
+    async def get_contest_session(
+        self, contest_id: UUID, user_id: UUID, is_start: bool = False
+    ) -> ContestTeamProgressResponse:
+        """
+        Get or start a contest session for a team.
+
+        Args:
+            contest_id: The UUID of the contest.
+            user_id: The UUID of the requesting user.
+            is_start: Flag to indicate if this is a start request.
+
+        Returns:
+            ContestTeamProgressResponse: The current contest team session status and capabilities.
+        """
+        # =========================================================
+        # STEP 1 — Validate Contest Access
+        # =========================================================
+        contest = await self.contest_repository.get_contest_or_raise(contest_id)
+        ContestValidator.validate_contest_is_published(contest.status, contest_id)
+        contest_team_member = await self.repository.get_contest_team_member(
+            contest_id=contest_id, user_id=user_id
+        )
+        if not contest_team_member:
+            raise NoContestTeamMemberFoundError()
+        contest_team = contest_team_member.contest_team
+        contest_team_id = contest_team.id
+        ContestTeamValidator.validate_contest_team_for_session(contest_team, contest_id)
+
+        # =========================================================
+        # STEP 2 — Validate Runtime Access
+        # =========================================================
+        runtime_repo = ContestRuntimeRepository(self.contest_team_progress_repository.db)
+        contest_runtime = await runtime_repo.get_contest_runtime_by_id(contest_id)
+        if contest_runtime is None:
+            raise ContestRuntimeNotInitializedError()
+        ContestTeamValidator.validate_contest_runtime_for_session(contest_runtime)
+
+        # =========================================================
+        # STEP 3 — Acquire Participation Lock
+        # =========================================================
+        await self.contest_team_progress_repository.lock_contest_team_progress(contest_id, contest_team_id)
+
+        # =========================================================
+        # STEP 4 — Get Or Create Team Progress
+        # =========================================================
+        progress = await self.contest_team_progress_repository.get_contest_team_progress_by_id(contest_id, contest_team_id)
+
+        current_time = datetime.now(timezone.utc)
+        if progress is not None:
+            already_started = True
+            started_at = progress.created_at
+        else:
+            if is_start:
+                self.contest_student_guard.check_is_contest_team_leader(user_id, contest_team)
+                already_started = False
+                started_at = current_time
+                if contest.duration is not None:
+                    team_end_time = started_at + timedelta(seconds=contest.duration)
+                    if team_end_time > contest.end_time:
+                        team_end_time = contest.end_time
+                else:
+                    team_end_time = contest.end_time
+                progress = ContestTeamProgress(
+                    contest_id=contest_id,
+                    contest_team_id=contest_team_id,
+                    current_editor_user_id=contest_team.leader_id,
+                    score=0,
+                    penalty=0,
+                    solved_questions_count=0,
+                    extra_time_seconds=0,
+                    end_time=team_end_time,
+                )
+                await self.contest_team_progress_repository.create_contest_team_progress(progress)
+            else:
+                # Should not happen if called from get_runtime_session and progress is None
+                raise AppBaseException(message="Contest session not started", status_code=status.HTTP_404_NOT_FOUND, detail="Contest session not started")
+
+        # =========================================================
+        # STEP 5 — Build Workspace State
+        # =========================================================
+        contest_team_members = await self.contest_team_repository.get_contest_team_members(
+            contest_team_id, [ContestTeamMemberStatus.ACCEPTED]
+        )
+        workspace = build_workspace(contest_team_members, progress, user_id)
+
+        # =========================================================
+        # STEP 6 — Build Runtime State
+        # =========================================================
+        is_paused = contest_runtime.runtime_status == ContestRuntimeStatus.PAUSED
+        paused_at = contest_runtime.paused_at
+        if progress.end_time is None:
+            raise AppBaseException(
+                message="Contest session has no end time",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        effective_end_time, remaining_seconds = calculate_effective_times(
+            base_end_time=progress.end_time,
+            total_paused_duration=contest_runtime.total_paused_duration,
+            extra_time_seconds=progress.extra_time_seconds,
+            is_paused=is_paused,
+            paused_at=paused_at,
+        )
+        runtime_state = build_runtime_state(contest_runtime, effective_end_time, remaining_seconds)
+
+        # =========================================================
+        # STEP 7 — Build Permissions
+        # =========================================================
+        permissions = build_permissions(is_paused, remaining_seconds, progress, user_id)
+
+        # =========================================================
+        # STEP 8 — Return Unified Session Response
+        # =========================================================
+        session_status = build_session_status(already_started, started_at)
+        team_progress_details = build_team_progress(progress)
+        return build_contest_session_response(
+            contest_id=contest_id,
+            contest_team_id=contest_team_id,
+            session=session_status,
+            runtime=runtime_state,
+            workspace=workspace,
+            team_progress=team_progress_details,
+            permissions=permissions,
+        )
+
+    async def start_contest_session(
+        self, contest_id: UUID, user_id: UUID
+    ) -> ContestTeamProgressResponse:
+        return await self.get_contest_session(contest_id, user_id, is_start=True)
+
+    async def get_runtime_session(
+        self, contest_id: UUID, user_id: UUID
+    ) -> ContestTeamProgressResponse:
+        return await self.get_contest_session(contest_id, user_id, is_start=False)

@@ -36,6 +36,7 @@ def build_create_contest_dto(
         contest_mode=contest.contest_mode,
         audience_ids=contest.audience_ids,
         created_by=created_by,
+        duration=contest.duration,
     )
 
 
@@ -76,6 +77,7 @@ def build_update_contest_dto(contest_data: ContestUpdate) -> UpdateContestData:
             if "team_approval_mode" in fields_set
             else UNSET
         ),
+        duration=contest_data.duration if "duration" in fields_set else UNSET,
     )
 
 
@@ -134,6 +136,7 @@ def to_contest_response(
         show_leaderboard=contest.show_leaderboard,
         published_at=contest.published_at,
         published_by=contest.published_by,
+        duration=contest.duration,
     )
 
     return response
@@ -156,6 +159,7 @@ def to_contest_summary_response(
         run_status=run_status,
         status=contest.status,
         created_at=contest.created_at,
+        duration=contest.duration,
         audiences=[
             ContestAudienceResponse.model_validate(link.audience)
             for link in contest.audience_links
@@ -186,6 +190,7 @@ def build_contest_entity(contest_data: CreateContestData) -> Contest:
         team_approval_mode=contest_data.team_approval_mode,
         contest_mode=contest_data.contest_mode,
         created_by=contest_data.created_by,
+        duration=contest_data.duration,
     )
 
 

@@ -387,6 +387,33 @@ class TeamInvitationStatus(str, enum.Enum):
     ACCEPTED = "ACCEPTED"
     REJECTED = "REJECTED"
 
+class VisibilityStatus(str, enum.Enum):
+    PUBLIC = "PUBLIC"
+    PRIVATE = "PRIVATE"
+
+
+class WorkspaceRole(str, enum.Enum):
+    """
+    Enumeration of workspace roles for contest sessions.
+    
+    Attributes:
+        EDITOR: Participant has edit rights in the workspace.
+        VIEWER: Participant can only view the workspace.
+    """
+    EDITOR = "EDITOR"
+    VIEWER = "VIEWER"
+
+
+class WorkspaceMode(str, enum.Enum):
+    """
+    Enumeration of workspace collaboration modes.
+    
+    Attributes:
+        SINGLE_EDITOR: Only one participant can edit at a time.
+    """
+    SINGLE_EDITOR = "SINGLE_EDITOR"
+
+
 class InvitationType(str, enum.Enum):
 
     REQUEST = "REQUEST"

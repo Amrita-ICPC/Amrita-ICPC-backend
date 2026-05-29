@@ -25,6 +25,17 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
+from app.models.contest import ContestRuntime, ContestTeamProgress
+from app.utils.enums import WorkspaceMode, WorkspaceRole, ContestRuntimeStatus
+from app.schema.student.contest_team_progress import (
+    PermissionsDetails,
+    ContestRuntimeDetails,
+    ContestSessionStatus,
+    ContestTeamProgressResponse,
+    TeamProgressDetails,
+    WorkspaceDetails,
+    WorkspaceParticipant,
+)
 
 from app.schema.student.contests import (
     ReadinessStatus,
@@ -308,3 +319,104 @@ def to_contest_team_members(
         )
         for member_id in member_ids
     ]
+
+
+
+def build_workspace(
+    contest_team_members: list[ContestTeamMember],
+    progress: ContestTeamProgress,
+    user_id: UUID,
+) -> WorkspaceDetails:
+    participants = []
+    for member in contest_team_members:
+        role = WorkspaceRole.EDITOR if progress.current_editor_user_id == member.user_id else WorkspaceRole.VIEWER
+        is_self = member.user_id == user_id
+        participants.append(
+            WorkspaceParticipant(
+                user_id=member.user_id,
+                name=member.user.name,
+                avatar_url=None,
+                role=role,
+                is_self=is_self,
+                is_online=None,  # TODO: integrate with redis to get online status
+            )
+        )
+    return WorkspaceDetails(mode=WorkspaceMode.SINGLE_EDITOR, participants=participants)
+
+
+def build_runtime_state(
+    contest_runtime: ContestRuntime,
+    effective_end_time: datetime | None,
+    remaining_seconds: int,
+) -> ContestRuntimeDetails:
+    is_paused = contest_runtime.runtime_status == ContestRuntimeStatus.PAUSED
+    paused_at = contest_runtime.paused_at if is_paused else None
+
+    return ContestRuntimeDetails(
+        status=contest_runtime.runtime_status,
+        effective_end_time=effective_end_time,
+        remaining_seconds=remaining_seconds,
+        is_paused=is_paused,
+        paused_at=paused_at,
+        scoreboard_frozen=contest_runtime.scoreboard_frozen,
+    )
+
+
+def build_permissions(
+    is_paused: bool,
+    remaining_seconds: int,
+    progress: ContestTeamProgress,
+    user_id: UUID,
+) -> PermissionsDetails:
+    is_time_up = remaining_seconds <= 0
+    can_edit = not is_paused and not is_time_up and progress.current_editor_user_id == user_id
+    can_submit = not is_paused and not is_time_up
+    can_switch_editor = not is_paused and not is_time_up
+
+    return PermissionsDetails(
+        can_view=True,
+        can_edit=can_edit,
+        can_submit=can_submit,
+        can_switch_editor=can_switch_editor,
+    )
+
+
+def build_team_progress(progress: ContestTeamProgress) -> TeamProgressDetails:
+    return TeamProgressDetails(
+        score=progress.score,
+        penalty=progress.penalty,
+        solved_count=progress.solved_questions_count,
+        last_submission_at=None,
+        extra_time_seconds=progress.extra_time_seconds,
+        has_extra_time=(progress.extra_time_seconds or 0) > 0,
+    )
+
+
+def build_session_status(
+    already_started: bool,
+    started_at: datetime | None,
+) -> ContestSessionStatus:
+    return ContestSessionStatus(
+        already_started=already_started,
+        started_at=started_at,
+    )
+
+
+def build_contest_session_response(
+    contest_id: UUID,
+    contest_team_id: UUID,
+    session: ContestSessionStatus,
+    runtime: ContestRuntimeDetails,
+    workspace: WorkspaceDetails,
+    team_progress: TeamProgressDetails,
+    permissions: PermissionsDetails,
+) -> ContestTeamProgressResponse:
+    return ContestTeamProgressResponse(
+        contest_id=contest_id,
+        contest_team_id=contest_team_id,
+        session=session,
+        runtime=runtime,
+        workspace=workspace,
+        team_progress=team_progress,
+        permissions=permissions,
+    )

@@ -75,6 +75,7 @@ class StudentContestAvailableResponse(BaseModel):
     teams_count: int = Field(0, description="Total number of teams registered and approved")
     min_team_size: int = Field(..., description="Minimum team size")
     max_team_size: int = Field(..., description="Maximum team size")
+    duration: Optional[int] = Field(None, description="Contest duration in seconds")
 
 
 class StudentContestListResponse(BaseModel):
@@ -149,3 +150,8 @@ class StudentContestStatusResponse(BaseModel):
     registration_status: RegistrationStatus = Field(..., description="Registration and approval status")
     readiness: ReadinessStatus = Field(..., description="Readiness to start the contest")
     team: Optional[TeamParticipationStatus] = Field(None, description="Team details if registered")
+
+
+class ContestSessionStartRequest(BaseModel):
+    """Schema for starting or resuming a contest session."""
+    contest_team_id: UUID = Field(..., description="The UUID of the contest team to start/resume the session for")
