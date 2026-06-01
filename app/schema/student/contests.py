@@ -1,16 +1,21 @@
 from datetime import datetime
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+if TYPE_CHECKING:
+    from app.models.question import Question
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.schema.contest import ContestAudienceResponse
+from app.schema.tag import TagResponse
 from app.utils.enums import (
     ContestMode,
     ContestRunStatus,
     ContestRuntimeStatus,
     ContestStatus,
     ContestTeamParticpationType,
+    QuestionDifficulty,
     RegistrationState,
     TeamApprovalMode,
     TeamApprovalStatus,
@@ -117,12 +122,24 @@ class StudentContestDetailsResponse(StudentContestAvailableResponse):
     status: ContestStatus = Field(..., description="Contest lifecycle status")
 
 
-class StudentContestProblemResponse(BaseModel):
-    pass
+class StudentContestQuestionResponse(BaseModel):
+    """Schema for a contest question in student view."""
+
+    id: UUID = Field(..., description="The ID of the question")
+    attempted: bool = Field(
+        ..., description="Whether the student has attempted the question"
+    )
+    solved: bool = Field(..., description="Whether the student has solved the question")
+
+    model_config = ConfigDict(from_attributes=True)
 
 
-class StudentContestProblemsListResponse(BaseModel):
-    pass
+class StudentContestQuestionsListResponse(BaseModel):
+    """Schema for a list of contest questions in student view."""
+
+    questions: list[StudentContestQuestionResponse] = Field(
+        ..., description="List of questions in the contest"
+    )
 
 
 class StudentContestRegistrationResponse(BaseModel):
@@ -224,3 +241,57 @@ class ContestSessionStartRequest(BaseModel):
     contest_team_id: UUID = Field(
         ..., description="The UUID of the contest team to start/resume the session for"
     )
+
+
+class StudentTemplateResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    language_id: int
+    starter_code: str
+
+
+class StudentQuestionDetailResponse(BaseModel):
+    id: UUID
+    title: str
+    question_text: str
+    difficulty: QuestionDifficulty
+    time_limit_ms: int
+    memory_limit_mb: int
+    allowed_languages: list[str] = Field(default_factory=list)
+    tags: list[TagResponse] = Field(default_factory=list)
+    templates: list[StudentTemplateResponse] = Field(default_factory=list)
+
+    @classmethod
+    def from_question(cls, question: "Question") -> "StudentQuestionDetailResponse":
+        language_names: list[str] = []
+        for mapping in getattr(question, "languages", []) or []:
+            language = getattr(mapping, "language", None)
+            name = getattr(language, "name", None)
+            if isinstance(name, str) and name:
+                language_names.append(name)
+
+        template_items = [
+            StudentTemplateResponse(
+                language_id=template.language_id,
+                starter_code=template.starter_code,
+            )
+            for template in (getattr(question, "templates", []) or [])
+        ]
+
+        tag_items = [
+            TagResponse(id=qt.tag.id, name=qt.tag.name)
+            for qt in (getattr(question, "tags", []) or [])
+            if getattr(qt, "tag", None)
+        ]
+
+        return cls(
+            id=question.id,
+            title=getattr(question, "title", "") or "Untitled Question",
+            question_text=question.question_text,
+            difficulty=question.difficulty,
+            time_limit_ms=question.time_limit_ms,
+            memory_limit_mb=question.memory_limit_mb,
+            allowed_languages=list(dict.fromkeys(language_names)),
+            tags=tag_items,
+            templates=template_items,
+        )

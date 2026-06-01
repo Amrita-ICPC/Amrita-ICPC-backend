@@ -167,7 +167,6 @@ class Submission(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
 
-    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     question_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("question.id"), nullable=False
     )
@@ -194,6 +193,12 @@ class Submission(Base):
         "SubmissionTestCase", back_populates="submission", cascade="all, delete-orphan"
     )
     language: Mapped[Language] = relationship("Language", back_populates="submissions")
+    contest_submission = relationship(
+        "ContestSubmission",
+        back_populates="submission",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
 
 
 class SubmissionTestCase(Base):

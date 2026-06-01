@@ -14,10 +14,11 @@ from app.schema.student.contests import (
     StudentContestAvailableResponse,
     StudentContestDetailsResponse,
     StudentContestListResponse,
-    StudentContestProblemResponse,
-    StudentContestProblemsListResponse,
+    StudentContestQuestionResponse,
+    StudentContestQuestionsListResponse,
     StudentContestRegistrationRequest,
     StudentContestRegistrationResponse,
+    StudentQuestionDetailResponse,
     StudentRegisteredContestListResponse,
     StudentRegisteredContestResponse,
 )
@@ -39,6 +40,7 @@ from app.schema.student.teams import (
     StudentTeamUpdateRequest,
     TeamMemberDetailResponse,
 )
+from app.schema.student.workspace import WorkspaceData, WorkspacePutRequest
 
 __all__ = [
     # Contest schemas - Available
@@ -49,8 +51,9 @@ __all__ = [
     "StudentRegisteredContestListResponse",
     # Contest schemas - Details & Problems
     "StudentContestDetailsResponse",
-    "StudentContestProblemResponse",
-    "StudentContestProblemsListResponse",
+    "StudentContestQuestionResponse",
+    "StudentContestQuestionsListResponse",
+    "StudentQuestionDetailResponse",
     # Contest schemas - Registration
     "StudentContestRegistrationRequest",
     "StudentContestRegistrationResponse",
@@ -79,4 +82,7 @@ __all__ = [
     "TeamProgressDetails",
     "PermissionsDetails",
     "ContestTeamProgressResponse",
+    # Workspace schemas
+    "WorkspaceData",
+    "WorkspacePutRequest",
 ]
