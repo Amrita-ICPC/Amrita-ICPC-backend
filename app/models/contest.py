@@ -178,6 +178,10 @@ class Contest(Base):
         "ContestTeamProgress", back_populates="contest", cascade="all, delete-orphan"
     )
 
+    contest_submissions: Mapped[list["ContestSubmission"]] = relationship(
+        "ContestSubmission", back_populates="contest"
+    )
+
 
 class ContestInstructor(Base):
     __tablename__ = "contest_instructor"
@@ -411,6 +415,12 @@ class ContestTeam(Base):
         cascade="all, delete-orphan",
     )
 
+    contest_submissions: Mapped[list["ContestSubmission"]] = relationship(
+        "ContestSubmission",
+        back_populates="contest_team",
+        cascade="all, delete-orphan",
+    )
+
 
 class ContestTeamMember(Base):
     __tablename__ = "contest_team_member"
@@ -455,6 +465,11 @@ class ContestTeamMember(Base):
     user = relationship("User", back_populates="team_registration_members")
     member_progress: Mapped[list[ContestTeamMemberProgress]] = relationship(
         "ContestTeamMemberProgress",
+        back_populates="contest_team_member",
+        cascade="all, delete-orphan",
+    )
+    contest_submissions: Mapped[list["ContestSubmission"]] = relationship(
+        "ContestSubmission",
         back_populates="contest_team_member",
         cascade="all, delete-orphan",
     )
@@ -580,4 +595,25 @@ class ContestTeamMemberProgress(Base):
         "ContestTeamMember",
         back_populates="member_progress",
         foreign_keys=[contest_team_member_id],
+    )
+
+
+class ContestSubmission(Base):
+    __tablename__ = "contest_submission"
+
+    submission_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("submission.id"), primary_key=True
+    )
+    contest_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("contest.id"))
+    contest_team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("contest_team.id"))
+    contest_team_member_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("contest_team_member.id")
+    )
+
+    submission = relationship("Submission", back_populates="contest_submission")
+    contest = relationship("Contest", back_populates="contest_submissions")
+    contest_team = relationship("ContestTeam", back_populates="contest_submissions")
+
+    contest_team_member = relationship(
+        "ContestTeamMember", back_populates="contest_submissions"
     )
