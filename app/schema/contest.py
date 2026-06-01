@@ -9,6 +9,7 @@ from app.utils.enums import (
     ContestMode,
     ContestRunStatus,
     ContestStatus,
+    ContestTeamParticpationType,
     ScoringType,
     TeamApprovalMode,
 )
@@ -48,6 +49,13 @@ class ContestBase(BaseModel):
         default=ContestMode.INDIVIDUAL, description="Contest mode (individual or team)"
     )
     duration: Optional[int] = Field(None, description="Contest duration in seconds")
+    show_leaderboard_during_contest: bool = Field(
+        default=False, description="Whether to show leaderboard during the contest"
+    )
+    participation_type: ContestTeamParticpationType = Field(
+        default=ContestTeamParticpationType.LEADER_ONLY,
+        description="Participation type for team contests",
+    )
 
     @model_validator(mode="after")
     def validate_dates(self):
@@ -110,10 +118,13 @@ class ContestUpdate(BaseModel):
         None,
         description="How teams are approved in this contest",
     )
-    show_leaderboard: Optional[bool] = Field(
-        None, description="Whether to show leaderboard"
-    )
     duration: Optional[int] = Field(None, description="Contest duration in seconds")
+    show_leaderboard_during_contest: Optional[bool] = Field(
+        None, description="Whether to show leaderboard during the contest"
+    )
+    participation_type: Optional[ContestTeamParticpationType] = Field(
+        None, description="Participation type for team contests"
+    )
 
     @model_validator(mode="after")
     def validate_dates(self):
@@ -162,6 +173,12 @@ class ContestSummaryResponse(BaseModel):
         ..., description="Contest mode (individual or team)"
     )
     duration: Optional[int] = Field(None, description="Contest duration in seconds")
+    show_leaderboard_during_contest: bool = Field(
+        ..., description="Whether to show leaderboard during the contest"
+    )
+    participation_type: ContestTeamParticpationType = Field(
+        ..., description="Participation type for team contests"
+    )
     audiences: list[ContestAudienceResponse] = Field(
         default_factory=list, description="List of audiences linked to this contest"
     )
@@ -192,7 +209,6 @@ class ContestDetailResponse(ContestBase):
     created_at: datetime = Field(..., description="Contest creation time (UTC)")
     updated_at: datetime = Field(..., description="Last update time (UTC)")
     updated_by: Optional[UUID] = Field(None, description="User ID who last updated")
-    show_leaderboard: bool = Field(..., description="Whether leaderboard is shown")
     published_at: Optional[datetime] = Field(None, description="Published time (UTC)")
     published_by: Optional[UUID] = Field(
         None, description="User ID who published the contest"
@@ -332,6 +348,8 @@ class ReorderContestQuestionsRequest(BaseModel):
     )
 
     model_config = ConfigDict(from_attributes=True)
+
+
 class CloneQuestionConfig(BaseModel):
     """Configuration for a specific question being cloned."""
 
@@ -359,6 +377,7 @@ class ContestBankCloneRequest(BaseModel):
     )
 
     model_config = ConfigDict(from_attributes=True)
+
     @model_validator(mode="after")
     def validate_clone_selection(self) -> "ContestBankCloneRequest":
         if self.copy_all:
