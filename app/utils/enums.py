@@ -340,6 +340,7 @@ class AudienceType(str, enum.Enum):
     BATCH = "batch"
     CAMPUS = "campus"
 
+
 class ContestTeamMemberStatus(str, enum.Enum):
     """
     Enumeration of contest team registration statuses.
@@ -372,6 +373,7 @@ class TeamMemberRole(str, enum.Enum):
     LEADER = "LEADER"
     MEMBER = "MEMBER"
 
+
 class TeamInvitationStatus(str, enum.Enum):
     """
     Enumeration of team invitation statuses.
@@ -382,10 +384,12 @@ class TeamInvitationStatus(str, enum.Enum):
         ACCEPTED: Invitation is accepted.
         REJECTED: Invitation is rejected.
     """
+
     PENDING = "PENDING"
     CANCELLED = "CANCELLED"
     ACCEPTED = "ACCEPTED"
     REJECTED = "REJECTED"
+
 
 class VisibilityStatus(str, enum.Enum):
     PUBLIC = "PUBLIC"
@@ -395,11 +399,12 @@ class VisibilityStatus(str, enum.Enum):
 class WorkspaceRole(str, enum.Enum):
     """
     Enumeration of workspace roles for contest sessions.
-    
+
     Attributes:
         EDITOR: Participant has edit rights in the workspace.
         VIEWER: Participant can only view the workspace.
     """
+
     EDITOR = "EDITOR"
     VIEWER = "VIEWER"
 
@@ -407,15 +412,15 @@ class WorkspaceRole(str, enum.Enum):
 class WorkspaceMode(str, enum.Enum):
     """
     Enumeration of workspace collaboration modes.
-    
+
     Attributes:
         SINGLE_EDITOR: Only one participant can edit at a time.
     """
+
     SINGLE_EDITOR = "SINGLE_EDITOR"
 
 
 class InvitationType(str, enum.Enum):
-
     REQUEST = "REQUEST"
     INVITE = "INVITE"
 
@@ -424,8 +429,22 @@ class RegistrationState(str, enum.Enum):
     """
     Enumeration of student registration states in a contest.
     """
+
     NOT_REGISTERED = "NOT_REGISTERED"
     PENDING_APPROVAL = "PENDING_APPROVAL"
     APPROVED = "APPROVED"
 
 
+class ContestTeamParticpationType(str, enum.Enum):
+    """
+    Enumeration of contest team participation types.
+
+    Attributes:
+        LEADER_ONLY: Only leader can code
+        SHARED_SINGLE_EDITOR_WORKSPACE: All team members can code but only one can edit
+        INDIVIDUAL_WORKSPACE: Each team member has their own workspace
+    """
+
+    LEADER_ONLY = "LEADER_ONLY"
+    SHARED_SINGLE_EDITOR_WORKSPACE = "SHARED_SINGLE_EDITOR_WORKSPACE"
+    INDIVIDUAL_WORKSPACE = "INDIVIDUAL_WORKSPACE"

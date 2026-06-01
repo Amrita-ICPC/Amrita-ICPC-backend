@@ -37,6 +37,8 @@ def build_create_contest_dto(
         audience_ids=contest.audience_ids,
         created_by=created_by,
         duration=contest.duration,
+        show_leaderboard_during_contest=contest.show_leaderboard_during_contest,
+        participation_type=contest.participation_type,
     )
 
 
@@ -78,6 +80,16 @@ def build_update_contest_dto(contest_data: ContestUpdate) -> UpdateContestData:
             else UNSET
         ),
         duration=contest_data.duration if "duration" in fields_set else UNSET,
+        show_leaderboard_during_contest=(
+            contest_data.show_leaderboard_during_contest
+            if "show_leaderboard_during_contest" in fields_set
+            else UNSET
+        ),
+        participation_type=(
+            contest_data.participation_type
+            if "participation_type" in fields_set
+            else UNSET
+        ),
     )
 
 
@@ -133,10 +145,11 @@ def to_contest_response(
         created_at=contest.created_at,
         updated_at=contest.updated_at,
         updated_by=contest.updated_by,
-        show_leaderboard=contest.show_leaderboard,
         published_at=contest.published_at,
         published_by=contest.published_by,
         duration=contest.duration,
+        show_leaderboard_during_contest=contest.show_leaderboard_during_contest,
+        participation_type=contest.participation_type,
     )
 
     return response
@@ -160,6 +173,8 @@ def to_contest_summary_response(
         status=contest.status,
         created_at=contest.created_at,
         duration=contest.duration,
+        show_leaderboard_during_contest=contest.show_leaderboard_during_contest,
+        participation_type=contest.participation_type,
         audiences=[
             ContestAudienceResponse.model_validate(link.audience)
             for link in contest.audience_links
@@ -191,6 +206,8 @@ def build_contest_entity(contest_data: CreateContestData) -> Contest:
         contest_mode=contest_data.contest_mode,
         created_by=contest_data.created_by,
         duration=contest_data.duration,
+        show_leaderboard_during_contest=contest_data.show_leaderboard_during_contest,
+        participation_type=contest_data.participation_type,
     )
 
 

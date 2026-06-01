@@ -8,6 +8,7 @@ from app.utils.enums import (
     ContestQuestionSortBy,
     ContestRunStatus,
     ContestStatus,
+    ContestTeamParticpationType,
     QuestionDifficulty,
     SortOrder,
     TeamApprovalMode,
@@ -72,6 +73,8 @@ class CreateContestData:
     audience_ids: list[UUID]
     created_by: UUID
     duration: int | None
+    show_leaderboard_during_contest: bool
+    participation_type: ContestTeamParticpationType
 
 
 @dataclass
@@ -100,6 +103,8 @@ class UpdateContestData:
     team_approval_mode: TeamApprovalMode | None | _UnsetType = UNSET
     contest_mode: ContestMode | None | _UnsetType = UNSET
     duration: int | None | _UnsetType = UNSET
+    show_leaderboard_during_contest: bool | None | _UnsetType = UNSET
+    participation_type: ContestTeamParticpationType | None | _UnsetType = UNSET
 
 
 @dataclass

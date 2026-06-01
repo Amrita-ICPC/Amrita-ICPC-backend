@@ -9,6 +9,7 @@ from app.utils.enums import (
     ContestMode,
     ContestRunStatus,
     ContestStatus,
+    ContestTeamParticpationType,
     RegistrationState,
     TeamApprovalMode,
     TeamApprovalStatus,
@@ -45,8 +46,10 @@ class StudentContestRegistrationRequest(BaseModel):
 
         return value
 
+
 class StudentContestAvailableResponse(BaseModel):
     """Schema for contest available for students (List view)."""
+
     id: UUID = Field(..., description="Contest ID")
     name: str = Field(..., description="Contest name")
     description: Optional[str] = Field(None, description="Contest description")
@@ -57,8 +60,12 @@ class StudentContestAvailableResponse(BaseModel):
     run_status: ContestRunStatus = Field(
         ..., description="Contest temporal run-state (UPCOMING / LIVE / ENDED)"
     )
-    registration_start: Optional[datetime] = Field(None, description="Registration start time (UTC)")
-    registration_end: Optional[datetime] = Field(None, description="Registration end time (UTC)")
+    registration_start: Optional[datetime] = Field(
+        None, description="Registration start time (UTC)"
+    )
+    registration_end: Optional[datetime] = Field(
+        None, description="Registration end time (UTC)"
+    )
     created_at: datetime = Field(..., description="Contest creation time (UTC)")
     is_public: bool = Field(..., description="Whether contest is public")
     team_approval_mode: TeamApprovalMode = Field(
@@ -71,23 +78,36 @@ class StudentContestAvailableResponse(BaseModel):
     audiences: list[ContestAudienceResponse] = Field(
         default_factory=list, description="List of audiences linked to this contest"
     )
-    max_teams: Optional[int] = Field(None, description="Maximum number of teams allowed")
-    teams_count: int = Field(0, description="Total number of teams registered and approved")
+    max_teams: Optional[int] = Field(
+        None, description="Maximum number of teams allowed"
+    )
+    teams_count: int = Field(
+        0, description="Total number of teams registered and approved"
+    )
     min_team_size: int = Field(..., description="Minimum team size")
     max_team_size: int = Field(..., description="Maximum team size")
     duration: Optional[int] = Field(None, description="Contest duration in seconds")
+    show_leaderboard_during_contest: bool = Field(
+        ..., description="Whether to show leaderboard during the contest"
+    )
+    participation_type: ContestTeamParticpationType = Field(
+        ..., description="Participation type for team contests"
+    )
 
 
 class StudentContestListResponse(BaseModel):
     """Paginated list of contests for students."""
+
     contests: list[StudentContestAvailableResponse]
     total: int
     page: int
     page_size: int
     has_more: bool
 
+
 class StudentContestDetailsResponse(StudentContestAvailableResponse):
     """Placeholder for contest details response."""
+
     rules: Optional[str] = Field(None, description="Contest rules")
     team_approval_mode: TeamApprovalMode = Field(
         ...,
@@ -99,59 +119,101 @@ class StudentContestDetailsResponse(StudentContestAvailableResponse):
 class StudentContestProblemResponse(BaseModel):
     pass
 
+
 class StudentContestProblemsListResponse(BaseModel):
     pass
+
 
 class StudentContestRegistrationResponse(BaseModel):
     pass
 
+
 class StudentRegisteredContestListResponse(BaseModel):
     pass
+
 
 class StudentRegisteredContestResponse(BaseModel):
     pass
 
+
 class RegistrationStatus(BaseModel):
     """Schema for student registration status in a contest."""
-    registered: bool = Field(..., description="Whether the student is registered for the contest")
+
+    registered: bool = Field(
+        ..., description="Whether the student is registered for the contest"
+    )
     approved: bool = Field(..., description="Whether the registration is approved")
-    status: RegistrationState = Field(..., description="Combined registration status (e.g., APPROVED, PENDING_APPROVAL, NOT_REGISTERED)")
+    status: RegistrationState = Field(
+        ...,
+        description="Combined registration status (e.g., APPROVED, PENDING_APPROVAL, NOT_REGISTERED)",
+    )
+
 
 class ReadinessStatus(BaseModel):
     """Schema for student readiness to start a contest."""
-    can_start: bool = Field(..., description="Whether the student/team can start the contest")
-    reason: Optional[str] = Field(None, description="Reason if the student/team cannot start")
+
+    can_start: bool = Field(
+        ..., description="Whether the student/team can start the contest"
+    )
+    reason: Optional[str] = Field(
+        None, description="Reason if the student/team cannot start"
+    )
+
 
 class TeamMemberStatus(BaseModel):
     """Schema for team member status in participation view."""
+
     id: UUID = Field(..., description="ContestTeamMember ID of the member")
     user_id: UUID = Field(..., description="User ID of the member")
     name: str = Field(..., description="Name of the member")
     role: TeamMemberRole = Field(..., description="Role in the team (LEADER / MEMBER)")
     joined: bool = Field(..., description="Whether the user has joined the team")
-    confirmed: bool = Field(..., description="Whether the user has confirmed participation")
-    is_current_user: bool = Field(..., description="Whether the user is the current user")
+    confirmed: bool = Field(
+        ..., description="Whether the user has confirmed participation"
+    )
+    is_current_user: bool = Field(
+        ..., description="Whether the user is the current user"
+    )
+
 
 class TeamParticipationStatus(BaseModel):
     """Schema for team participation status in a contest."""
+
     id: UUID = Field(..., description="Team ID")
     name: str = Field(..., description="Team name")
-    members: list[TeamMemberStatus] = Field(..., description="List of team members and their status")
+    members: list[TeamMemberStatus] = Field(
+        ..., description="List of team members and their status"
+    )
     member_count: int = Field(..., description="Current number of members")
     min_team_size: int = Field(..., description="Minimum team size")
     max_team_size: int = Field(..., description="Maximum team size allowed")
     team_status: TeamStatus = Field(..., description="Team status")
-    team_approval_status: TeamApprovalStatus = Field(..., description="Team approval status")
-    completion_percentage: float = Field(..., description="Percentage of team completion")
+    team_approval_status: TeamApprovalStatus = Field(
+        ..., description="Team approval status"
+    )
+    completion_percentage: float = Field(
+        ..., description="Percentage of team completion"
+    )
     team_id: UUID | None = Field(None, description="Team ID if registered else None")
+
 
 class StudentContestStatusResponse(BaseModel):
     """Combined response for student's status and participation in a contest."""
-    registration_status: RegistrationStatus = Field(..., description="Registration and approval status")
-    readiness: ReadinessStatus = Field(..., description="Readiness to start the contest")
-    team: Optional[TeamParticipationStatus] = Field(None, description="Team details if registered")
+
+    registration_status: RegistrationStatus = Field(
+        ..., description="Registration and approval status"
+    )
+    readiness: ReadinessStatus = Field(
+        ..., description="Readiness to start the contest"
+    )
+    team: Optional[TeamParticipationStatus] = Field(
+        None, description="Team details if registered"
+    )
 
 
 class ContestSessionStartRequest(BaseModel):
     """Schema for starting or resuming a contest session."""
-    contest_team_id: UUID = Field(..., description="The UUID of the contest team to start/resume the session for")
+
+    contest_team_id: UUID = Field(
+        ..., description="The UUID of the contest team to start/resume the session for"
+    )

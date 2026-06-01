@@ -25,18 +25,17 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
+
 from app.models.contest import ContestRuntime, ContestTeamProgress
-from app.utils.enums import WorkspaceMode, WorkspaceRole, ContestRuntimeStatus
 from app.schema.student.contest_team_progress import (
-    PermissionsDetails,
     ContestRuntimeDetails,
     ContestSessionStatus,
     ContestTeamProgressResponse,
+    PermissionsDetails,
     TeamProgressDetails,
     WorkspaceDetails,
     WorkspaceParticipant,
 )
-
 from app.schema.student.contests import (
     ReadinessStatus,
     RegistrationStatus,
@@ -47,6 +46,7 @@ from app.schema.student.contests import (
     TeamMemberStatus,
     TeamParticipationStatus,
 )
+from app.utils.enums import ContestRuntimeStatus, WorkspaceMode, WorkspaceRole
 
 if TYPE_CHECKING:
     from app.repositories.dto import PaginatedResult
@@ -69,10 +69,7 @@ from app.utils.image import image_object_key_to_url
 
 
 def to_student_available_contest_response(
-    contest: "Contest",
-    *,
-    teams_count: int = 0,
-    run_status: ContestRunStatus
+    contest: "Contest", *, teams_count: int = 0, run_status: ContestRunStatus
 ) -> StudentContestAvailableResponse:
     """
     Map Contest ORM object and extra data to student available contest response.
@@ -95,11 +92,16 @@ def to_student_available_contest_response(
         audiences=[
             ContestAudienceResponse.model_validate(link.audience)
             for link in contest.audience_links
-        ] if contest.audience_links else [],
+        ]
+        if contest.audience_links
+        else [],
         max_teams=contest.max_teams,
         min_team_size=contest.min_team_size,
         max_team_size=contest.max_team_size,
         teams_count=teams_count,
+        duration=contest.duration,
+        show_leaderboard_during_contest=contest.show_leaderboard_during_contest,
+        participation_type=contest.participation_type,
     )
 
 
@@ -117,7 +119,7 @@ def to_student_available_contests_list_response(
         to_student_available_contest_response(
             contest,
             teams_count=teams_count_dict.get(contest.id, 0),
-            run_status=run_status_calculator(contest.start_time, contest.end_time)
+            run_status=run_status_calculator(contest.start_time, contest.end_time),
         )
         for contest in paginated_result.items
     ]
@@ -136,10 +138,7 @@ def to_student_available_contests_list_response(
 
 
 def to_student_contest_details_response(
-    contest: "Contest",
-    *,
-    teams_count: int = 0,
-    run_status: ContestRunStatus
+    contest: "Contest", *, teams_count: int = 0, run_status: ContestRunStatus
 ) -> StudentContestDetailsResponse:
     """
     Map Contest ORM object and extra data to student contest details response.
@@ -162,12 +161,17 @@ def to_student_contest_details_response(
         audiences=[
             ContestAudienceResponse.model_validate(link.audience)
             for link in contest.audience_links
-        ] if contest.audience_links else [],
+        ]
+        if contest.audience_links
+        else [],
         max_teams=contest.max_teams,
         min_team_size=contest.min_team_size,
         max_team_size=contest.max_team_size,
         teams_count=teams_count,
         rules=contest.rules,
+        duration=contest.duration,
+        show_leaderboard_during_contest=contest.show_leaderboard_during_contest,
+        participation_type=contest.participation_type,
     )
 
 
@@ -191,7 +195,7 @@ def to_student_contest_not_registered_response() -> StudentContestStatusResponse
 
 def to_team_member_status(
     id: UUID,
-    user_id:UUID,
+    user_id: UUID,
     name: str,
     role: TeamMemberRole,
     joined: bool,
@@ -215,7 +219,6 @@ def to_team_member_status(
 def to_student_contest_status_response(
     contest_team_id: UUID,
     team_name: str,
-
     members: list[TeamMemberStatus],
     approved_count: int,
     min_team_size: int,
@@ -243,7 +246,7 @@ def to_student_contest_status_response(
         completion_percentage=completion_percentage,
         team_approval_status=team_approval_status,
         team_status=status,
-        team_id = team_id
+        team_id=team_id,
     )
 
     return StudentContestStatusResponse(
@@ -321,7 +324,6 @@ def to_contest_team_members(
     ]
 
 
-
 def build_workspace(
     contest_team_members: list[ContestTeamMember],
     progress: ContestTeamProgress,
@@ -329,7 +331,11 @@ def build_workspace(
 ) -> WorkspaceDetails:
     participants = []
     for member in contest_team_members:
-        role = WorkspaceRole.EDITOR if progress.current_editor_user_id == member.user_id else WorkspaceRole.VIEWER
+        role = (
+            WorkspaceRole.EDITOR
+            if progress.current_editor_user_id == member.user_id
+            else WorkspaceRole.VIEWER
+        )
         is_self = member.user_id == user_id
         participants.append(
             WorkspaceParticipant(
@@ -369,7 +375,9 @@ def build_permissions(
     user_id: UUID,
 ) -> PermissionsDetails:
     is_time_up = remaining_seconds <= 0
-    can_edit = not is_paused and not is_time_up and progress.current_editor_user_id == user_id
+    can_edit = (
+        not is_paused and not is_time_up and progress.current_editor_user_id == user_id
+    )
     can_submit = not is_paused and not is_time_up
     can_switch_editor = not is_paused and not is_time_up
 

@@ -28,6 +28,7 @@ from app.utils.enums import (
     ContestRuntimeStatus,
     ContestStatus,
     ContestTeamMemberStatus,
+    ContestTeamParticpationType,
     ScoringType,
     TeamApprovalMode,
     TeamApprovalStatus,
@@ -104,8 +105,6 @@ class Contest(Base):
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
     publisher = relationship("User", foreign_keys=[published_by])
-    show_leaderboard: Mapped[bool] = mapped_column(Boolean, default=False)
-
     # recovery
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -137,6 +136,16 @@ class Contest(Base):
     end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     duration: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    show_leaderboard_during_contest: Mapped[bool] = mapped_column(
+        Boolean, default=False
+    )
+
+    participation_type: Mapped[ContestTeamParticpationType] = mapped_column(
+        "participation_type",
+        Enum(ContestTeamParticpationType, name="contest_team_participation_type"),
+        default=ContestTeamParticpationType.LEADER_ONLY,
+    )
 
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
