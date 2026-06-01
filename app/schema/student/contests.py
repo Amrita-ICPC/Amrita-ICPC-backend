@@ -8,6 +8,7 @@ from app.schema.contest import ContestAudienceResponse
 from app.utils.enums import (
     ContestMode,
     ContestRunStatus,
+    ContestRuntimeStatus,
     ContestStatus,
     ContestTeamParticpationType,
     RegistrationState,
@@ -55,7 +56,7 @@ class StudentContestAvailableResponse(BaseModel):
     description: Optional[str] = Field(None, description="Contest description")
     image: Optional[str] = Field(None, description="Contest image URL")
     start_time: datetime = Field(..., description="Contest start time (UTC)")
-    end_time: datetime = Field(..., description="Contest end time (UTC)")
+    end_time: Optional[datetime] = Field(..., description="Contest end time (UTC)")
     status: ContestStatus = Field(..., description="Contest lifecycle status")
     run_status: ContestRunStatus = Field(
         ..., description="Contest temporal run-state (UPCOMING / LIVE / ENDED)"
@@ -149,14 +150,20 @@ class RegistrationStatus(BaseModel):
     )
 
 
-class ReadinessStatus(BaseModel):
-    """Schema for student readiness to start a contest."""
+class StudentContestSessionStatus(BaseModel):
+    """Schema for student contest session status."""
 
     can_start: bool = Field(
         ..., description="Whether the student/team can start the contest"
     )
     reason: Optional[str] = Field(
         None, description="Reason if the student/team cannot start"
+    )
+    contest_runtime_status: ContestRuntimeStatus = Field(
+        ..., description="The runtime status of the contest"
+    )
+    already_started: bool = Field(
+        ..., description="Whether the student/team has already started the session"
     )
 
 
@@ -203,8 +210,8 @@ class StudentContestStatusResponse(BaseModel):
     registration_status: RegistrationStatus = Field(
         ..., description="Registration and approval status"
     )
-    readiness: ReadinessStatus = Field(
-        ..., description="Readiness to start the contest"
+    session: StudentContestSessionStatus = Field(
+        ..., description="Contest session status for the student"
     )
     team: Optional[TeamParticipationStatus] = Field(
         None, description="Team details if registered"

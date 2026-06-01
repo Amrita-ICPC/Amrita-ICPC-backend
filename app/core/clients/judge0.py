@@ -15,7 +15,7 @@ from app.exceptions.judge0 import (
 
 class Judge0StatusCode(int, Enum):
     """Judge0 submission status IDs.
-    
+
     Reference: https://judge0.com/docs/status-codes
     """
 
@@ -37,6 +37,7 @@ judge0_client: Optional[httpx.AsyncClient] = None
 _client_init_lock = asyncio.Lock()
 
 # CLIENT INITIALIZATION
+
 
 async def init_judge0() -> None:
     """Initialize Judge0 HTTP client with connection pooling.

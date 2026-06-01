@@ -9,7 +9,7 @@ from app.core.clients.judge0 import Judge0StatusCode
 @dataclasses.dataclass
 class Judge0CompilationErrorDTO:
     """Code compilation error - execution cannot proceed.
-    
+
     When code fails to compile, all test cases are skipped.
     This is an early exit scenario, not a per-testcase result.
     """
@@ -27,7 +27,7 @@ class Judge0CompilationErrorDTO:
 @dataclasses.dataclass
 class Judge0ExecutionResultDTO:
     """Individual test case execution result from Judge0.
-    
+
     Only created when code compiles successfully.
     Compilation errors are handled separately via Judge0CompilationErrorDTO.
     Includes question context for mapping back to original request.
@@ -41,7 +41,7 @@ class Judge0ExecutionResultDTO:
 
     status: Judge0StatusCode
     """Execution status (ACCEPTED, WRONG_ANSWER, RUNTIME_ERROR, TIME_LIMIT_EXCEEDED, SYSTEM_ERROR).
-    
+
     Note: COMPILATION_ERROR is NOT included here - use Judge0CompilationErrorDTO instead.
     """
 
@@ -110,6 +110,7 @@ class Judge0SubmissionDTO:
         """Convert status_id to Judge0StatusCode enum."""
         if self.status_id is None:
             from app.exceptions.judge0 import Judge0ClientError
+
             raise Judge0ClientError(
                 f"Invalid Judge0 response: status_id is None. "
                 f"Full submission data: {self}"
@@ -118,6 +119,7 @@ class Judge0SubmissionDTO:
             return Judge0StatusCode(self.status_id)
         except ValueError as e:
             from app.exceptions.judge0 import Judge0ClientError
+
             raise Judge0ClientError(
                 f"Unknown Judge0 status code: {self.status_id}. Error: {e}"
             )
@@ -134,7 +136,7 @@ class Judge0SubmissionDTO:
 @dataclasses.dataclass
 class Judge0ExecutionRequestDTO:
     """Request DTO for submitting code to Judge0 for execution.
-    
+
     Contains the code and context needed to execute against test cases.
     Repository uses question_id to fetch corresponding non-hidden test cases.
     """

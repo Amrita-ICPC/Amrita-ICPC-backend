@@ -170,7 +170,9 @@ class ContestTeamResponse(BaseModel):
             members = contest_team.contest_team_member
 
         if contest_team.team:
-            parent_team_info = ParentTeamInfo(id=contest_team.team.id, name=contest_team.team.name)
+            parent_team_info = ParentTeamInfo(
+                id=contest_team.team.id, name=contest_team.team.name
+            )
 
         # Safely handle members if loaded
         if members:
@@ -369,7 +371,9 @@ class ContestTeamCreate(BaseModel):
         team_status: Status of the team in the contest (default: DRAFT).
     """
 
-    name: str = Field(..., min_length=1, max_length=100, description="Name of the team.")
+    name: str = Field(
+        ..., min_length=1, max_length=100, description="Name of the team."
+    )
     leader_id: Optional[UUID] = Field(None, description="Leader ID for the team.")
     team_status: TeamStatus = Field(
         default=TeamStatus.DRAFT, description="Status of the team in the contest."
@@ -389,10 +393,8 @@ class ContestTeamImport(BaseModel):
 
     team_id: UUID = Field(..., description="UUID of the existing team to import.")
     member_ids: List[UUID] = Field(
-        default_factory=list, description="List of user IDs representing the members of the team."
+        default_factory=list,
+        description="List of user IDs representing the members of the team.",
     )
 
     model_config = ConfigDict(from_attributes=True)
-
-
-

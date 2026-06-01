@@ -106,8 +106,9 @@ def to_student_team_list_response(
     )
 
 
-
-def to_student_team_invitation_response(invitation: TeamInvitation) -> StudentTeamInvitationResponse:
+def to_student_team_invitation_response(
+    invitation: TeamInvitation,
+) -> StudentTeamInvitationResponse:
     """Map a TeamInvitation database ORM model to a StudentTeamInvitationResponse schema.
 
     Args:
@@ -143,7 +144,9 @@ def to_student_team_invitation_list_response(
     Returns:
         StudentTeamInvitationListResponse: Standard invitation list response.
     """
-    mapped_invitations = [to_student_team_invitation_response(inv) for inv in invitations]
+    mapped_invitations = [
+        to_student_team_invitation_response(inv) for inv in invitations
+    ]
     return StudentTeamInvitationListResponse(
         invitations=mapped_invitations,
         total=total,
@@ -175,5 +178,3 @@ def to_team_member_detail_responses(
         )
         for user, team_role, joined_at, is_in_contest in members_data
     ]
-
-

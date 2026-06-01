@@ -301,4 +301,3 @@ class UserService:
             )
 
         return total, mapped_users
-

@@ -29,39 +29,45 @@ class StudentService:
         Returns:
             A list of user invitation responses.
         """
-        invitation = await self.contest_team_repo.get_contest_team_member_by_user_id(
-            user_id, status
+        invitations = await self.contest_team_repo.get_contest_team_members_by_user_id(
+            user_id=user_id, status=status
         )
 
-        if not invitation:
-            return []
+        responses = []
+        for invitation in invitations:
+            contest_team = invitation.contest_team
+            contest = contest_team.contest
 
-        contest_team = invitation.contest_team
-        contest = contest_team.contest
+            registered_teams_count = await self.contest_team_repo.count_teams(
+                contest.id, TeamStatus.CONFIRMED, TeamApprovalStatus.APPROVED
+            )
 
-        registered_teams_count = await self.contest_team_repo.count_teams(
-            contest.id, TeamStatus.CONFIRMED, TeamApprovalStatus.APPROVED
-        )
+            response = to_user_invitation_response(invitation, registered_teams_count)
 
-        response = to_user_invitation_response(invitation, registered_teams_count)
+            # Check if user is already accepted in this contest
+            active_in_contest = (
+                await self.contest_team_repo.get_active_members_in_contest(
+                    contest_id=contest.id,
+                    user_ids=[user_id],
+                )
+            )
+            is_already_accepted = any(
+                m.status == ContestTeamMemberStatus.ACCEPTED for m in active_in_contest
+            )
 
-        # Check if user is already accepted in this contest
-        active_in_contest = await self.contest_team_repo.get_active_members_in_contest(
-            contest_id=contest.id,
-            user_ids=[user_id],
-        )
-        is_already_accepted = any(
-            m.status == ContestTeamMemberStatus.ACCEPTED for m in active_in_contest
-        )
+            if is_already_accepted:
+                response.can_accept_invitation = False
+                response.reason = (
+                    "You are already registered for a team in this contest."
+                )
+            elif contest_team.team_status != TeamStatus.DRAFT:
+                response.can_accept_invitation = False
+                response.reason = "The team is no longer in draft status."
+            elif not response.can_accept_invitation:
+                response.reason = (
+                    "The contest has reached its maximum registered teams capacity."
+                )
 
-        if is_already_accepted:
-            response.can_accept_invitation = False
-            response.reason = "You are already registered for a team in this contest."
-        elif contest_team.team_status != TeamStatus.DRAFT:
-            response.can_accept_invitation = False
-            response.reason = "The team is no longer in draft status."
-        elif not response.can_accept_invitation:
-            response.reason = "The contest has reached its maximum registered teams capacity."
+            responses.append(response)
 
-        return [response]
-
+        return responses

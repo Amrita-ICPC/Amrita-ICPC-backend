@@ -106,9 +106,7 @@ class BankService:
     #     bank = await self.repository.get_bank_or_raise(bank_id, load_relations=True)
     #     return to_bank_detail_response(bank)
 
-    async def get_bank_by_id(
-        self, bank_id: UUID, user_id: UUID
-    ) -> BankDetailResponse:
+    async def get_bank_by_id(self, bank_id: UUID, user_id: UUID) -> BankDetailResponse:
         """Fetch bank details with full relationships and access validation.
 
         Args:
@@ -127,10 +125,9 @@ class BankService:
         return to_bank_detail_response(bank)
 
     @cache_get(
-        key_builder=lambda self,
-        user_id,
-        skip=0,
-        limit=100: f"banks:user:{user_id}:skip:{skip}:limit:{limit}",
+        key_builder=lambda self, user_id, skip=0, limit=100: (
+            f"banks:user:{user_id}:skip:{skip}:limit:{limit}"
+        ),
         ttl=300,
     )
     async def get_all_banks(
@@ -158,10 +155,9 @@ class BankService:
         return result.total, responses
 
     @cache_delete(
-        key_builder=lambda self,
-        bank_id,
-        bank_update,
-        user_id: f"banks:user:{user_id}:*",
+        key_builder=lambda self, bank_id, bank_update, user_id: (
+            f"banks:user:{user_id}:*"
+        ),
     )
     @cache_set(
         key_builder=lambda result: f"bank:{result.id}",
@@ -215,10 +211,9 @@ class BankService:
         await self.repository.delete_bank(bank)
 
     @cache_get(
-        key_builder=lambda self,
-        user_id,
-        skip=0,
-        limit=100: f"banks:deleted:user:{user_id}:skip:{skip}:limit:{limit}",
+        key_builder=lambda self, user_id, skip=0, limit=100: (
+            f"banks:deleted:user:{user_id}:skip:{skip}:limit:{limit}"
+        ),
         ttl=300,
     )
     async def get_soft_deleted_banks(
@@ -337,13 +332,17 @@ class BankService:
                 if current_user_id in existing_shares:
                     existing_shares[current_user_id].permission = BankPermission.edit
                 else:
-                    await self.repository.add_share(bank_id, current_user_id, BankPermission.edit)
+                    await self.repository.add_share(
+                        bank_id, current_user_id, BankPermission.edit
+                    )
 
                 # Set new owner
                 if target_user_id in existing_shares:
                     existing_shares[target_user_id].permission = BankPermission.owner
                 else:
-                    await self.repository.add_share(bank_id, target_user_id, BankPermission.owner)
+                    await self.repository.add_share(
+                        bank_id, target_user_id, BankPermission.owner
+                    )
             else:
                 # Regular read/edit permission
                 if target_user_id in existing_shares:

@@ -90,9 +90,10 @@ class StudentTeamService:
             team_id=None,
         )
 
-        requested_team_ids, pending_request_count = (
-            await self.repository.get_user_pending_join_requests_data(user_id)
-        )
+        (
+            requested_team_ids,
+            pending_request_count,
+        ) = await self.repository.get_user_pending_join_requests_data(user_id)
 
         return to_student_team_list_response(
             teams=paginated_result.items,
@@ -105,9 +106,10 @@ class StudentTeamService:
             requested_team_ids=requested_team_ids,
         )
 
-
     @cache_get(
-        key_builder=lambda self, user_id, team_id: f"student:team:{team_id}:user:{user_id}",
+        key_builder=lambda self, user_id, team_id: (
+            f"student:team:{team_id}:user:{user_id}"
+        ),
         ttl=300,
     )
     async def get_student_team_by_id(
@@ -141,7 +143,7 @@ class StudentTeamService:
         key_builder=lambda self, user_id, team_name, team_description, is_public=True: [
             f"student:teams:user:{user_id}:*",
             "student:teams:search:*",
-            "student:teams:user:*"
+            "student:teams:user:*",
         ]
     )
     async def create_student_team(
@@ -177,7 +179,9 @@ class StudentTeamService:
                 code = candidate
                 break
         else:
-            raise StudentTeamInvitationError("Could not generate a unique team code. Please try again.")
+            raise StudentTeamInvitationError(
+                "Could not generate a unique team code. Please try again."
+            )
 
         team = Team(
             name=team_name,
@@ -195,7 +199,7 @@ class StudentTeamService:
             f"student:teams:user:{user_id}:*",
             f"student:team:{team_id}:*",
             "student:teams:search:*",
-            "student:teams:user:*"
+            "student:teams:user:*",
         ]
     )
     async def delete_student_team(self, user_id: UUID, team_id: UUID) -> None:
@@ -225,7 +229,7 @@ class StudentTeamService:
             f"student:teams:user:{user_id}:*",
             f"student:team:{team_id}:*",
             "student:teams:search:*",
-            "student:teams:user:*"
+            "student:teams:user:*",
         ]
     )
     async def update_student_team(
@@ -321,7 +325,7 @@ class StudentTeamService:
             f"student:invitations:user:{invite_user_id or user_id}:*",
             f"student:teams:user:{invite_user_id or user_id}:*",
             "student:teams:search:*",
-            "student:teams:user:*"
+            "student:teams:user:*",
         ]
     )
     async def create_team_invitation(
@@ -351,9 +355,13 @@ class StudentTeamService:
         """
         if invitation_type == InvitationType.INVITE:
             if not invite_user_id:
-                raise StudentTeamInvitationError("invite_user_id is required for INVITE type")
+                raise StudentTeamInvitationError(
+                    "invite_user_id is required for INVITE type"
+                )
             # Check permission: Only team leader can invite a student
-            team = await self.repository.get_student_team_by_id_or_raise(user_id, team_id)
+            team = await self.repository.get_student_team_by_id_or_raise(
+                user_id, team_id
+            )
             self.guard.check_is_leader(user_id=user_id, team=team)
             # Create the invitation
             await self.repository.create_student_team_invitation(
@@ -375,7 +383,7 @@ class StudentTeamService:
             f"student:invitations:user:{user_id}:*",
             f"student:teams:user:{user_id}:*",
             "student:teams:search:*",
-            "student:teams:user:*"
+            "student:teams:user:*",
         ]
     )
     async def update_team_invitation_status(
@@ -399,19 +407,29 @@ class StudentTeamService:
             StudentTeamNotFoundError: If the team for the request is not found or accessible.
             TeamLeaderAccessDeniedError: If the student is not the team leader for a REQUEST type.
         """
-        team_invitation = await self.repository.get_student_team_invitation_or_raise(invitation_id)
+        team_invitation = await self.repository.get_student_team_invitation_or_raise(
+            invitation_id
+        )
 
         if status == TeamInvitationStatus.CANCELLED:
             if team_invitation.status != TeamInvitationStatus.PENDING:
-                raise StudentTeamInvitationError("Only pending invitations or requests can be cancelled")
+                raise StudentTeamInvitationError(
+                    "Only pending invitations or requests can be cancelled"
+                )
             if team_invitation.sender_id != user_id:
-                raise StudentTeamInvitationError("Only the sender can cancel this invitation/request")
+                raise StudentTeamInvitationError(
+                    "Only the sender can cancel this invitation/request"
+                )
         elif team_invitation.invitation_type == InvitationType.INVITE:
             if team_invitation.reciever_id != user_id:
-                raise StudentTeamInvitationError("You are not the receiver of this invitation")
+                raise StudentTeamInvitationError(
+                    "You are not the receiver of this invitation"
+                )
         elif team_invitation.invitation_type == InvitationType.REQUEST:
             # Check permission: Only team leader can approve/reject request to join
-            team = await self.repository.get_student_team_by_id_or_raise(user_id, team_invitation.team_id)
+            team = await self.repository.get_student_team_by_id_or_raise(
+                user_id, team_invitation.team_id
+            )
             self.guard.check_is_leader(user_id=user_id, team=team)
 
         await self.repository.update_team_invitation_status(team_invitation, status)
@@ -423,10 +441,12 @@ class StudentTeamService:
             f"student:teams:user:{new_leader_id}:*",
             f"student:team:{team_id}:*",
             "student:teams:search:*",
-            "student:teams:user:*"
+            "student:teams:user:*",
         ]
     )
-    async def transfer_team_leader(self, user_id: UUID, team_id: UUID, new_leader_id: UUID) -> None:
+    async def transfer_team_leader(
+        self, user_id: UUID, team_id: UUID, new_leader_id: UUID
+    ) -> None:
         """Transfer team leadership to another team member.
 
         Verifies that the requesting user is the current leader of the team
@@ -442,16 +462,16 @@ class StudentTeamService:
             TeamLeaderAccessDeniedError: If the student is not the team leader.
             TeamMemberAccessDeniedError: If the target user is not a member of the team.
         """
-        #Get the team enitity
+        # Get the team enitity
         team = await self.repository.get_student_team_by_id_or_raise(user_id, team_id)
 
-        #Check if user_id is the leader
+        # Check if user_id is the leader
         self.guard.check_is_leader(user_id=user_id, team=team)
 
-        #Check if new_leader_id is a member of the team
+        # Check if new_leader_id is a member of the team
         await self.guard.check_is_member(team_id=team_id, user_id=new_leader_id)
 
-        #Update the leader
+        # Update the leader
         team.leader_id = new_leader_id
         await self.repository.update_student_team(team)
 
@@ -461,10 +481,12 @@ class StudentTeamService:
             f"student:teams:user:{leave_member_id}:*",
             f"student:team:{team_id}:*",
             "student:teams:search:*",
-            "student:teams:user:*"
+            "student:teams:user:*",
         ]
     )
-    async def leave_team(self, user_id: UUID, team_id: UUID, leave_member_id: UUID) -> None:
+    async def leave_team(
+        self, user_id: UUID, team_id: UUID, leave_member_id: UUID
+    ) -> None:
         """Remove a member from a team or allow a member to leave.
 
         If the requesting user is not the member leaving, validates that the
@@ -484,21 +506,23 @@ class StudentTeamService:
                 are available to assume leadership.
             StudentTeamUserNotFoundError: If the user to remove is not found in the team.
         """
-        #Get the team entity
+        # Get the team entity
         team = await self.repository.get_student_team_by_id_or_raise(user_id, team_id)
 
         if user_id != leave_member_id:
             self.guard.check_is_leader(user_id=user_id, team=team)
 
         if team.leader_id == leave_member_id:
-            #Transfer ownership if only two members are there
+            # Transfer ownership if only two members are there
             members = team.members
-            if(len(members) >= 2):
+            if len(members) >= 2:
                 next_member = [m for m in members if m.user_id != leave_member_id][0]
                 team.leader_id = next_member.user_id
                 await self.repository.update_student_team(team)
             else:
-                raise StudentTeamInvitationError("Cannot leave team with only one member")
+                raise StudentTeamInvitationError(
+                    "Cannot leave team with only one member"
+                )
 
         await self.repository.leave_team(team_id, leave_member_id)
 
@@ -537,9 +561,10 @@ class StudentTeamService:
             team_id=None,
         )
 
-        requested_team_ids, pending_request_count = (
-            await self.repository.get_user_pending_join_requests_data(user_id)
-        )
+        (
+            requested_team_ids,
+            pending_request_count,
+        ) = await self.repository.get_user_pending_join_requests_data(user_id)
 
         return to_student_team_list_response(
             teams=paginated_result.items,
@@ -598,9 +623,3 @@ class StudentTeamService:
         )
 
         return to_team_member_detail_responses(members_data)
-
-
-
-
-
-

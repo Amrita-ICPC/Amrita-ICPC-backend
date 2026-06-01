@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timezone
 from uuid import UUID
 
+from app.exceptions.auth import PermissionDeniedError
 from app.exceptions.base import AppBaseException
 from app.exceptions.contest import (
     ContestNotFoundError,
@@ -49,7 +50,7 @@ class ContestValidator:
     """
 
     @staticmethod
-    def validate_contest_dates(start_time: datetime, end_time: datetime) -> None:
+    def validate_contest_dates(start_time: datetime, end_time: datetime | None) -> None:
         """
         Validates that contest end time is after start time.
 
@@ -60,7 +61,7 @@ class ContestValidator:
         Raises:
             InvalidContestError: If end_time <= start_time
         """
-        if end_time <= start_time:
+        if end_time is not None and end_time <= start_time:
             raise InvalidContestError("end_time must be after start_time")
 
     @staticmethod
@@ -93,14 +94,15 @@ class ContestValidator:
             )
 
     @staticmethod
-    def validate_registration_date_past(registration_start: datetime | None,registration_end: datetime | None) -> None:
+    def validate_registration_date_past(
+        registration_start: datetime | None, registration_end: datetime | None
+    ) -> None:
         if registration_start is not None:
             if datetime.now(UTC) < registration_start.astimezone(UTC):
                 raise InvalidContestError("Registration has not started yet")
         if registration_end is not None:
             if datetime.now(UTC) > registration_end.astimezone(UTC):
                 raise InvalidContestError("Registration has ended")
-
 
     @staticmethod
     def validate_team_size_constraints(min_size: int, max_size: int) -> None:
@@ -309,11 +311,8 @@ class ContestValidator:
                 str(contest_id), "publish", status, ContestStatus.DRAFT
             )
 
-
     @staticmethod
-    def validate_contest_can_be_restored(
-        is_deleted: bool, contest_id: UUID
-    ) -> None:
+    def validate_contest_can_be_restored(is_deleted: bool, contest_id: UUID) -> None:
         """
         Validate that contest is soft-deleted before restoring.
 
@@ -385,7 +384,9 @@ class ContestValidator:
             )
 
     @staticmethod
-    def validate_contest_runtime(contest_runtime: ContestRuntime | None, contest_id: UUID) -> None:
+    def validate_contest_runtime(
+        contest_runtime: ContestRuntime | None, contest_id: UUID
+    ) -> None:
         """
         Validate the contest runtime status and expiration.
 
@@ -402,7 +403,10 @@ class ContestValidator:
                 status_code=400,
             )
 
-        if contest_runtime.runtime_status == ContestRuntimeStatus.CANCELLED or contest_runtime.cancelled_at is not None:
+        if (
+            contest_runtime.runtime_status == ContestRuntimeStatus.CANCELLED
+            or contest_runtime.cancelled_at is not None
+        ):
             raise AppBaseException(
                 message="Contest has been cancelled",
                 status_code=400,
@@ -415,8 +419,35 @@ class ContestValidator:
             )
 
         current_time = datetime.now(timezone.utc)
-        if contest_runtime.end_time is not None and current_time > contest_runtime.end_time:
+        if (
+            contest_runtime.end_time is not None
+            and current_time > contest_runtime.end_time
+        ):
             raise AppBaseException(
                 message="Contest has already ended",
                 status_code=400,
             )
+
+    @staticmethod
+    def validate_contest_running(
+        start_time: datetime, end_time: datetime | None
+    ) -> None:
+        """
+        Validate that the contest is currently running (live).
+
+        Args:
+            start_time: Contest start time.
+            end_time: Contest end time.
+
+        Raises:
+            PermissionDeniedError: If the contest is not live yet or has already ended.
+        """
+
+        def _aware(dt: datetime) -> datetime:
+            return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+        current_time = datetime.now(timezone.utc)
+        if current_time < _aware(start_time):
+            raise PermissionDeniedError("Contest has not started yet")
+        if end_time is not None and current_time > _aware(end_time):
+            raise PermissionDeniedError("Contest has already ended")

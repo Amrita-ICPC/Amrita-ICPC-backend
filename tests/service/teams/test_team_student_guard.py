@@ -1,9 +1,13 @@
-import pytest
 import uuid
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from app.core.guards.team_student import TeamStudentGuard
-from app.exceptions.student.teams import TeamLeaderAccessDeniedError, TeamMemberAccessDeniedError
+from app.exceptions.student.teams import (
+    TeamLeaderAccessDeniedError,
+    TeamMemberAccessDeniedError,
+)
 from app.models.team import Team
 
 
@@ -46,7 +50,9 @@ def test_check_is_leader_raises_exception(team_student_guard: TeamStudentGuard):
 
 
 @pytest.mark.asyncio
-async def test_check_is_member_success(team_student_guard: TeamStudentGuard, mock_db: AsyncMock):
+async def test_check_is_member_success(
+    team_student_guard: TeamStudentGuard, mock_db: AsyncMock
+):
     """Test that check_is_member passes silently when the user is a member."""
     team_id = uuid.uuid4()
     user_id = uuid.uuid4()
@@ -64,7 +70,9 @@ async def test_check_is_member_success(team_student_guard: TeamStudentGuard, moc
 
 
 @pytest.mark.asyncio
-async def test_check_is_member_raises_exception(team_student_guard: TeamStudentGuard, mock_db: AsyncMock):
+async def test_check_is_member_raises_exception(
+    team_student_guard: TeamStudentGuard, mock_db: AsyncMock
+):
     """Test that check_is_member raises TeamMemberAccessDeniedError when the user is not a member."""
     team_id = uuid.uuid4()
     user_id = uuid.uuid4()

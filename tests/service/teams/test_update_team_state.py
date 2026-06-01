@@ -7,8 +7,6 @@ from app.service.team_service import TeamService
 from app.utils.enums import TeamApprovalMode, TeamApprovalStatus, TeamStatus
 
 
-
-
 @pytest.fixture
 def contest_id():
     return uuid4()
@@ -58,7 +56,9 @@ class TestUpdateTeamState:
         mock_contest.team_approval_mode = TeamApprovalMode.INSTRUCTOR_REVIEW
         mock_repository.get_contest_or_raise.return_value = mock_contest
         mock_repository.get_contest_team_or_raise.return_value = mock_contest_team
-        mock_contest_team_repository.update_contest_team.return_value = mock_contest_team
+        mock_contest_team_repository.update_contest_team.return_value = (
+            mock_contest_team
+        )
 
         with patch("app.service.team_service.to_contest_team_response"):
             await team_service.reject_team(contest_id, team_id, user_id)
@@ -84,7 +84,9 @@ class TestUpdateTeamState:
     ):
         mock_repository.get_contest_or_raise.return_value = mock_contest
         mock_repository.get_contest_team_or_raise.return_value = mock_contest_team
-        mock_contest_team_repository.update_contest_team.return_value = mock_contest_team
+        mock_contest_team_repository.update_contest_team.return_value = (
+            mock_contest_team
+        )
 
         with patch("app.service.team_service.to_contest_team_response"):
             await team_service.disqualify_team(contest_id, team_id, user_id)

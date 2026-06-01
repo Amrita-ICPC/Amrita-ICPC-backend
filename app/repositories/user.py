@@ -177,12 +177,9 @@ class UserRepository:
         users = list(result.scalars().all())
         return PaginatedResult(total=total, items=users)
 
-
-    async def get_users_audience(self,user_id:UUID) -> list[Audience]:
+    async def get_users_audience(self, user_id: UUID) -> list[Audience]:
         stmt = (
-            select(Audience)
-            .join(UserAudience)
-            .filter(UserAudience.user_id == user_id)
+            select(Audience).join(UserAudience).filter(UserAudience.user_id == user_id)
         )
         result = await self.db.execute(stmt)
         return list(result.unique().scalars().all())

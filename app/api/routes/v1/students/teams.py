@@ -1,4 +1,4 @@
-#TODO: Implement RBAC auth gaurd
+# TODO: Implement RBAC auth gaurd
 from datetime import datetime
 from typing import Literal, Optional
 from uuid import UUID
@@ -45,7 +45,7 @@ def get_student_team_service(db: AsyncSession = Depends(get_db)) -> StudentTeamS
     repository = StudentTeamRepository(db)
     user_repository = UserRepository(db)
     guard = TeamStudentGuard(db)
-    return StudentTeamService(repository,user_repository, guard)
+    return StudentTeamService(repository, user_repository, guard)
 
 
 @router.get(
@@ -59,10 +59,14 @@ async def get_my_teams(
     page_size: int = Query(10, ge=1, le=100, description="Items per page"),
     search: str | None = Query(None, description="Search by team name"),
     created_only: bool = Query(False, description="Filter only teams created by you"),
-    leader_only: bool = Query(False, description="Filter only teams where you are the leader"),
+    leader_only: bool = Query(
+        False, description="Filter only teams where you are the leader"
+    ),
     min_size: int | None = Query(None, description="Minimum team size filter"),
     max_size: int | None = Query(None, description="Maximum team size filter"),
-    is_public: bool | None = Query(None, description="Filter by public/private setting"),
+    is_public: bool | None = Query(
+        None, description="Filter by public/private setting"
+    ),
     user_id: UUID = Depends(get_current_user_id),
     service: StudentTeamService = Depends(get_student_team_service),
 ) -> APIResponse[StudentTeamsResponse]:
@@ -109,7 +113,6 @@ async def get_my_teams(
         page_size=page_size,
     )
 
-
     return create_api_response(
         request,
         data={
@@ -121,6 +124,7 @@ async def get_my_teams(
         pagination=pagination_meta,
     )
 
+
 @router.get(
     "/invitations",
     status_code=status.HTTP_200_OK,
@@ -128,10 +132,22 @@ async def get_my_teams(
 )
 async def get_team_invitations(
     request: Request,
-    invitation_type: InvitationType = Query(InvitationType.INVITE, alias="type", description="Type of invitation (INVITE or REQUEST)"),
-    status_filter: Optional[TeamInvitationStatus] = Query(None, alias="status", description="Filter invitations by status"),
-    team_id: Optional[UUID] = Query(None, alias="team_id", description="Optional team ID filter"),
-    sent: bool = Query(False, alias="sent", description="Filter for sent invitations/requests where current user is the sender"),
+    invitation_type: InvitationType = Query(
+        InvitationType.INVITE,
+        alias="type",
+        description="Type of invitation (INVITE or REQUEST)",
+    ),
+    status_filter: Optional[TeamInvitationStatus] = Query(
+        None, alias="status", description="Filter invitations by status"
+    ),
+    team_id: Optional[UUID] = Query(
+        None, alias="team_id", description="Optional team ID filter"
+    ),
+    sent: bool = Query(
+        False,
+        alias="sent",
+        description="Filter for sent invitations/requests where current user is the sender",
+    ),
     user_id: UUID = Depends(get_current_user_id),
     service: StudentTeamService = Depends(get_student_team_service),
 ) -> APIResponse[StudentTeamInvitationListResponse]:
@@ -161,6 +177,7 @@ async def get_team_invitations(
         data=invitations,
         message="Team invitations fetched successfully",
     )
+
 
 @router.patch(
     "/invitations/{id}",
@@ -194,6 +211,7 @@ async def update_team_invitation_status(
         data=None,
         message="Team invitation status updated successfully",
     )
+
 
 @router.post(
     "/{team_id}/leader",
@@ -251,9 +269,7 @@ async def leave_team_me(
     Returns:
         APIResponse indicating successful team exit.
     """
-    await service.leave_team(
-        user_id=user_id, team_id=team_id, leave_member_id=user_id
-    )
+    await service.leave_team(user_id=user_id, team_id=team_id, leave_member_id=user_id)
     return create_api_response(
         request,
         data=None,
@@ -378,6 +394,7 @@ async def get_team_by_id(
         message="Team details fetched successfully",
     )
 
+
 @router.post(
     "",
     status_code=status.HTTP_201_CREATED,
@@ -443,7 +460,6 @@ async def delete_team(
     )
 
 
-
 @router.patch(
     "/{team_id}",
     status_code=status.HTTP_200_OK,
@@ -496,7 +512,11 @@ async def invite_to_team(
     request: Request,
     team_id: UUID,
     invite_user_id: Optional[UUID] = None,
-    invitation_type: InvitationType = Query(InvitationType.INVITE, alias="type", description="Type of invitation (INVITE or REQUEST)"),
+    invitation_type: InvitationType = Query(
+        InvitationType.INVITE,
+        alias="type",
+        description="Type of invitation (INVITE or REQUEST)",
+    ),
     user_id: UUID = Depends(get_current_user_id),
     service: StudentTeamService = Depends(get_student_team_service),
 ) -> APIResponse[None]:
@@ -507,7 +527,11 @@ async def invite_to_team(
         invitation_type=invitation_type,
         invite_user_id=invite_user_id,
     )
-    message = "Invitation sent successfully" if invitation_type == InvitationType.INVITE else "Request sent successfully"
+    message = (
+        "Invitation sent successfully"
+        if invitation_type == InvitationType.INVITE
+        else "Request sent successfully"
+    )
     return create_api_response(
         request,
         data=None,
@@ -567,10 +591,3 @@ async def get_team_members(
         data=members,
         message="Team members fetched successfully",
     )
-
-
-
-
-
-
-

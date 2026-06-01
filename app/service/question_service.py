@@ -346,9 +346,9 @@ class QuestionService:
             raise
 
     @cache_get(
-        key_builder=lambda self,
-        question_id,
-        user_id: f"question:{question_id}:user:{user_id}",
+        key_builder=lambda self, question_id, user_id: (
+            f"question:{question_id}:user:{user_id}"
+        ),
         ttl=300,
     )
     async def get_question_by_id(
@@ -374,21 +374,15 @@ class QuestionService:
         return await self._hydrate_question_template_codes(response)
 
     @cache_set(
-        key_builder=lambda self,
-        question_id,
-        update_data,
-        user_id,
-        *args,
-        **kwargs: f"question:{question_id}:user:{user_id}",
+        key_builder=lambda self, question_id, update_data, user_id, *args, **kwargs: (
+            f"question:{question_id}:user:{user_id}"
+        ),
         ttl=300,
     )
     @cache_delete(
-        key_builder=lambda self,
-        question_id,
-        update_data,
-        user_id,
-        *args,
-        **kwargs: self._get_question_cache_keys(question_id)
+        key_builder=lambda self, question_id, update_data, user_id, *args, **kwargs: (
+            self._get_question_cache_keys(question_id)
+        )
     )
     async def update_question(
         self, question_id: UUID, update_data: QuestionUpdate, user_id: UUID
@@ -471,12 +465,9 @@ class QuestionService:
             raise
 
     @cache_delete(
-        key_builder=lambda self,
-        question_id,
-        payload,
-        user_id,
-        *args,
-        **kwargs: self._get_question_cache_keys(question_id)
+        key_builder=lambda self, question_id, payload, user_id, *args, **kwargs: (
+            self._get_question_cache_keys(question_id)
+        )
     )
     async def add_testcases_to_question(
         self,
@@ -516,12 +507,9 @@ class QuestionService:
         return await self._hydrate_question_template_codes(response)
 
     @cache_delete(
-        key_builder=lambda self,
-        question_id,
-        payload,
-        user_id,
-        *args,
-        **kwargs: self._get_question_cache_keys(question_id)
+        key_builder=lambda self, question_id, payload, user_id, *args, **kwargs: (
+            self._get_question_cache_keys(question_id)
+        )
     )
     async def remove_testcases_from_question(
         self,
@@ -562,12 +550,9 @@ class QuestionService:
         return await self._hydrate_question_template_codes(response)
 
     @cache_delete(
-        key_builder=lambda self,
-        question_id,
-        payload,
-        user_id,
-        *args,
-        **kwargs: self._get_question_cache_keys(question_id)
+        key_builder=lambda self, question_id, payload, user_id, *args, **kwargs: (
+            self._get_question_cache_keys(question_id)
+        )
     )
     async def remove_templates_from_question(
         self,
@@ -612,7 +597,11 @@ class QuestionService:
         response = QuestionResponse.from_question(updated_question)
         return await self._hydrate_question_template_codes(response)
 
-    @cache_delete(key_builder=lambda self, question_id, user_id, *args, **kwargs: self._get_question_cache_keys(question_id))
+    @cache_delete(
+        key_builder=lambda self, question_id, user_id, *args, **kwargs: (
+            self._get_question_cache_keys(question_id)
+        )
+    )
     async def delete_question(self, question_id: UUID, user_id: UUID) -> None:
         """Delete a question and invalidate related cache keys.
 

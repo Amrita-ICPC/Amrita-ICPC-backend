@@ -84,15 +84,11 @@ class BankDetailResponse(BankResponse):
     total_questions_count: int = Field(
         default=0, description="Total number of questions in the bank"
     )
-    easy_questions_count: int = Field(
-        default=0, description="Number of easy questions"
-    )
+    easy_questions_count: int = Field(default=0, description="Number of easy questions")
     medium_questions_count: int = Field(
         default=0, description="Number of medium questions"
     )
-    hard_questions_count: int = Field(
-        default=0, description="Number of hard questions"
-    )
+    hard_questions_count: int = Field(default=0, description="Number of hard questions")
     shared_users_count: int = Field(
         default=0, description="Number of users the bank is shared with"
     )
@@ -117,9 +113,6 @@ class BankShareRequest(BaseModel):
     """
 
     shares: List[BankShareItem] = Field(..., description="List of users to share with")
-
-
-
 
 
 class BankQuestionBulk(BaseModel):

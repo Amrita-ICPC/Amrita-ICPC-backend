@@ -1,7 +1,14 @@
 from datetime import datetime
 from uuid import UUID
-from pydantic import BaseModel, Field, ConfigDict
-from app.utils.enums import ContestRuntimeStatus, WorkspaceMode, WorkspaceRole
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.utils.enums import (
+    ContestRuntimeStatus,
+    TeamMemberRole,
+    WorkspaceMode,
+    WorkspaceRole,
+)
 
 
 class ContestSessionStatus(BaseModel):
@@ -11,12 +18,17 @@ class ContestSessionStatus(BaseModel):
     Attributes:
         already_started: Indicates if the contest session has already started.
         started_at: Timestamp when the session was started, if applicable.
+        ended_at: Timestamp when the session was ended, if applicable.
     """
+
     already_started: bool = Field(
         ..., description="Indicates if the contest session has already started"
     )
     started_at: datetime | None = Field(
         None, description="Timestamp when the session was started"
+    )
+    ended_at: datetime | None = Field(
+        None, description="Timestamp when the session was ended"
     )
 
     model_config = ConfigDict(from_attributes=True)
@@ -34,15 +46,14 @@ class ContestRuntimeDetails(BaseModel):
         paused_at: Timestamp when the contest was paused, if applicable.
         scoreboard_frozen: Indicates if the scoreboard is currently frozen.
     """
+
     status: ContestRuntimeStatus = Field(
         ..., description="The current status of the contest runtime"
     )
     effective_end_time: datetime | None = Field(
         None, description="The effective end time of the contest for the team"
     )
-    remaining_seconds: int = Field(
-        ..., description="Remaining seconds in the contest"
-    )
+    remaining_seconds: int = Field(..., description="Remaining seconds in the contest")
     is_paused: bool = Field(
         ..., description="Indicates if the contest is currently paused"
     )
@@ -65,15 +76,32 @@ class WorkspaceParticipant(BaseModel):
         name: Name of the participant.
         avatar_url: URL to the participant's avatar image.
         role: The workspace role of the participant.
+        team_role: The team role of the participant (LEADER or MEMBER).
+        workspace_role: The workspace role of the participant (EDITOR or VIEWER).
         is_self: Indicates if this participant is the current requesting user.
         is_online: Indicates if the participant is currently online.
     """
+
     user_id: UUID = Field(..., description="The UUID of the participant")
     name: str = Field(..., description="Name of the participant")
-    avatar_url: str | None = Field(None, description="URL to the participant's avatar image")
-    role: WorkspaceRole = Field(..., description="The workspace role of the participant")
-    is_self: bool = Field(..., description="Indicates if this participant is the current user")
-    is_online: bool | None = Field(None, description="Indicates if the participant is currently online")
+    avatar_url: str | None = Field(
+        None, description="URL to the participant's avatar image"
+    )
+    role: WorkspaceRole = Field(
+        ..., description="The workspace role of the participant"
+    )
+    team_role: TeamMemberRole = Field(
+        ..., description="The team role of the participant (LEADER or MEMBER)"
+    )
+    workspace_role: WorkspaceRole = Field(
+        ..., description="The workspace role of the participant (EDITOR or VIEWER)"
+    )
+    is_self: bool = Field(
+        ..., description="Indicates if this participant is the current user"
+    )
+    is_online: bool | None = Field(
+        None, description="Indicates if the participant is currently online"
+    )
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -84,9 +112,14 @@ class WorkspaceDetails(BaseModel):
 
     Attributes:
         mode: The editor workspace mode.
+        current_editor_user_id: The user ID of the current active editor, if applicable.
         participants: List of participants in the workspace.
     """
+
     mode: WorkspaceMode = Field(..., description="The editor workspace mode")
+    current_editor_user_id: UUID | None = Field(
+        None, description="The user ID of the current active editor, if applicable"
+    )
     participants: list[WorkspaceParticipant] = Field(
         ..., description="List of participants in the workspace"
     )
@@ -106,6 +139,7 @@ class TeamProgressDetails(BaseModel):
         extra_time_seconds: Amount of extra time granted to the team in seconds.
         has_extra_time: Indicates if the team has extra time.
     """
+
     score: int = Field(..., description="The team's current score in the contest")
     penalty: int = Field(..., description="The team's penalty points")
     solved_count: int = Field(..., description="Number of questions solved by the team")
@@ -132,7 +166,10 @@ class PermissionsDetails(BaseModel):
         can_submit: Indicates if the user can submit code.
         can_switch_editor: Indicates if the user can request or become the active editor.
     """
-    can_view: bool = Field(..., description="Indicates if the user can view the workspace")
+
+    can_view: bool = Field(
+        ..., description="Indicates if the user can view the workspace"
+    )
     can_edit: bool = Field(..., description="Indicates if the user can edit code")
     can_submit: bool = Field(..., description="Indicates if the user can submit code")
     can_switch_editor: bool = Field(
@@ -155,12 +192,21 @@ class ContestTeamProgressResponse(BaseModel):
         team_progress: Current performance metrics.
         permissions: Permissions for the requesting user.
     """
+
     contest_id: UUID = Field(..., description="The UUID of the contest")
     contest_team_id: UUID = Field(..., description="The UUID of the contest team")
     session: ContestSessionStatus = Field(..., description="Active session details")
-    runtime: ContestRuntimeDetails = Field(..., description="Current runtime and timer state")
-    workspace: WorkspaceDetails = Field(..., description="Workspace collaboration state")
-    team_progress: TeamProgressDetails = Field(..., description="Current performance metrics")
-    permissions: PermissionsDetails = Field(..., description="Permissions for the requesting user")
+    runtime: ContestRuntimeDetails = Field(
+        ..., description="Current runtime and timer state"
+    )
+    workspace: WorkspaceDetails = Field(
+        ..., description="Workspace collaboration state"
+    )
+    team_progress: TeamProgressDetails = Field(
+        ..., description="Current performance metrics"
+    )
+    permissions: PermissionsDetails = Field(
+        ..., description="Permissions for the requesting user"
+    )
 
     model_config = ConfigDict(from_attributes=True)

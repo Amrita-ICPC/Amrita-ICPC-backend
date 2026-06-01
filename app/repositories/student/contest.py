@@ -29,7 +29,7 @@ class StudentContestRepository:
     ) -> tuple[PaginatedResult, dict[UUID, int]]:
         """
         Retrieve contests available for a student based on filters.
-        Handles visibility (public or user in allowed audience), 
+        Handles visibility (public or user in allowed audience),
         search, run status, and registration status.
         """
         from app.models.audience import ContestAudience, UserAudience
@@ -38,7 +38,9 @@ class StudentContestRepository:
         base_query = (
             select(Contest)
             .options(
-                selectinload(Contest.audience_links).joinedload(ContestAudience.audience)
+                selectinload(Contest.audience_links).joinedload(
+                    ContestAudience.audience
+                )
             )
             .filter(
                 Contest.is_deleted.is_(False),
@@ -54,16 +56,17 @@ class StudentContestRepository:
         user_audience_ids = set(user_audiences.scalars().all())
 
         if user_audience_ids:
-            has_audience = select(ContestAudience).filter(
-                ContestAudience.contest_id == Contest.id,
-                ContestAudience.audience_id.in_(user_audience_ids)
-            ).exists()
+            has_audience = (
+                select(ContestAudience)
+                .filter(
+                    ContestAudience.contest_id == Contest.id,
+                    ContestAudience.audience_id.in_(user_audience_ids),
+                )
+                .exists()
+            )
 
             base_query = base_query.filter(
-                or_(
-                    Contest.is_public.is_(True),
-                    has_audience
-                )
+                or_(Contest.is_public.is_(True), has_audience)
             )
         else:
             base_query = base_query.filter(Contest.is_public.is_(True))
@@ -76,10 +79,14 @@ class StudentContestRepository:
 
         # Team size filters
         if filters.min_team_size is not None:
-            base_query = base_query.filter(Contest.min_team_size >= filters.min_team_size)
+            base_query = base_query.filter(
+                Contest.min_team_size >= filters.min_team_size
+            )
 
         if filters.max_team_size is not None:
-            base_query = base_query.filter(Contest.max_team_size <= filters.max_team_size)
+            base_query = base_query.filter(
+                Contest.max_team_size <= filters.max_team_size
+            )
 
         # Run status filter
         now = datetime.now(timezone.utc)
@@ -100,21 +107,23 @@ class StudentContestRepository:
         # Registered filter
         # To filter registered, we need to check if user is in ContestTeam for the contest
         if filters.registered is not None:
-            team_user_subquery = (
-                select(TeamUser.team_id)
-                .filter(TeamUser.user_id == user_id)
+            team_user_subquery = select(TeamUser.team_id).filter(
+                TeamUser.user_id == user_id
             )
 
-            registered_condition = select(ContestTeam).filter(
-                ContestTeam.contest_id == Contest.id,
-                ContestTeam.team_id.in_(team_user_subquery)
-            ).exists()
+            registered_condition = (
+                select(ContestTeam)
+                .filter(
+                    ContestTeam.contest_id == Contest.id,
+                    ContestTeam.team_id.in_(team_user_subquery),
+                )
+                .exists()
+            )
 
             if filters.registered:
                 base_query = base_query.filter(registered_condition)
             else:
                 base_query = base_query.filter(~registered_condition)
-
 
         # Get total count
         count_query = select(func.count()).select_from(
@@ -145,7 +154,7 @@ class StudentContestRepository:
                 select(ContestTeam.contest_id, func.count(ContestTeam.team_id))
                 .filter(
                     ContestTeam.contest_id.in_(contest_ids),
-                    ContestTeam.approval_status == TeamApprovalStatus.APPROVED
+                    ContestTeam.approval_status == TeamApprovalStatus.APPROVED,
                 )
                 .group_by(ContestTeam.contest_id)
             )
@@ -153,22 +162,28 @@ class StudentContestRepository:
 
         return PaginatedResult(total=total, items=contests), teams_count_dict
 
-    async def get_contest_team_member(self, contest_id: UUID, user_id: UUID)->ContestTeamMember | None:
+    async def get_contest_team_member(
+        self, contest_id: UUID, user_id: UUID
+    ) -> ContestTeamMember | None:
         # Check if the user is in contest_team_member table
-        query = select(ContestTeamMember).where(
-            ContestTeamMember.contest_id == contest_id,
-            ContestTeamMember.user_id == user_id,
-            ContestTeamMember.status == ContestTeamMemberStatus.ACCEPTED
-        ).options(
-            selectinload(ContestTeamMember.contest_team)
-            .selectinload(ContestTeam.contest_team_member)
-            .selectinload(ContestTeamMember.user),
-            selectinload(ContestTeamMember.contest_team)
-            .selectinload(ContestTeam.team)
+        query = (
+            select(ContestTeamMember)
+            .where(
+                ContestTeamMember.contest_id == contest_id,
+                ContestTeamMember.user_id == user_id,
+                ContestTeamMember.status == ContestTeamMemberStatus.ACCEPTED,
+            )
+            .options(
+                selectinload(ContestTeamMember.contest_team)
+                .selectinload(ContestTeam.contest_team_member)
+                .selectinload(ContestTeamMember.user),
+                selectinload(ContestTeamMember.contest_team).selectinload(
+                    ContestTeam.team
+                ),
+            )
         )
         result = await self.db.execute(query)
         return result.scalars().first()
-
 
     # async def get_team_members_in_contest(self, contest_id: UUID, team_id: UUID) -> list[ContestTeamMember]:
     #     """

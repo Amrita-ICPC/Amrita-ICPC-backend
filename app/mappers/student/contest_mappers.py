@@ -26,7 +26,11 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from app.models.contest import ContestRuntime, ContestTeamProgress
+from app.models.contest import (
+    ContestRuntime,
+    ContestTeamMemberProgress,
+    ContestTeamProgress,
+)
 from app.schema.student.contest_team_progress import (
     ContestRuntimeDetails,
     ContestSessionStatus,
@@ -37,11 +41,11 @@ from app.schema.student.contest_team_progress import (
     WorkspaceParticipant,
 )
 from app.schema.student.contests import (
-    ReadinessStatus,
     RegistrationStatus,
     StudentContestAvailableResponse,
     StudentContestDetailsResponse,
     StudentContestListResponse,
+    StudentContestSessionStatus,
     StudentContestStatusResponse,
     TeamMemberStatus,
     TeamParticipationStatus,
@@ -57,6 +61,7 @@ from app.schema.contest import ContestAudienceResponse
 from app.utils.enums import (
     ContestRunStatus,
     ContestTeamMemberStatus,
+    ContestTeamParticpationType,
     RegistrationState,
     TeamApprovalMode,
     TeamApprovalStatus,
@@ -185,9 +190,11 @@ def to_student_contest_not_registered_response() -> StudentContestStatusResponse
             approved=False,
             status=RegistrationState.NOT_REGISTERED,
         ),
-        readiness=ReadinessStatus(
+        session=StudentContestSessionStatus(
             can_start=False,
             reason="Not registered for the contest",
+            contest_runtime_status=ContestRuntimeStatus.SCHEDULED,
+            already_started=False,
         ),
         team=None,
     )
@@ -232,6 +239,8 @@ def to_student_contest_status_response(
     status: TeamStatus,
     team_approval_status: TeamApprovalStatus,
     team_id: UUID | None,
+    contest_runtime_status: ContestRuntimeStatus,
+    already_started: bool,
 ) -> StudentContestStatusResponse:
     """
     Map calculated registration, readiness, and team status to StudentContestStatusResponse.
@@ -255,9 +264,11 @@ def to_student_contest_status_response(
             approved=approved,
             status=status_state,
         ),
-        readiness=ReadinessStatus(
+        session=StudentContestSessionStatus(
             can_start=can_start,
             reason=reason,
+            contest_runtime_status=contest_runtime_status,
+            already_started=already_started,
         ),
         team=team_status,
     )
@@ -328,13 +339,33 @@ def build_workspace(
     contest_team_members: list[ContestTeamMember],
     progress: ContestTeamProgress,
     user_id: UUID,
+    participation_type: ContestTeamParticpationType,
+    leader_id: UUID,
 ) -> WorkspaceDetails:
     participants = []
     for member in contest_team_members:
-        role = (
-            WorkspaceRole.EDITOR
-            if progress.current_editor_user_id == member.user_id
-            else WorkspaceRole.VIEWER
+        if participation_type == ContestTeamParticpationType.INDIVIDUAL_WORKSPACE:
+            role = (
+                WorkspaceRole.EDITOR
+                if member.user_id == user_id
+                else WorkspaceRole.VIEWER
+            )
+        elif participation_type == ContestTeamParticpationType.LEADER_ONLY:
+            role = (
+                WorkspaceRole.EDITOR
+                if member.user_id == leader_id
+                else WorkspaceRole.VIEWER
+            )
+        else:
+            role = (
+                WorkspaceRole.EDITOR
+                if progress.current_editor_user_id == member.user_id
+                else WorkspaceRole.VIEWER
+            )
+        team_role = (
+            TeamMemberRole.LEADER
+            if member.user_id == leader_id
+            else TeamMemberRole.MEMBER
         )
         is_self = member.user_id == user_id
         participants.append(
@@ -343,11 +374,25 @@ def build_workspace(
                 name=member.user.name,
                 avatar_url=None,
                 role=role,
+                team_role=team_role,
+                workspace_role=role,
                 is_self=is_self,
                 is_online=None,  # TODO: integrate with redis to get online status
             )
         )
-    return WorkspaceDetails(mode=WorkspaceMode.SINGLE_EDITOR, participants=participants)
+
+    if participation_type == ContestTeamParticpationType.INDIVIDUAL_WORKSPACE:
+        mode = WorkspaceMode.INDIVIDUAL
+    elif participation_type == ContestTeamParticpationType.LEADER_ONLY:
+        mode = WorkspaceMode.LEADER_ONLY
+    else:
+        mode = WorkspaceMode.SHARED_SINGLE_EDITOR
+
+    return WorkspaceDetails(
+        mode=mode,
+        current_editor_user_id=progress.current_editor_user_id,
+        participants=participants,
+    )
 
 
 def build_runtime_state(
@@ -373,13 +418,26 @@ def build_permissions(
     remaining_seconds: int,
     progress: ContestTeamProgress,
     user_id: UUID,
+    participation_type: ContestTeamParticpationType,
 ) -> PermissionsDetails:
     is_time_up = remaining_seconds <= 0
-    can_edit = (
-        not is_paused and not is_time_up and progress.current_editor_user_id == user_id
-    )
-    can_submit = not is_paused and not is_time_up
-    can_switch_editor = not is_paused and not is_time_up
+    if participation_type == ContestTeamParticpationType.INDIVIDUAL_WORKSPACE:
+        can_edit = not is_paused and not is_time_up
+        can_submit = not is_paused and not is_time_up
+        can_switch_editor = False
+    elif participation_type == ContestTeamParticpationType.LEADER_ONLY:
+        is_leader = progress.contest_team.leader_id == user_id
+        can_edit = not is_paused and not is_time_up and is_leader
+        can_submit = not is_paused and not is_time_up and is_leader
+        can_switch_editor = False
+    else:
+        can_edit = (
+            not is_paused
+            and not is_time_up
+            and progress.current_editor_user_id == user_id
+        )
+        can_submit = not is_paused and not is_time_up
+        can_switch_editor = not is_paused and not is_time_up
 
     return PermissionsDetails(
         can_view=True,
@@ -389,11 +447,31 @@ def build_permissions(
     )
 
 
-def build_team_progress(progress: ContestTeamProgress) -> TeamProgressDetails:
+def build_team_progress(
+    progress: ContestTeamProgress,
+    member_progress: ContestTeamMemberProgress | None = None,
+    is_individual: bool = False,
+) -> TeamProgressDetails:
+    score = (
+        member_progress.score
+        if is_individual and member_progress is not None
+        else progress.score
+    )
+    penalty = (
+        member_progress.penalty
+        if is_individual and member_progress is not None
+        else progress.penalty
+    )
+    solved_count = (
+        member_progress.solved_questions_count
+        if is_individual and member_progress is not None
+        else progress.solved_questions_count
+    )
+
     return TeamProgressDetails(
-        score=progress.score,
-        penalty=progress.penalty,
-        solved_count=progress.solved_questions_count,
+        score=score,
+        penalty=penalty,
+        solved_count=solved_count,
         last_submission_at=None,
         extra_time_seconds=progress.extra_time_seconds,
         has_extra_time=(progress.extra_time_seconds or 0) > 0,
@@ -403,10 +481,12 @@ def build_team_progress(progress: ContestTeamProgress) -> TeamProgressDetails:
 def build_session_status(
     already_started: bool,
     started_at: datetime | None,
+    ended_at: datetime | None = None,
 ) -> ContestSessionStatus:
     return ContestSessionStatus(
         already_started=already_started,
         started_at=started_at,
+        ended_at=ended_at,
     )
 
 

@@ -179,7 +179,7 @@ class QuestionRepository:
         """
         Check if user has access to a question through a contest.
 
-        User has access if they created the contest, are an instructor, 
+        User has access if they created the contest, are an instructor,
         are on a participating team, or contest is public.
 
         Args:

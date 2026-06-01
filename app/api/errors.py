@@ -1,4 +1,3 @@
-from app.exceptions.contest import ContestTeamProgressNotFoundError
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, Request, status
@@ -26,8 +25,14 @@ from app.exceptions.contest import (
     ContestMaxTeamsReachedError,
     ContestNotFoundError,
     ContestOperationError,
+    ContestRuntimeCancelledError,
+    ContestRuntimeFinishedError,
+    ContestRuntimeNotFoundError,
+    ContestRuntimeNotInitializedError,
+    ContestRuntimePausedError,
     ContestTeamMemberNotFoundException,
     ContestTeamNotFoundException,
+    ContestTeamProgressNotFoundError,
     DuplicateQuestionOrderError,
     InstructorAlreadyAssignedError,
     InstructorNotAssignedError,
@@ -41,10 +46,6 @@ from app.exceptions.contest import (
     StudentNotEligibleForContestError,
     TeamAlreadyInContestError,
     TeamDisqualifiedError,
-    ContestRuntimeNotInitializedError,
-    ContestRuntimeCancelledError,
-    ContestRuntimeFinishedError,
-    ContestRuntimePausedError,
 )
 from app.exceptions.execution import (
     CodeExecutionError,
@@ -202,7 +203,9 @@ def setup_exception_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(NoContestTeamMemberFoundError)
-    async def no_contest_team_member_found_handler(request: Request, exc: NoContestTeamMemberFoundError):
+    async def no_contest_team_member_found_handler(
+        request: Request, exc: NoContestTeamMemberFoundError
+    ):
         logger.warning(f"No contest team member found: {exc.message}")
         return _create_error_response(
             request=request,
@@ -304,9 +307,7 @@ def setup_exception_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(TeamDisqualifiedError)
-    async def team_disqualified_handler(
-        request: Request, exc: TeamDisqualifiedError
-    ):
+    async def team_disqualified_handler(request: Request, exc: TeamDisqualifiedError):
         logger.warning(f"Team disqualified: {exc.message}")
         return _create_error_response(
             request=request,
@@ -317,9 +318,7 @@ def setup_exception_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(TeamIsConfirmedError)
-    async def team_is_confirmed_handler(
-        request: Request, exc: TeamIsConfirmedError
-    ):
+    async def team_is_confirmed_handler(request: Request, exc: TeamIsConfirmedError):
         logger.warning(f"Team is confirmed: {exc.message}")
         return _create_error_response(
             request=request,
@@ -329,11 +328,16 @@ def setup_exception_handlers(app: FastAPI) -> None:
             details=[exc.detail] if exc.detail else None,
         )
 
-    @app.exception_handler(TeamStatusNotAllowedForUpdatingContestTeamMemberStatusException)
+    @app.exception_handler(
+        TeamStatusNotAllowedForUpdatingContestTeamMemberStatusException
+    )
     async def team_status_not_allowed_for_updating_contest_team_member_status_handler(
-        request: Request, exc: TeamStatusNotAllowedForUpdatingContestTeamMemberStatusException
+        request: Request,
+        exc: TeamStatusNotAllowedForUpdatingContestTeamMemberStatusException,
     ):
-        logger.warning(f"Team status not allowed for updating contest team member status: {exc.message}")
+        logger.warning(
+            f"Team status not allowed for updating contest team member status: {exc.message}"
+        )
         return _create_error_response(
             request=request,
             status_code=exc.status_code,
@@ -354,7 +358,6 @@ def setup_exception_handlers(app: FastAPI) -> None:
             error_code="INVALID_CONTEST_TEAM_MEMBER_STATUS_UPDATE",
             details=[exc.detail] if exc.detail else None,
         )
-
 
     @app.exception_handler(TeamAlreadyInContestError)
     async def team_already_in_contest_handler(
@@ -418,7 +421,9 @@ def setup_exception_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(BankAlreadyExistsError)
-    async def bank_already_exists_handler(request: Request, exc: BankAlreadyExistsError):
+    async def bank_already_exists_handler(
+        request: Request, exc: BankAlreadyExistsError
+    ):
         logger.warning(f"Bank already exists: {exc.message}")
         return _create_error_response(
             request=request,
@@ -440,7 +445,9 @@ def setup_exception_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(BankOwnerUnshareError)
-    async def bank_owner_unshare_error_handler(request: Request, exc: BankOwnerUnshareError):
+    async def bank_owner_unshare_error_handler(
+        request: Request, exc: BankOwnerUnshareError
+    ):
         logger.warning(f"Cannot unshare bank: {exc.message}")
         return _create_error_response(
             request=request,
@@ -473,7 +480,9 @@ def setup_exception_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(InvalidContestStateError)
-    async def invalid_contest_state_handler(request: Request, exc: InvalidContestStateError):
+    async def invalid_contest_state_handler(
+        request: Request, exc: InvalidContestStateError
+    ):
         logger.warning(f"Invalid contest state: {exc.message}")
         return _create_error_response(
             request=request,
@@ -484,7 +493,9 @@ def setup_exception_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(ContestRuntimeNotInitializedError)
-    async def contest_runtime_not_initialized_handler(request: Request, exc: ContestRuntimeNotInitializedError):
+    async def contest_runtime_not_initialized_handler(
+        request: Request, exc: ContestRuntimeNotInitializedError
+    ):
         logger.warning(f"Contest runtime not initialized: {exc.message}")
         return _create_error_response(
             request=request,
@@ -495,7 +506,9 @@ def setup_exception_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(ContestRuntimeCancelledError)
-    async def contest_runtime_cancelled_handler(request: Request, exc: ContestRuntimeCancelledError):
+    async def contest_runtime_cancelled_handler(
+        request: Request, exc: ContestRuntimeCancelledError
+    ):
         logger.warning(f"Contest runtime cancelled: {exc.message}")
         return _create_error_response(
             request=request,
@@ -506,7 +519,9 @@ def setup_exception_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(ContestRuntimeFinishedError)
-    async def contest_runtime_finished_handler(request: Request, exc: ContestRuntimeFinishedError):
+    async def contest_runtime_finished_handler(
+        request: Request, exc: ContestRuntimeFinishedError
+    ):
         logger.warning(f"Contest runtime finished: {exc.message}")
         return _create_error_response(
             request=request,
@@ -517,13 +532,28 @@ def setup_exception_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(ContestRuntimePausedError)
-    async def contest_runtime_paused_handler(request: Request, exc: ContestRuntimePausedError):
+    async def contest_runtime_paused_handler(
+        request: Request, exc: ContestRuntimePausedError
+    ):
         logger.warning(f"Contest runtime paused: {exc.message}")
         return _create_error_response(
             request=request,
             status_code=exc.status_code,
             message=exc.message,
             error_code="CONTEST_RUNTIME_PAUSED",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(ContestRuntimeNotFoundError)
+    async def contest_runtime_not_found_handler(
+        request: Request, exc: ContestRuntimeNotFoundError
+    ):
+        logger.warning(f"Contest runtime not found: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="CONTEST_RUNTIME_NOT_FOUND",
             details=[exc.detail] if exc.detail else None,
         )
 
@@ -730,16 +760,18 @@ def setup_exception_handlers(app: FastAPI) -> None:
             error_code="QUESTION_NOT_FOUND",
             details=[exc.detail] if exc.detail else None,
         )
-    
+
     @app.exception_handler(ContestTeamProgressNotFoundError)
-    async def contest_team_progress_not_found_error(request: Request, exc: ContestTeamProgressNotFoundError):
+    async def contest_team_progress_not_found_error(
+        request: Request, exc: ContestTeamProgressNotFoundError
+    ):
         logger.warning(f"Contest Team Progress not found: {exc.message}")
         return _create_error_response(
-              request=request,
+            request=request,
             status_code=exc.status_code,
             message=exc.message,
             error_code="CONTEST_TEAM_PROGRESS_NOT_FOUND",
-            details=[exc.detail] if exc.detail else None
+            details=[exc.detail] if exc.detail else None,
         )
 
     @app.exception_handler(TemplateAlreadyExistsError)

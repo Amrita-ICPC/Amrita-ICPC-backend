@@ -75,7 +75,9 @@ async def approve_team(
         APIResponse: Standardized response encapsulating the updated team data.
     """
     team = await service.approve_team(contest_id, contest_team_id, user_id)
-    logger.info(f"Contest team {contest_team_id} approved in contest {contest_id} by user {user_id}")
+    logger.info(
+        f"Contest team {contest_team_id} approved in contest {contest_id} by user {user_id}"
+    )
     return create_api_response(request, data=team, message="Team approved successfully")
 
 
@@ -106,7 +108,9 @@ async def reject_team(
         APIResponse: Standardized response encapsulating the updated team data.
     """
     team = await service.reject_team(contest_id, contest_team_id, user_id)
-    logger.info(f"Contest team {contest_team_id} rejected in contest {contest_id} by user {user_id}")
+    logger.info(
+        f"Contest team {contest_team_id} rejected in contest {contest_id} by user {user_id}"
+    )
     return create_api_response(request, data=team, message="Team rejected successfully")
 
 

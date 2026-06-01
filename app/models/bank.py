@@ -43,9 +43,7 @@ class Bank(Base):
     deleter = relationship(
         "User", back_populates="deleted_banks", foreign_keys=[deleted_by]
     )
-    creator = relationship(
-        "User", foreign_keys=[created_by]
-    )
+    creator = relationship("User", foreign_keys=[created_by])
 
     __table_args__ = (
         UniqueConstraint("name", "created_by", name="uk_bank_name_created_by"),

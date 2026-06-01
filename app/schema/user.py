@@ -128,5 +128,3 @@ class UserInvitationResponse(BaseModel):
 
     class Config:
         from_attributes = True
-
-

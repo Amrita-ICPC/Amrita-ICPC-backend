@@ -1,16 +1,15 @@
-import pytest
 import datetime
-from uuid import uuid4, UUID
 from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
 
-from app.service.student.contest_team import ContestTeamService
-from app.repositories.student.contest_team import ContestTeamRepository
-from app.repositories.student.team import StudentTeamRepository
-from app.core.guards.team_student import TeamStudentGuard
-from app.repositories.contest import ContestRepository
+import pytest
+
 from app.core.guards.contest_student import ContestStudentGuard
-from app.models import Contest, ContestTeam, ContestTeamMember, Team, User
-from app.utils.enums import ContestTeamMemberStatus, TeamStatus
+from app.core.guards.team_student import TeamStudentGuard
+from app.exceptions.contest import (
+    InvalidContestError,
+    StudentAlreadyInContestError,
+)
 from app.exceptions.student.teams import (
     TeamStatusNotAllowedForUpdatingContestTeamMemberStatusException,
 )
@@ -18,13 +17,14 @@ from app.exceptions.team import (
     InvalidTeamSizeError,
     MemberAlreadyInTeamError,
     TeamMemberAccessDeniedError,
-    StudentTeamNotFoundError,
 )
-from app.exceptions.contest import (
-    StudentAlreadyInContestError,
-    ContestTeamNotFoundException,
-    InvalidContestError,
-)
+from app.models import Contest, ContestTeam, ContestTeamMember, User
+from app.repositories.contest import ContestRepository
+from app.repositories.student.contest_team import ContestTeamRepository
+from app.repositories.student.team import StudentTeamRepository
+from app.service.student.contest_team import ContestTeamService
+from app.utils.enums import ContestTeamMemberStatus, TeamStatus
+
 
 @pytest.fixture
 def mock_contest_team_repository() -> AsyncMock:
@@ -98,7 +98,9 @@ async def test_invite_members_success_public_contest_no_underlying_team(
     mock_contest_team.team_status = TeamStatus.DRAFT
     mock_contest_team.name = "My Contest Team"
     mock_contest_team.leader_id = leader_id
-    mock_contest_team_repository.get_contest_team_by_id_or_raise.return_value = mock_contest_team
+    mock_contest_team_repository.get_contest_team_by_id_or_raise.return_value = (
+        mock_contest_team
+    )
 
     # Mock count of team members (only the leader)
     mock_contest_team_repository.count_contest_team_members.return_value = 1
@@ -167,7 +169,9 @@ async def test_invite_members_not_draft_team(
     mock_contest_team.contest_id = contest_id
     mock_contest_team.team_id = team_id
     mock_contest_team.team_status = TeamStatus.CONFIRMED
-    mock_contest_team_repository.get_contest_team_by_id_or_raise.return_value = mock_contest_team
+    mock_contest_team_repository.get_contest_team_by_id_or_raise.return_value = (
+        mock_contest_team
+    )
 
     with pytest.raises(TeamStatusNotAllowedForUpdatingContestTeamMemberStatusException):
         await contest_team_service.invite_members(
@@ -199,7 +203,9 @@ async def test_invite_members_exceeds_capacity(
     mock_contest_team.contest_id = contest_id
     mock_contest_team.team_id = team_id
     mock_contest_team.team_status = TeamStatus.DRAFT
-    mock_contest_team_repository.get_contest_team_by_id_or_raise.return_value = mock_contest_team
+    mock_contest_team_repository.get_contest_team_by_id_or_raise.return_value = (
+        mock_contest_team
+    )
 
     # Mock 2 active members count (already at capacity limit)
     mock_contest_team_repository.count_contest_team_members.return_value = 2
@@ -236,7 +242,9 @@ async def test_invite_members_already_in_team(
     mock_contest_team.team_id = team_id
     mock_contest_team.team_status = TeamStatus.DRAFT
     mock_contest_team.name = "My Team"
-    mock_contest_team_repository.get_contest_team_by_id_or_raise.return_value = mock_contest_team
+    mock_contest_team_repository.get_contest_team_by_id_or_raise.return_value = (
+        mock_contest_team
+    )
 
     # Mock count of team members
     mock_contest_team_repository.count_contest_team_members.return_value = 1
@@ -277,14 +285,18 @@ async def test_invite_members_already_active_in_contest(
     mock_contest_team.contest_id = contest_id
     mock_contest_team.team_id = team_id
     mock_contest_team.team_status = TeamStatus.DRAFT
-    mock_contest_team_repository.get_contest_team_by_id_or_raise.return_value = mock_contest_team
+    mock_contest_team_repository.get_contest_team_by_id_or_raise.return_value = (
+        mock_contest_team
+    )
     mock_contest_team_repository.count_contest_team_members.return_value = 1
     mock_contest_team_repository.get_contest_team_members.return_value = []
 
     # Mock invitee active in another team in this contest
     active_member = MagicMock(spec=ContestTeamMember)
     active_member.user_id = invitee_id
-    mock_contest_team_repository.get_active_members_in_contest.return_value = [active_member]
+    mock_contest_team_repository.get_active_members_in_contest.return_value = [
+        active_member
+    ]
 
     with pytest.raises(StudentAlreadyInContestError):
         await contest_team_service.invite_members(
@@ -322,7 +334,9 @@ async def test_invite_members_not_in_underlying_team(
     mock_contest_team.team_id = team_id
     mock_contest_team.team_status = TeamStatus.DRAFT
     mock_contest_team.name = "My Team"
-    mock_contest_team_repository.get_contest_team_by_id_or_raise.return_value = mock_contest_team
+    mock_contest_team_repository.get_contest_team_by_id_or_raise.return_value = (
+        mock_contest_team
+    )
     mock_contest_team_repository.count_contest_team_members.return_value = 1
     mock_contest_team_repository.get_contest_team_members.return_value = []
     mock_contest_team_repository.get_active_members_in_contest.return_value = []

@@ -153,8 +153,6 @@ async def test_create_bank_duplicate_name(
         await bank_service.create_bank(sample_bank_data, user_id)
 
 
-
-
 @pytest.mark.asyncio
 async def test_update_bank_owner_success(
     bank_service, mock_repository, mock_validator, existing_bank
@@ -222,8 +220,6 @@ async def test_delete_bank_denied(
         await bank_service.delete_bank(existing_bank.id, random_user_id)
 
 
-
-
 @pytest.mark.asyncio
 async def test_share_bank_denied(
     bank_service, mock_repository, mock_validator, existing_bank
@@ -237,8 +233,6 @@ async def test_share_bank_denied(
 
     with pytest.raises(BankPermissionError):
         await bank_service.share_bank(existing_bank.id, shares, random_user_id)
-
-
 
 
 @pytest.mark.asyncio

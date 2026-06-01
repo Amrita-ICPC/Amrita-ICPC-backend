@@ -2,7 +2,7 @@
 
 Combines student endpoints for:
 - Contest management
-- Team management  
+- Team management
 - Code execution
 """
 

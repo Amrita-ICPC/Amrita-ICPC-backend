@@ -146,7 +146,13 @@ class AudienceNotAssignedToContestError(AppBaseException):
 class InvalidContestStateError(AppBaseException):
     """Raised when contest is in an invalid state for the requested operation."""
 
-    def __init__(self, contest_id: str, operation: str, current_status: str, required_status: str | list[str]):
+    def __init__(
+        self,
+        contest_id: str,
+        operation: str,
+        current_status: str,
+        required_status: str | list[str],
+    ):
         if isinstance(required_status, list):
             status_str = " or ".join(required_status)
         else:
@@ -187,8 +193,10 @@ class TeamAlreadyInContestError(AppBaseException):
             status_code=status.HTTP_409_CONFLICT,
         )
 
+
 class ContestTeamNotFoundException(AppBaseException):
     """Raised when contest team is not found."""
+
     def __init__(self, contest_team_id: str):
         super().__init__(
             message=f"Contest team with ID {contest_team_id} not found",
@@ -198,6 +206,7 @@ class ContestTeamNotFoundException(AppBaseException):
 
 class ContestTeamProgressNotFoundError(AppBaseException):
     """Raised when contest team progress is not found."""
+
     def __init__(self, contest_id: str, contest_team_id: str):
         super().__init__(
             message=f"Contest team progress for contest ID {contest_id} and contest team ID {contest_team_id} not found",
@@ -207,17 +216,21 @@ class ContestTeamProgressNotFoundError(AppBaseException):
 
 class TeamCanceledError(AppBaseException):
     """Raised when team is canceled."""
+
     def __init__(self):
         super().__init__(
             message="Team is canceled",
             status_code=status.HTTP_400_BAD_REQUEST,
         )
+
+
 class AccessDeniedTeamStatusError(AppBaseException):
     def __init__(self, team_status: str):
         super().__init__(
             message=f"Team is in status {team_status}' you cannot make changes to the team for students",
             status_code=status.HTTP_400_BAD_REQUEST,
         )
+
 
 class TeamDisqualifiedError(AppBaseException):
     def __init__(self):
@@ -226,8 +239,10 @@ class TeamDisqualifiedError(AppBaseException):
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
+
 class ContestTeamMemberNotFoundException(AppBaseException):
     """Raised when contest team member is not found."""
+
     def __init__(self, contest_team_member_id: str):
         super().__init__(
             message=f"Contest team member with ID {contest_team_member_id} not found",
@@ -237,6 +252,7 @@ class ContestTeamMemberNotFoundException(AppBaseException):
 
 class ContestMaxTeamsReachedError(AppBaseException):
     """Raised when the contest has reached its maximum allowed number of teams."""
+
     def __init__(self, contest_id: str, max_teams: int):
         super().__init__(
             message=f"Contest {contest_id} has reached its maximum allowed limit of {max_teams} teams.",
@@ -246,6 +262,7 @@ class ContestMaxTeamsReachedError(AppBaseException):
 
 class ContestRuntimeNotInitializedError(AppBaseException):
     """Raised when the contest runtime has not been initialized."""
+
     def __init__(self):
         super().__init__(
             message="Contest runtime has not been initialized",
@@ -255,6 +272,7 @@ class ContestRuntimeNotInitializedError(AppBaseException):
 
 class ContestRuntimeCancelledError(AppBaseException):
     """Raised when the contest has been cancelled."""
+
     def __init__(self):
         super().__init__(
             message="Contest has been cancelled",
@@ -264,6 +282,7 @@ class ContestRuntimeCancelledError(AppBaseException):
 
 class ContestRuntimeFinishedError(AppBaseException):
     """Raised when the contest has already ended/finished."""
+
     def __init__(self):
         super().__init__(
             message="Contest has already ended",
@@ -273,8 +292,19 @@ class ContestRuntimeFinishedError(AppBaseException):
 
 class ContestRuntimePausedError(AppBaseException):
     """Raised when the contest is currently paused."""
+
     def __init__(self):
         super().__init__(
             message="Contest is currently paused",
             status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+
+class ContestRuntimeNotFoundError(AppBaseException):
+    """Raised when the contest runtime is not found."""
+
+    def __init__(self, contest_id: str):
+        super().__init__(
+            message=f"Contest runtime for contest with ID {contest_id} not found",
+            status_code=status.HTTP_404_NOT_FOUND,
         )
