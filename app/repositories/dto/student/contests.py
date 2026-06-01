@@ -31,4 +31,3 @@ class StudentContestFilters:
     )
     min_team_size: int | None = None
     max_team_size: int | None = None
-

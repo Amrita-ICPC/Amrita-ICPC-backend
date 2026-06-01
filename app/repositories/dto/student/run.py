@@ -14,7 +14,7 @@ from uuid import UUID
 @dataclass
 class StudentCodeRunRequestDTO:
     """Request DTO for student to test/run their code.
-    
+
     Student provides code, language, and optionally a specific test case.
     Used for quick testing before submission.
     """
@@ -41,7 +41,7 @@ class StudentCodeRunRequestDTO:
 @dataclass
 class StudentTestCaseRunResultDTO:
     """Result DTO for a single test case execution.
-    
+
     Contains verdict and execution details from Judge0.
     """
 
@@ -79,7 +79,7 @@ class StudentTestCaseRunResultDTO:
 @dataclass
 class StudentCodeRunResponseDTO:
     """Complete response DTO for a code run operation.
-    
+
     Contains result of running code against a test case.
     """
 

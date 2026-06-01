@@ -1,17 +1,17 @@
-import pytest
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from app.core.guards.team_student import TeamStudentGuard
-from app.models.team import Team
+from app.exceptions.student.teams import StudentTeamInvitationError
+from app.models.team import Team, TeamInvitation
 from app.repositories.dto.pagination import PaginatedResult, PaginationParams
 from app.repositories.student.team import StudentTeamRepository
 from app.repositories.user import UserRepository
-from app.schema.student.teams import StudentTeamListResponse, StudentTeamCardResponse
+from app.schema.student.teams import StudentTeamCardResponse, StudentTeamListResponse
 from app.service.student.team import StudentTeamService
 from app.utils.enums import InvitationType, TeamInvitationStatus
-from app.exceptions.student.teams import StudentTeamInvitationError
-from app.models.team import TeamInvitation
 
 # Disable caching decorators globally for tests
 patch("app.core.cache.decorators.cache_get", lambda **kw: lambda f: f).start()
@@ -99,7 +99,10 @@ async def test_search_teams_by_name_success(
         items=[mock_team_1, mock_team_2],
     )
     mock_repository.get_pending_student_invitations_count.return_value = 5
-    mock_repository.get_user_pending_join_requests_data.return_value = ({mock_team_1.id}, 3)
+    mock_repository.get_user_pending_join_requests_data.return_value = (
+        {mock_team_1.id},
+        3,
+    )
 
     # Run the service method
     result: StudentTeamListResponse = await student_team_service.search_teams_by_name(
@@ -247,7 +250,9 @@ async def test_update_team_invitation_status_cancelled_by_sender_success(
         status=TeamInvitationStatus.CANCELLED,
     )
 
-    mock_repository.get_student_team_invitation_or_raise.assert_called_once_with(invitation_id)
+    mock_repository.get_student_team_invitation_or_raise.assert_called_once_with(
+        invitation_id
+    )
     mock_repository.update_team_invitation_status.assert_called_once_with(
         mock_invitation, TeamInvitationStatus.CANCELLED
     )
@@ -279,7 +284,9 @@ async def test_update_team_invitation_status_cancelled_by_non_sender_raises_erro
         )
 
     assert "Only the sender can cancel" in str(excinfo.value)
-    mock_repository.get_student_team_invitation_or_raise.assert_called_once_with(invitation_id)
+    mock_repository.get_student_team_invitation_or_raise.assert_called_once_with(
+        invitation_id
+    )
     assert not mock_repository.update_team_invitation_status.called
 
 
@@ -308,7 +315,9 @@ async def test_update_team_invitation_status_cancelled_non_pending_raises_error(
         )
 
     assert "Only pending invitations or requests can be cancelled" in str(excinfo.value)
-    mock_repository.get_student_team_invitation_or_raise.assert_called_once_with(invitation_id)
+    mock_repository.get_student_team_invitation_or_raise.assert_called_once_with(
+        invitation_id
+    )
     assert not mock_repository.update_team_invitation_status.called
 
 
@@ -340,9 +349,13 @@ async def test_transfer_team_leader_success(
     )
 
     # Assertions
-    mock_repository.get_student_team_by_id_or_raise.assert_called_once_with(user_id, team_id)
+    mock_repository.get_student_team_by_id_or_raise.assert_called_once_with(
+        user_id, team_id
+    )
     mock_guard.check_is_leader.assert_called_once_with(user_id=user_id, team=mock_team)
-    mock_guard.check_is_member.assert_called_once_with(team_id=team_id, user_id=new_leader_id)
+    mock_guard.check_is_member.assert_called_once_with(
+        team_id=team_id, user_id=new_leader_id
+    )
     assert mock_team.leader_id == new_leader_id
     mock_repository.update_student_team.assert_called_once_with(mock_team)
 
@@ -379,7 +392,9 @@ async def test_leave_team_member_success(
         leave_member_id=user_id,
     )
 
-    mock_repository.get_student_team_by_id_or_raise.assert_called_once_with(user_id, team_id)
+    mock_repository.get_student_team_by_id_or_raise.assert_called_once_with(
+        user_id, team_id
+    )
     assert mock_team.leader_id == other_member_id
     mock_repository.update_student_team.assert_called_once_with(mock_team)
     mock_repository.leave_team.assert_called_once_with(team_id, user_id)
@@ -413,7 +428,9 @@ async def test_leave_team_only_one_member_raises_error(
         )
 
     assert "Cannot leave team with only one member" in str(excinfo.value)
-    mock_repository.get_student_team_by_id_or_raise.assert_called_once_with(user_id, team_id)
+    mock_repository.get_student_team_by_id_or_raise.assert_called_once_with(
+        user_id, team_id
+    )
     assert not mock_repository.leave_team.called
 
 
@@ -450,9 +467,10 @@ async def test_leave_team_kick_by_leader(
         leave_member_id=member_to_kick_id,
     )
 
-    mock_repository.get_student_team_by_id_or_raise.assert_called_once_with(leader_id, team_id)
-    mock_guard.check_is_leader.assert_called_once_with(user_id=leader_id, team=mock_team)
+    mock_repository.get_student_team_by_id_or_raise.assert_called_once_with(
+        leader_id, team_id
+    )
+    mock_guard.check_is_leader.assert_called_once_with(
+        user_id=leader_id, team=mock_team
+    )
     mock_repository.leave_team.assert_called_once_with(team_id, member_to_kick_id)
-
-
-

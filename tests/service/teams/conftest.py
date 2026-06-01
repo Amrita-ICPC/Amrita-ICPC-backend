@@ -20,9 +20,9 @@ from app.core.guards.team import TeamOperationGuard
 from app.models.contest import ContestTeam
 from app.models.team import Team
 from app.models.user import User
-from app.repositories.team import TeamRepository
 from app.repositories.contest import ContestRepository
 from app.repositories.student.contest_team import ContestTeamRepository
+from app.repositories.team import TeamRepository
 from app.repositories.user import UserRepository
 from app.schema.team import ContestTeamResponse, TeamCreate
 from app.service.team_service import TeamService
@@ -117,11 +117,17 @@ def team_service(
     mock_repository.get_contest_or_raise = mock_contest_repository.get_contest_or_raise
 
     mock_contest_team_repository.get_contest_teams = mock_repository.get_contest_teams
-    mock_contest_team_repository.count_teams_by_status = mock_repository.get_team_status_counts
+    mock_contest_team_repository.count_teams_by_status = (
+        mock_repository.get_team_status_counts
+    )
     if hasattr(mock_repository, "get_contest_team_by_id_or_raise"):
-        mock_contest_team_repository.get_contest_team_by_id_or_raise = mock_repository.get_contest_team_by_id_or_raise
+        mock_contest_team_repository.get_contest_team_by_id_or_raise = (
+            mock_repository.get_contest_team_by_id_or_raise
+        )
     elif hasattr(mock_repository, "get_contest_team_or_raise"):
-        mock_contest_team_repository.get_contest_team_by_id_or_raise = mock_repository.get_contest_team_or_raise
+        mock_contest_team_repository.get_contest_team_by_id_or_raise = (
+            mock_repository.get_contest_team_or_raise
+        )
     mock_contest_team_repository.get_contest_team_members.return_value = []
 
     return TeamService(

@@ -151,7 +151,9 @@ async def get_student_contest_status(
     """
     Get student participation status in a contest, including team details and readiness.
     """
-    result = await service.get_student_status_in_contest(contest_id, user_id)
+    result = await service.get_student_participation_status_in_contest(
+        contest_id, user_id
+    )
     return create_api_response(
         request,
         data=result,

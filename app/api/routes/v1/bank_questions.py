@@ -126,9 +126,6 @@ async def remove_questions_from_bank(
     )
 
 
-
-
-
 @router.post(
     "/{source_bank_id}/questions/clone",
     status_code=status.HTTP_201_CREATED,
@@ -188,9 +185,13 @@ async def get_bank_questions(
     skip: int = Query(0, ge=0),
     limit: int = Query(10, ge=1, le=100),
     title: str | None = Query(None, description="Filter by question title"),
-    difficulty: QuestionDifficulty | None = Query(None, description="Filter by difficulty"),
+    difficulty: QuestionDifficulty | None = Query(
+        None, description="Filter by difficulty"
+    ),
     tag: str | None = Query(None, description="Filter by tag name"),
-    sort_by: BankQuestionSortBy = Query(BankQuestionSortBy.NAME, description="Sort by field"),
+    sort_by: BankQuestionSortBy = Query(
+        BankQuestionSortBy.NAME, description="Sort by field"
+    ),
     sort_order: SortOrder = Query(SortOrder.ASC, description="Sort order"),
     user_id: UUID = Depends(get_current_user_id),
     service: BankQuestionService = Depends(get_bank_question_service),
@@ -282,9 +283,6 @@ async def get_bank_question(
     )
 
 
-
-
-
 @router.put(
     "/{bank_id}/questions/{question_id}",
     status_code=status.HTTP_200_OK,
@@ -324,9 +322,7 @@ async def update_bank_question(
     question = await service.update_bank_question(
         bank_id, question_id, payload, user_id
     )
-    logger.info(
-        f"Updated question {question_id} in bank {bank_id} by user {user_id}"
-    )
+    logger.info(f"Updated question {question_id} in bank {bank_id} by user {user_id}")
     return create_api_response(
         request,
         data=question.model_dump(),

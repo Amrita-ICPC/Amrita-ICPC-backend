@@ -34,7 +34,10 @@ def get_student_service(
 
 
 @router.get("/me", response_model=UserProfile)
-def get_me(current_user: Dict[str, Any] = Depends(get_current_user), current_user_id: UUID = Depends(get_current_user_id)):
+def get_me(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    current_user_id: UUID = Depends(get_current_user_id),
+):
     """Get current logged-in user details from JWT."""
     return {
         "id": current_user_id,
@@ -53,7 +56,9 @@ def get_me(current_user: Dict[str, Any] = Depends(get_current_user), current_use
 )
 async def get_my_team_invitations(
     request: Request,
-    status: ContestTeamMemberStatus | None = Query(None, description="Filter by invitation status"),
+    status: ContestTeamMemberStatus | None = Query(
+        None, description="Filter by invitation status"
+    ),
     current_user_id: UUID = Depends(get_current_user_id),
     service: StudentService = Depends(get_student_service),
 ):
@@ -66,6 +71,7 @@ async def get_my_team_invitations(
         data=invitations,
         message="User invitations fetched successfully",
     )
+
 
 @router.post(
     "/sync-keycloak-users",
@@ -188,7 +194,9 @@ async def list_students(
     page: int = Query(1, ge=1, description="Page number (starts from 1)"),
     page_size: int = Query(20, ge=1, le=100, description="Number of items per page"),
     q: str | None = Query(None, description="Search by name or email"),
-    team_id: UUID | None = Query(None, description="Check if the student is already in this team"),
+    team_id: UUID | None = Query(
+        None, description="Check if the student is already in this team"
+    ),
 ):
     """List student users with search query support.
 
@@ -226,4 +234,3 @@ async def list_students(
         message="Student users fetched successfully",
         pagination=pagination,
     )
-

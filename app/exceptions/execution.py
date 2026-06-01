@@ -11,7 +11,7 @@ from app.exceptions.base import AppBaseException
 
 class InvalidCodeError(AppBaseException):
     """Exception raised when source code fails domain validation.
-    
+
     Raised when code submission violates business rules such as:
     - Source code exceeds size limits
     - Source code is empty or only whitespace
@@ -27,7 +27,7 @@ class InvalidCodeError(AppBaseException):
 
 class InvalidLanguageError(AppBaseException):
     """Exception raised when programming language ID is invalid.
-    
+
     Raised when:
     - Language ID is out of acceptable range (1-100)
     - Language ID is not a valid integer
@@ -43,7 +43,7 @@ class InvalidLanguageError(AppBaseException):
 
 class InvalidSubmissionTokenError(AppBaseException):
     """Exception raised when submission token is invalid or malformed.
-    
+
     Raised when:
     - Token is empty or contains only whitespace
     - Token format is invalid (contains invalid characters)
@@ -60,7 +60,7 @@ class InvalidSubmissionTokenError(AppBaseException):
 
 class CodeExecutionError(AppBaseException):
     """Exception raised when code execution fails on Judge0.
-    
+
     Raised when:
     - Judge0 submission fails
     - Judge0 returns a service error
@@ -77,7 +77,7 @@ class CodeExecutionError(AppBaseException):
 
 class NoTestCasesError(AppBaseException):
     """Exception raised when a question has no non-hidden test cases.
-    
+
     Raised when attempting to run code against a question that has no
     visible test cases for students to practice against.
     """
@@ -91,12 +91,12 @@ class NoTestCasesError(AppBaseException):
 
 class CompilationError(AppBaseException):
     """Exception raised when code fails to compile.
-    
+
     Raised when:
     - Code has syntax errors
     - Code has import errors
     - Code fails to parse by the compiler
-    
+
     This is used in practice runs to signal early exit without running test cases.
     """
 

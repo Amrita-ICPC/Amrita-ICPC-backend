@@ -12,6 +12,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    PrimaryKeyConstraint,
     String,
     Text,
     UniqueConstraint,
@@ -133,7 +134,9 @@ class Contest(Base):
     start_time: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
-    end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    end_time: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     duration: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
@@ -303,7 +306,13 @@ class ContestTeamProgress(Base):
     flagged_reason: Mapped[str | None] = mapped_column(Text)
 
     # Time related fields
-    end_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    end_time: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    ended_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     extra_time_seconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     # Editor field
@@ -444,6 +453,11 @@ class ContestTeamMember(Base):
         foreign_keys=[contest_team_id],
     )
     user = relationship("User", back_populates="team_registration_members")
+    member_progress: Mapped[list[ContestTeamMemberProgress]] = relationship(
+        "ContestTeamMemberProgress",
+        back_populates="contest_team_member",
+        cascade="all, delete-orphan",
+    )
 
 
 class ContestTeamViolation(Base):
@@ -491,3 +505,79 @@ class ContestTeamViolation(Base):
     contest = relationship("Contest", back_populates="team_violations")
     team = relationship("Team", back_populates="contest_violations")
     violator = relationship("User", foreign_keys=[violated_by])
+
+
+class ContestTeamMemberProgress(Base):
+    """
+    Model representing the progress of a specific team member in a contest.
+
+    Attributes:
+        contest_id: UUID of the contest.
+        contest_team_id: UUID of the contest team.
+        contest_team_member_id: UUID of the contest team member.
+        started_at: Timestamp when the member started.
+        submissions_count: Number of submissions made by the member.
+        accepted_submissions_count: Number of accepted submissions by the member.
+        last_activity_at: Timestamp of the last activity by the member.
+    """
+
+    __tablename__ = "contest_team_member_progress"
+    __table_args__ = (
+        PrimaryKeyConstraint(
+            "contest_id",
+            "contest_team_id",
+            "contest_team_member_id",
+        ),
+    )
+
+    contest_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("contest.id", ondelete="CASCADE"), nullable=False
+    )
+    contest_team_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("contest_team.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    contest_team_member_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("contest_team_member.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    end_time: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    ended_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    submissions_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    score: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    penalty: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    accepted_submissions_count: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
+
+    solved_questions_count: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
+
+    last_activity_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    # Relationships
+    contest_team_member: Mapped[ContestTeamMember] = relationship(
+        "ContestTeamMember",
+        back_populates="member_progress",
+        foreign_keys=[contest_team_member_id],
+    )

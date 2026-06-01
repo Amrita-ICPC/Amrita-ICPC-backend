@@ -1,22 +1,23 @@
-import pytest
 import datetime
-from uuid import uuid4
 from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
 
-from app.service.student.contest_team import ContestTeamService
+import pytest
+
+from app.core.guards.contest_student import ContestStudentGuard
+from app.core.guards.team_student import TeamStudentGuard
+from app.exceptions.contest import InvalidContestError, StudentAlreadyInContestError
+from app.exceptions.student.teams import (
+    InvalidContestTeamMemberStatusUpdateException,
+    TeamStatusNotAllowedForUpdatingContestTeamMemberStatusException,
+)
+from app.exceptions.team import CannotRemoveTeamLeaderError, InvalidTeamSizeError
+from app.models import Contest, ContestTeam, ContestTeamMember, Team
+from app.repositories.contest import ContestRepository
 from app.repositories.student.contest_team import ContestTeamRepository
 from app.repositories.student.team import StudentTeamRepository
-from app.core.guards.team_student import TeamStudentGuard
-from app.repositories.contest import ContestRepository
-from app.core.guards.contest_student import ContestStudentGuard
-from app.models import Contest, ContestTeam, ContestTeamMember, Team
+from app.service.student.contest_team import ContestTeamService
 from app.utils.enums import ContestTeamMemberStatus, TeamStatus
-from app.exceptions.student.teams import (
-    TeamStatusNotAllowedForUpdatingContestTeamMemberStatusException,
-    InvalidContestTeamMemberStatusUpdateException,
-)
-from app.exceptions.team import InvalidTeamSizeError, CannotRemoveTeamLeaderError
-from app.exceptions.contest import InvalidContestError, StudentAlreadyInContestError
 
 
 @pytest.fixture
@@ -62,7 +63,9 @@ def contest_team_service(
 
 
 @pytest.mark.asyncio
-async def test_update_status_success(contest_team_service, mock_contest_repository, mock_contest_team_repository):
+async def test_update_status_success(
+    contest_team_service, mock_contest_repository, mock_contest_team_repository
+):
     user_id = uuid4()
     contest_id = uuid4()
     contest_team_id = uuid4()
@@ -83,7 +86,9 @@ async def test_update_status_success(contest_team_service, mock_contest_reposito
     mock_contest_team = MagicMock(spec=ContestTeam)
     mock_contest_team.team_status = TeamStatus.DRAFT
     mock_contest_team.team = mock_team
-    mock_contest_team_repository.get_contest_team_by_id_or_raise.return_value = mock_contest_team
+    mock_contest_team_repository.get_contest_team_by_id_or_raise.return_value = (
+        mock_contest_team
+    )
 
     # Mock count of team members
     mock_contest_team_repository.count_contest_team_members.return_value = 2
@@ -92,7 +97,9 @@ async def test_update_status_success(contest_team_service, mock_contest_reposito
     mock_member = MagicMock(spec=ContestTeamMember)
     mock_member.user_id = user_id
     mock_member.status = ContestTeamMemberStatus.INVITED
-    mock_contest_team_repository.get_contest_team_member_or_raise.return_value = mock_member
+    mock_contest_team_repository.get_contest_team_member_or_raise.return_value = (
+        mock_member
+    )
 
     # Call service method to accept
     await contest_team_service.update_contest_team_member_status(
@@ -105,11 +112,15 @@ async def test_update_status_success(contest_team_service, mock_contest_reposito
 
     # Assertions
     assert mock_member.status == ContestTeamMemberStatus.ACCEPTED
-    mock_contest_team_repository.update_contest_team_member.assert_called_once_with(mock_member)
+    mock_contest_team_repository.update_contest_team_member.assert_called_once_with(
+        mock_member
+    )
 
 
 @pytest.mark.asyncio
-async def test_update_status_raises_invalid_status_transition(contest_team_service, mock_contest_repository, mock_contest_team_repository):
+async def test_update_status_raises_invalid_status_transition(
+    contest_team_service, mock_contest_repository, mock_contest_team_repository
+):
     user_id = uuid4()
     contest_id = uuid4()
     contest_team_id = uuid4()
@@ -119,13 +130,17 @@ async def test_update_status_raises_invalid_status_transition(contest_team_servi
     mock_contest_repository.get_contest_or_raise.return_value = mock_contest
 
     mock_contest_team = MagicMock(spec=ContestTeam)
-    mock_contest_team_repository.get_contest_team_by_id_or_raise.return_value = mock_contest_team
+    mock_contest_team_repository.get_contest_team_by_id_or_raise.return_value = (
+        mock_contest_team
+    )
 
     # Member is already LEFT
     mock_member = MagicMock(spec=ContestTeamMember)
     mock_member.user_id = user_id
     mock_member.status = ContestTeamMemberStatus.LEFT
-    mock_contest_team_repository.get_contest_team_member_or_raise.return_value = mock_member
+    mock_contest_team_repository.get_contest_team_member_or_raise.return_value = (
+        mock_member
+    )
 
     with pytest.raises(InvalidContestTeamMemberStatusUpdateException):
         await contest_team_service.update_contest_team_member_status(
@@ -138,7 +153,9 @@ async def test_update_status_raises_invalid_status_transition(contest_team_servi
 
 
 @pytest.mark.asyncio
-async def test_update_status_raises_registration_time_error(contest_team_service, mock_contest_repository, mock_contest_team_repository):
+async def test_update_status_raises_registration_time_error(
+    contest_team_service, mock_contest_repository, mock_contest_team_repository
+):
     user_id = uuid4()
     contest_id = uuid4()
     contest_team_id = uuid4()
@@ -152,12 +169,16 @@ async def test_update_status_raises_registration_time_error(contest_team_service
     mock_contest_repository.get_contest_or_raise.return_value = mock_contest
 
     mock_contest_team = MagicMock(spec=ContestTeam)
-    mock_contest_team_repository.get_contest_team_by_id_or_raise.return_value = mock_contest_team
+    mock_contest_team_repository.get_contest_team_by_id_or_raise.return_value = (
+        mock_contest_team
+    )
 
     mock_member = MagicMock(spec=ContestTeamMember)
     mock_member.user_id = user_id
     mock_member.status = ContestTeamMemberStatus.INVITED
-    mock_contest_team_repository.get_contest_team_member_or_raise.return_value = mock_member
+    mock_contest_team_repository.get_contest_team_member_or_raise.return_value = (
+        mock_member
+    )
 
     with pytest.raises(InvalidContestError):
         await contest_team_service.update_contest_team_member_status(
@@ -170,7 +191,9 @@ async def test_update_status_raises_registration_time_error(contest_team_service
 
 
 @pytest.mark.asyncio
-async def test_update_status_raises_team_status_not_allowed(contest_team_service, mock_contest_repository, mock_contest_team_repository):
+async def test_update_status_raises_team_status_not_allowed(
+    contest_team_service, mock_contest_repository, mock_contest_team_repository
+):
     user_id = uuid4()
     contest_id = uuid4()
     contest_team_id = uuid4()
@@ -191,12 +214,16 @@ async def test_update_status_raises_team_status_not_allowed(contest_team_service
     mock_contest_team = MagicMock(spec=ContestTeam)
     mock_contest_team.team_status = TeamStatus.CONFIRMED
     mock_contest_team.team = mock_team
-    mock_contest_team_repository.get_contest_team_by_id_or_raise.return_value = mock_contest_team
+    mock_contest_team_repository.get_contest_team_by_id_or_raise.return_value = (
+        mock_contest_team
+    )
 
     mock_member = MagicMock(spec=ContestTeamMember)
     mock_member.user_id = user_id
     mock_member.status = ContestTeamMemberStatus.INVITED
-    mock_contest_team_repository.get_contest_team_member_or_raise.return_value = mock_member
+    mock_contest_team_repository.get_contest_team_member_or_raise.return_value = (
+        mock_member
+    )
 
     with pytest.raises(TeamStatusNotAllowedForUpdatingContestTeamMemberStatusException):
         await contest_team_service.update_contest_team_member_status(
@@ -209,7 +236,9 @@ async def test_update_status_raises_team_status_not_allowed(contest_team_service
 
 
 @pytest.mark.asyncio
-async def test_update_status_raises_invalid_team_size(contest_team_service, mock_contest_repository, mock_contest_team_repository):
+async def test_update_status_raises_invalid_team_size(
+    contest_team_service, mock_contest_repository, mock_contest_team_repository
+):
     user_id = uuid4()
     contest_id = uuid4()
     contest_team_id = uuid4()
@@ -230,7 +259,9 @@ async def test_update_status_raises_invalid_team_size(contest_team_service, mock
     mock_contest_team = MagicMock(spec=ContestTeam)
     mock_contest_team.team_status = TeamStatus.DRAFT
     mock_contest_team.team = mock_team
-    mock_contest_team_repository.get_contest_team_by_id_or_raise.return_value = mock_contest_team
+    mock_contest_team_repository.get_contest_team_by_id_or_raise.return_value = (
+        mock_contest_team
+    )
 
     # Already has 2 accepted members
     mock_contest_team_repository.count_contest_team_members.return_value = 2
@@ -238,7 +269,9 @@ async def test_update_status_raises_invalid_team_size(contest_team_service, mock
     mock_member = MagicMock(spec=ContestTeamMember)
     mock_member.user_id = user_id
     mock_member.status = ContestTeamMemberStatus.INVITED
-    mock_contest_team_repository.get_contest_team_member_or_raise.return_value = mock_member
+    mock_contest_team_repository.get_contest_team_member_or_raise.return_value = (
+        mock_member
+    )
 
     with pytest.raises(InvalidTeamSizeError):
         await contest_team_service.update_contest_team_member_status(
@@ -251,7 +284,9 @@ async def test_update_status_raises_invalid_team_size(contest_team_service, mock
 
 
 @pytest.mark.asyncio
-async def test_leader_cannot_remove_himself(contest_team_service, mock_contest_repository, mock_contest_team_repository):
+async def test_leader_cannot_remove_himself(
+    contest_team_service, mock_contest_repository, mock_contest_team_repository
+):
     leader_id = uuid4()
     contest_id = uuid4()
     contest_team_id = uuid4()
@@ -270,13 +305,17 @@ async def test_leader_cannot_remove_himself(contest_team_service, mock_contest_r
     mock_contest_team.team_status = TeamStatus.DRAFT
     mock_contest_team.team = mock_team
     mock_contest_team.leader_id = leader_id
-    mock_contest_team_repository.get_contest_team_by_id_or_raise.return_value = mock_contest_team
+    mock_contest_team_repository.get_contest_team_by_id_or_raise.return_value = (
+        mock_contest_team
+    )
 
     mock_member = MagicMock(spec=ContestTeamMember)
     # The member being removed is the leader
     mock_member.user_id = leader_id
     mock_member.status = ContestTeamMemberStatus.ACCEPTED
-    mock_contest_team_repository.get_contest_team_member_or_raise.return_value = mock_member
+    mock_contest_team_repository.get_contest_team_member_or_raise.return_value = (
+        mock_member
+    )
 
     with pytest.raises(CannotRemoveTeamLeaderError):
         await contest_team_service.update_contest_team_member_status(
@@ -312,13 +351,17 @@ async def test_leader_leaving_with_other_members_promotes_new_leader(
     mock_contest_team.team_status = TeamStatus.DRAFT
     mock_contest_team.team = mock_team
     mock_contest_team.leader_id = leader_id
-    mock_contest_team_repository.get_contest_team_by_id_or_raise.return_value = mock_contest_team
+    mock_contest_team_repository.get_contest_team_by_id_or_raise.return_value = (
+        mock_contest_team
+    )
 
     # Mock leader member
     leader_member = MagicMock(spec=ContestTeamMember)
     leader_member.user_id = leader_id
     leader_member.status = ContestTeamMemberStatus.ACCEPTED
-    mock_contest_team_repository.get_contest_team_member_or_raise.return_value = leader_member
+    mock_contest_team_repository.get_contest_team_member_or_raise.return_value = (
+        leader_member
+    )
 
     # Mock other member who has accepted
     other_member = MagicMock(spec=ContestTeamMember)
@@ -327,7 +370,10 @@ async def test_leader_leaving_with_other_members_promotes_new_leader(
     other_member.confirmed_at = now - datetime.timedelta(hours=1)
 
     # Mock get_contest_team_members returning both
-    mock_contest_team_repository.get_contest_team_members.return_value = [leader_member, other_member]
+    mock_contest_team_repository.get_contest_team_members.return_value = [
+        leader_member,
+        other_member,
+    ]
 
     # Call service to leave
     await contest_team_service.update_contest_team_member_status(
@@ -341,8 +387,12 @@ async def test_leader_leaving_with_other_members_promotes_new_leader(
     # Assertions: leadership was transferred to the other member, status updated to LEFT
     assert mock_contest_team.leader_id == other_user_id
     assert leader_member.status == ContestTeamMemberStatus.LEFT
-    mock_contest_team_repository.update_contest_team.assert_called_once_with(mock_contest_team)
-    mock_contest_team_repository.update_contest_team_member.assert_called_once_with(leader_member)
+    mock_contest_team_repository.update_contest_team.assert_called_once_with(
+        mock_contest_team
+    )
+    mock_contest_team_repository.update_contest_team_member.assert_called_once_with(
+        leader_member
+    )
 
 
 @pytest.mark.asyncio
@@ -368,13 +418,17 @@ async def test_leader_leaving_last_cancels_team(
     mock_contest_team.team_status = TeamStatus.DRAFT
     mock_contest_team.team = mock_team
     mock_contest_team.leader_id = leader_id
-    mock_contest_team_repository.get_contest_team_by_id_or_raise.return_value = mock_contest_team
+    mock_contest_team_repository.get_contest_team_by_id_or_raise.return_value = (
+        mock_contest_team
+    )
 
     # Mock leader member
     leader_member = MagicMock(spec=ContestTeamMember)
     leader_member.user_id = leader_id
     leader_member.status = ContestTeamMemberStatus.ACCEPTED
-    mock_contest_team_repository.get_contest_team_member_or_raise.return_value = leader_member
+    mock_contest_team_repository.get_contest_team_member_or_raise.return_value = (
+        leader_member
+    )
 
     # Mock get_contest_team_members returning only the leader
     mock_contest_team_repository.get_contest_team_members.return_value = [leader_member]
@@ -392,11 +446,18 @@ async def test_leader_leaving_last_cancels_team(
     assert mock_contest_team.team_status == TeamStatus.CANCELLED
     assert mock_contest_team.leader_id is None
     assert leader_member.status == ContestTeamMemberStatus.LEFT
-    mock_contest_team_repository.update_contest_team.assert_called_once_with(mock_contest_team)
-    mock_contest_team_repository.update_contest_team_member.assert_called_once_with(leader_member)
+    mock_contest_team_repository.update_contest_team.assert_called_once_with(
+        mock_contest_team
+    )
+    mock_contest_team_repository.update_contest_team_member.assert_called_once_with(
+        leader_member
+    )
     mock_contest_team_repository.update_contest_team_members_status.assert_called_once_with(
         contest_team_id=mock_contest_team.id,
-        from_statuses=[ContestTeamMemberStatus.INVITED, ContestTeamMemberStatus.ACCEPTED],
+        from_statuses=[
+            ContestTeamMemberStatus.INVITED,
+            ContestTeamMemberStatus.ACCEPTED,
+        ],
         to_status=ContestTeamMemberStatus.CANCELLED,
         exclude_user_id=leader_id,
     )
@@ -424,16 +485,20 @@ async def test_accept_raises_if_already_in_contest(
     # Team in draft
     mock_contest_team = MagicMock(spec=ContestTeam)
     mock_contest_team.team_status = TeamStatus.DRAFT
-    mock_contest_team_repository.get_contest_team_by_id_or_raise.return_value = mock_contest_team
+    mock_contest_team_repository.get_contest_team_by_id_or_raise.return_value = (
+        mock_contest_team
+    )
 
     mock_member = MagicMock(spec=ContestTeamMember)
     mock_member.user_id = user_id
     mock_member.status = ContestTeamMemberStatus.INVITED
-    mock_contest_team_repository.get_contest_team_member_or_raise.return_value = mock_member
+    mock_contest_team_repository.get_contest_team_member_or_raise.return_value = (
+        mock_member
+    )
 
     # Mock the guard to raise StudentAlreadyInContestError
-    mock_contest_student_guard.check_student_already_in_contest.side_effect = StudentAlreadyInContestError(
-        user_id=str(user_id), contest_id=str(contest_id)
+    mock_contest_student_guard.check_student_already_in_contest.side_effect = (
+        StudentAlreadyInContestError(user_id=str(user_id), contest_id=str(contest_id))
     )
 
     with pytest.raises(StudentAlreadyInContestError):
@@ -444,5 +509,3 @@ async def test_accept_raises_if_already_in_contest(
             contest_team_member_id=member_id,
             contest_team_member_status=ContestTeamMemberStatus.ACCEPTED,
         )
-
-

@@ -17,9 +17,7 @@ class Judge0ClientError(AppBaseException):
 class Judge0APIError(Judge0ClientError):
     """Judge0 API returned an error."""
 
-    def __init__(
-        self, status_code: int, detail: str, request_id: Optional[str] = None
-    ):
+    def __init__(self, status_code: int, detail: str, request_id: Optional[str] = None):
         self.request_id = request_id
         message = f"Judge0 API Error ({status_code}): {detail}"
         if request_id:
@@ -51,12 +49,9 @@ class Judge0ServiceUnavailableError(Judge0ClientError):
 class Judge0NotInitializedError(Judge0ClientError):
     """Judge0 client is not initialized (service disabled)."""
 
-    def __init__(
-        self,
-        message: str = "Judge0 service is not configured or disabled"
-    ):
+    def __init__(self, message: str = "Judge0 service is not configured or disabled"):
         super().__init__(
             message=message,
             status_code=503,  # Service Unavailable
-            detail="Judge0 is not available. Please contact the administrator."
+            detail="Judge0 is not available. Please contact the administrator.",
         )

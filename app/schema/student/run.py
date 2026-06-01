@@ -13,10 +13,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class StudentCodeRunRequest(BaseModel):
     """Request to test/run code against a test case.
-    
+
     Student submits code and specifies which test case to run against.
     This is for quick testing before official submission.
-    
+
     Example:
         ```json
         {
@@ -45,9 +45,9 @@ class StudentCodeRunRequest(BaseModel):
 
 class StudentTestCaseRunResultResponse(BaseModel):
     """Response with execution result for a test case.
-    
+
     Contains all execution details: status, output, time, memory.
-    
+
     Example:
         ```json
         {
@@ -96,9 +96,9 @@ class StudentTestCaseRunResultResponse(BaseModel):
 
 class StudentCodeRunResponse(BaseModel):
     """Response to student code run request.
-    
+
     Contains execution result for the requested test case.
-    
+
     Example:
         ```json
         {

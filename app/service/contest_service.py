@@ -2,10 +2,8 @@ from datetime import datetime, timezone
 from typing import List, cast
 from uuid import UUID
 
-from app.core.clients.scheduler import scheduler
-from app.jobs.contest import ContestJobs
-
 from app.core.cache.decorators import cache_delete, cache_get
+from app.core.clients.scheduler import scheduler
 from app.core.guards.contest import ContestOperationGuard
 from app.core.logger import logger
 from app.core.permissions import AudiencePermission
@@ -14,6 +12,7 @@ from app.exceptions.contest import (
     ContestNotFoundError,
     InvalidContestError,
 )
+from app.jobs.contest import ContestJobs
 from app.mappers.contest import (
     apply_contest_updates,
     build_contest_entity,
@@ -45,9 +44,9 @@ from app.schema.contest import (
 from app.utils.contest import compute_run_status
 from app.utils.enums import (
     ContestRunStatus,
+    ContestRuntimeStatus,
     ContestStatus,
     UserRole,
-    ContestRuntimeStatus,
 )
 from app.validators.contest import ContestValidator
 
@@ -103,7 +102,9 @@ class ContestService:
         self.validator = validator
         self.audience_repository = audience_repository
         self.team_repository = team_repository
-        self.runtime_repository = runtime_repository or ContestRuntimeRepository(repository.db)
+        self.runtime_repository = runtime_repository or ContestRuntimeRepository(
+            repository.db
+        )
 
     async def _validate_contest_not_deleted_and_has_permission(
         self, contest_id: UUID, user_id: UUID
@@ -196,9 +197,9 @@ class ContestService:
         )
 
     @cache_get(
-        key_builder=lambda self,
-        contest_id,
-        user_id: f"contest:{contest_id}:user:{user_id}",
+        key_builder=lambda self, contest_id, user_id: (
+            f"contest:{contest_id}:user:{user_id}"
+        ),
         ttl=300,
     )
     async def get_contest_by_id(
@@ -249,14 +250,9 @@ class ContestService:
         )
 
     @cache_get(
-        key_builder=lambda self,
-        user_id,
-        search_term=None,
-        status=None,
-        run_status=None,
-        is_public=None,
-        skip=0,
-        limit=100: f"contests:user:{user_id}:search:{search_term}:status:{status}:run_status:{run_status}:public:{is_public}:skip:{skip}:limit:{limit}",
+        key_builder=lambda self, user_id, search_term=None, status=None, run_status=None, is_public=None, skip=0, limit=100: (
+            f"contests:user:{user_id}:search:{search_term}:status:{status}:run_status:{run_status}:public:{is_public}:skip:{skip}:limit:{limit}"
+        ),
         ttl=300,
     )
     async def get_all_contests(
@@ -332,7 +328,10 @@ class ContestService:
             PermissionDeniedError: If user lacks permission to manage contest
             InvalidContestError: If any audience is already assigned to the contest
         """
-        can_manage, contest = await self._validate_contest_not_deleted_and_has_permission(
+        (
+            can_manage,
+            contest,
+        ) = await self._validate_contest_not_deleted_and_has_permission(
             contest_id, user_id
         )
 
@@ -373,7 +372,10 @@ class ContestService:
         Raises:
             AudienceNotAssignedToContestError: If any audience ID is not currently assigned
         """
-        can_manage, contest = await self._validate_contest_not_deleted_and_has_permission(
+        (
+            can_manage,
+            contest,
+        ) = await self._validate_contest_not_deleted_and_has_permission(
             contest_id, user_id
         )
 
@@ -457,15 +459,13 @@ class ContestService:
         )
         if new_start is None:
             raise InvalidContestError("start_time cannot be None")
-        if new_end is None:
-            raise InvalidContestError("end_time cannot be None")
         if new_min_size is None:
             raise InvalidContestError("min_team_size cannot be None")
         if new_max_size is None:
             raise InvalidContestError("max_team_size cannot be None")
 
         validated_start = cast(datetime, new_start)
-        validated_end = cast(datetime, new_end)
+        validated_end = cast(datetime | None, new_end)
 
         self.validator.validate_contest_dates(validated_start, validated_end)
         if new_reg_start is not None and new_reg_end is not None:
@@ -616,11 +616,9 @@ class ContestService:
         )
 
     @cache_get(
-        key_builder=lambda self,
-        contest_id,
-        user_id,
-        skip=0,
-        limit=100: f"contest:{contest_id}:instructors:user:{user_id}:skip:{skip}:limit:{limit}",
+        key_builder=lambda self, contest_id, user_id, skip=0, limit=100: (
+            f"contest:{contest_id}:instructors:user:{user_id}:skip:{skip}:limit:{limit}"
+        ),
         ttl=300,
     )
     async def get_contest_instructors(
@@ -727,20 +725,20 @@ class ContestService:
 
         # Schedule finish job
         end_time = contest.end_time
-        if end_time.tzinfo is None:
-            end_time = end_time.replace(tzinfo=timezone.utc)
+        if end_time is not None:
+            if end_time.tzinfo is None:
+                end_time = end_time.replace(tzinfo=timezone.utc)
 
-        scheduler.add_job(
-            ContestJobs.finish_contest,
-            trigger="date",
-            run_date=end_time,
-            args=[contest_id],
-            id=f"finish_contest_{contest_id}",
-            replace_existing=True,
-        )
+            scheduler.add_job(
+                ContestJobs.finish_contest,
+                trigger="date",
+                run_date=end_time,
+                args=[contest_id],
+                id=f"finish_contest_{contest_id}",
+                replace_existing=True,
+            )
 
         logger.info(f"Contest {contest_id} published ")
-
 
     @cache_delete(
         key_builder=lambda self, contest_id, user_id: [
@@ -810,16 +808,15 @@ class ContestService:
         logger.info(f"Contest {contest_id} restored")
         return to_contest_response(
             restored_contest,
-            run_status=compute_run_status(restored_contest.start_time, restored_contest.end_time),
+            run_status=compute_run_status(
+                restored_contest.start_time, restored_contest.end_time
+            ),
         )
 
     @cache_get(
-        key_builder=lambda self,
-        user_id,
-        search_term=None,
-        status=None,
-        skip=0,
-        limit=100: f"contests:deleted:user:{user_id}:search:{search_term}:status:{status}:skip:{skip}:limit:{limit}",
+        key_builder=lambda self, user_id, search_term=None, status=None, skip=0, limit=100: (
+            f"contests:deleted:user:{user_id}:search:{search_term}:status:{status}:skip:{skip}:limit:{limit}"
+        ),
         ttl=300,
     )
     async def get_soft_deleted_contests(

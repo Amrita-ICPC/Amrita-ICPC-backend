@@ -25,7 +25,7 @@ class ContestBase(BaseModel):
     image: Optional[str] = Field(None, description="Contest image URL")
     is_public: bool = Field(default=False, description="Whether contest is public")
     start_time: datetime = Field(..., description="Contest start time (UTC)")
-    end_time: datetime = Field(..., description="Contest end time (UTC)")
+    end_time: Optional[datetime] = Field(None, description="Contest end time (UTC)")
     registration_start: Optional[datetime] = Field(
         None, description="Registration start time (UTC)"
     )
@@ -158,7 +158,7 @@ class ContestSummaryResponse(BaseModel):
     description: Optional[str] = Field(None, description="Contest description")
     image: Optional[str] = Field(None, description="Contest image URL")
     start_time: datetime = Field(..., description="Contest start time (UTC)")
-    end_time: datetime = Field(..., description="Contest end time (UTC)")
+    end_time: Optional[datetime] = Field(None, description="Contest end time (UTC)")
     status: ContestStatus = Field(..., description="Contest lifecycle status")
     run_status: ContestRunStatus = Field(
         ..., description="Contest temporal run-state (UPCOMING / LIVE / ENDED)"

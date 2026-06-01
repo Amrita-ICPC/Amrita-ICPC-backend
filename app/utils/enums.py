@@ -412,12 +412,11 @@ class WorkspaceRole(str, enum.Enum):
 class WorkspaceMode(str, enum.Enum):
     """
     Enumeration of workspace collaboration modes.
-
-    Attributes:
-        SINGLE_EDITOR: Only one participant can edit at a time.
     """
 
-    SINGLE_EDITOR = "SINGLE_EDITOR"
+    INDIVIDUAL = "INDIVIDUAL"
+    LEADER_ONLY = "LEADER_ONLY"
+    SHARED_SINGLE_EDITOR = "SHARED_SINGLE_EDITOR"
 
 
 class InvitationType(str, enum.Enum):

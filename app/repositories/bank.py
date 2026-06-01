@@ -505,10 +505,14 @@ class BankRepository:
         # Apply filters
         if filters:
             if filters.title:
-                base_query = base_query.filter(Question.title.ilike(f"%{filters.title}%"))
+                base_query = base_query.filter(
+                    Question.title.ilike(f"%{filters.title}%")
+                )
 
             if filters.difficulty:
-                base_query = base_query.filter(Question.difficulty == filters.difficulty)
+                base_query = base_query.filter(
+                    Question.difficulty == filters.difficulty
+                )
 
             if filters.tag:
                 tag_subquery = (
@@ -528,24 +532,24 @@ class BankRepository:
 
             if sort_attr is not None:
                 if filters.sort_order == SortOrder.DESC:
-                   base_query = base_query.order_by(sort_attr.desc(), Question.id.asc())
+                    base_query = base_query.order_by(
+                        sort_attr.desc(), Question.id.asc()
+                    )
                 else:
                     base_query = base_query.order_by(sort_attr.asc(), Question.id.asc())
         else:
             base_query = base_query.order_by(BankQuestion.created_at, Question.id)
 
         base_query = base_query.options(
-            selectinload(Question.languages).selectinload(
-                QuestionLanguage.language
-            ),
+            selectinload(Question.languages).selectinload(QuestionLanguage.language),
             selectinload(Question.tags).selectinload(QuestionTag.tag),
-            selectinload(Question.templates).selectinload(
-                QuestionTemplate.language
-            ),
+            selectinload(Question.templates).selectinload(QuestionTemplate.language),
         )
 
         # Count query doesn't need ORDER BY or DISTINCT now
-        count_query = select(func.count()).select_from(base_query.order_by(None).subquery())
+        count_query = select(func.count()).select_from(
+            base_query.order_by(None).subquery()
+        )
         total = (await self.db.execute(count_query)).scalar() or 0
 
         result = await self.db.execute(

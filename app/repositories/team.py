@@ -1,4 +1,3 @@
-from sqlalchemy import or_
 from uuid import UUID
 
 from sqlalchemy import and_, delete, func, select
@@ -54,7 +53,6 @@ class TeamRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-
     async def get_contest_teams_count(self, contest_id: UUID) -> int:
         """
         Retrieve the number of teams in a specific contest.
@@ -65,11 +63,15 @@ class TeamRepository:
             The number of teams in the contest.
         """
         result = await self.db.execute(
-            select(func.count(ContestTeam.team_id)).filter(ContestTeam.contest_id == contest_id)
+            select(func.count(ContestTeam.team_id)).filter(
+                ContestTeam.contest_id == contest_id
+            )
         )
         return result.scalars().first() or 0
 
-    async def get_contest_team_by_id(self, contest_id: UUID, team_id: UUID) -> ContestTeam | None:
+    async def get_contest_team_by_id(
+        self, contest_id: UUID, team_id: UUID
+    ) -> ContestTeam | None:
         """
         Retrieve the team details for a specific contest.
 
@@ -80,7 +82,9 @@ class TeamRepository:
             The Team object if found, otherwise None.
         """
         result = await self.db.execute(
-            select(ContestTeam).filter(ContestTeam.team_id == team_id, ContestTeam.contest_id == contest_id)
+            select(ContestTeam).filter(
+                ContestTeam.team_id == team_id, ContestTeam.contest_id == contest_id
+            )
         )
         return result.scalars().first()
 
@@ -474,7 +478,10 @@ class TeamRepository:
             .join(Team, ContestTeam.team_id == Team.id)
             .filter(ContestTeam.contest_id == contest_id)
             .where(
-                and_(ContestTeam.team_status != TeamStatus.DRAFT,ContestTeam.team_status != TeamStatus.CANCELLED)
+                and_(
+                    ContestTeam.team_status != TeamStatus.DRAFT,
+                    ContestTeam.team_status != TeamStatus.CANCELLED,
+                )
             )
         )
 

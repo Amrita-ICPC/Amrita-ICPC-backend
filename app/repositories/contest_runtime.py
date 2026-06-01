@@ -1,6 +1,9 @@
 from uuid import UUID
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.exceptions.contest import ContestRuntimeNotFoundError
 from app.models.contest import ContestRuntime
 
 
@@ -21,7 +24,9 @@ class ContestRuntimeRepository:
         """
         self.db = db
 
-    async def get_contest_runtime_by_id(self, contest_id: UUID) -> ContestRuntime | None:
+    async def get_contest_runtime_by_id(
+        self, contest_id: UUID
+    ) -> ContestRuntime | None:
         """
         Fetch a single contest runtime by its contest ID.
 
@@ -36,7 +41,27 @@ class ContestRuntimeRepository:
         )
         return result.scalars().one_or_none()
 
-    async def create_contest_runtime(self, contest_runtime: ContestRuntime) -> ContestRuntime:
+    async def get_contest_runtime_or_raise(self, contest_id: UUID) -> ContestRuntime:
+        """
+        Fetch a single contest runtime by its contest ID or raise if not found.
+
+        Args:
+            contest_id: The UUID of the contest.
+
+        Returns:
+            ContestRuntime: The contest runtime instance.
+
+        Raises:
+            ContestRuntimeNotFoundError: If the runtime is not found.
+        """
+        runtime = await self.get_contest_runtime_by_id(contest_id)
+        if not runtime:
+            raise ContestRuntimeNotFoundError(str(contest_id))
+        return runtime
+
+    async def create_contest_runtime(
+        self, contest_runtime: ContestRuntime
+    ) -> ContestRuntime:
         """
         Create a new contest runtime in the database.
 
@@ -50,7 +75,9 @@ class ContestRuntimeRepository:
         await self.db.flush()
         return contest_runtime
 
-    async def update_contest_runtime(self, contest_runtime: ContestRuntime) -> ContestRuntime:
+    async def update_contest_runtime(
+        self, contest_runtime: ContestRuntime
+    ) -> ContestRuntime:
         """
         Update an existing contest runtime.
 
@@ -62,4 +89,3 @@ class ContestRuntimeRepository:
         """
         await self.db.flush()
         return contest_runtime
-

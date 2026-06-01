@@ -18,8 +18,8 @@ class StudentTeamFilters:
     """Filters for querying teams from a student's perspective."""
 
     search_term: str | None = None
-    created_only: bool = False   # If True, only teams created by the student
-    leader_only: bool = False    # If True, only teams where user is leader
+    created_only: bool = False  # If True, only teams created by the student
+    leader_only: bool = False  # If True, only teams where user is leader
     min_size: int | None = None  # Minimum team member count filter
     max_size: int | None = None  # Maximum team member count filter
     is_public: bool | None = None  # Filter by public/private status

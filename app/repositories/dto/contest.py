@@ -60,7 +60,7 @@ class CreateContestData:
     image: str | None
     is_public: bool
     start_time: datetime
-    end_time: datetime
+    end_time: datetime | None
     registration_start: datetime | None
     registration_end: datetime | None
     max_teams: int | None

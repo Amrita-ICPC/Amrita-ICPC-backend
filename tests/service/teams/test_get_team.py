@@ -693,11 +693,13 @@ class TestGetTeamMembers:
     ):
         contest_team_id = uuid4()
         mock_repository.get_contest_or_raise.return_value = mock_contest
-        
+
         mock_contest_team = MagicMock()
         mock_contest_team.leader_id = uuid4()
-        mock_contest_team_repository.get_contest_team_by_id_or_raise.return_value = mock_contest_team
-        
+        mock_contest_team_repository.get_contest_team_by_id_or_raise.return_value = (
+            mock_contest_team
+        )
+
         # Mock members
         mock_member_user = MagicMock()
         mock_member_user.id = uuid4()
@@ -705,27 +707,33 @@ class TestGetTeamMembers:
         mock_member_user.name = "John Doe"
         mock_member_user.email = "john@example.com"
         mock_member_user.role = MagicMock(value="student")
-        
+
         mock_ctm = MagicMock()
         mock_ctm.user = mock_member_user
-        
+
         from app.repositories.dto import PaginatedResult
+
         mock_paginated_result = PaginatedResult(total=1, items=[mock_ctm])
-        mock_contest_team_repository.get_contest_team_members_paginated.return_value = mock_paginated_result
-        
+        mock_contest_team_repository.get_contest_team_members_paginated.return_value = (
+            mock_paginated_result
+        )
+
         total, members = await team_service.get_team_members(
             contest_id, contest_team_id, user_id, search_term="John", skip=0, limit=10
         )
-        
+
         assert total == 1
         assert len(members) == 1
         assert members[0].name == "John Doe"
         assert members[0].email == "john@example.com"
-        
+
         # Verify repository was called correctly
         from app.utils.enums import ContestTeamMemberStatus
+
         mock_contest_team_repository.get_contest_team_members_paginated.assert_called_once()
-        call_kwargs = mock_contest_team_repository.get_contest_team_members_paginated.call_args[1]
+        call_kwargs = (
+            mock_contest_team_repository.get_contest_team_members_paginated.call_args[1]
+        )
         assert call_kwargs["contest_team_id"] == contest_team_id
         assert call_kwargs["status"] == [ContestTeamMemberStatus.ACCEPTED]
         assert call_kwargs["search_term"] == "John"

@@ -497,8 +497,6 @@ async def publish_contest(
     )
 
 
-
-
 @router.delete(
     "/{contest_id}",
     response_model=APIResponse,
@@ -936,7 +934,9 @@ async def clone_questions_from_bank(
     Returns:
         APIResponse: Standardized response with list of created contest-question relationships.
     """
-    results = await service.clone_questions_from_bank(contest_id, clone_request, user_id)
+    results = await service.clone_questions_from_bank(
+        contest_id, clone_request, user_id
+    )
     logger.info(
         f"Cloned {len(results)} questions from bank {clone_request.bank_id} to contest {contest_id} (actor=REDACTED)"
     )

@@ -118,10 +118,14 @@ class StudentTeamRepository:
             count_query = count_query.where(Team.leader_id == user_id)
 
         if filters.min_size is not None:
-            count_query = count_query.where(size_subquery.c.member_count >= filters.min_size)
+            count_query = count_query.where(
+                size_subquery.c.member_count >= filters.min_size
+            )
 
         if filters.max_size is not None:
-            count_query = count_query.where(size_subquery.c.member_count <= filters.max_size)
+            count_query = count_query.where(
+                size_subquery.c.member_count <= filters.max_size
+            )
 
         if filters.is_public is not None:
             count_query = count_query.where(Team.is_public == filters.is_public)
@@ -148,7 +152,9 @@ class StudentTeamRepository:
 
         return PaginatedResult(total=total, items=list(teams))
 
-    async def get_student_team_by_id_or_raise(self, user_id: UUID, team_id: UUID) -> Team:
+    async def get_student_team_by_id_or_raise(
+        self, user_id: UUID, team_id: UUID
+    ) -> Team:
         """Retrieve a specific team by its ID, ensuring the student is a member of the team.
 
         Args:
@@ -198,20 +204,20 @@ class StudentTeamRepository:
         self.db.add(team)
         team_user = TeamUser(
             team=team,
-            user_id = team.leader_id,
+            user_id=team.leader_id,
         )
         self.db.add(team_user)
         await self.db.flush()
 
         query = (
-        select(Team)
-        .where(Team.id == team.id)
-        .options(
-            selectinload(Team.members).selectinload(TeamUser.user),
-            selectinload(Team.creator),
-            selectinload(Team.leader),
+            select(Team)
+            .where(Team.id == team.id)
+            .options(
+                selectinload(Team.members).selectinload(TeamUser.user),
+                selectinload(Team.creator),
+                selectinload(Team.leader),
+            )
         )
-    )
         result = await self.db.execute(query)
         return result.scalar_one()
 
@@ -246,9 +252,9 @@ class StudentTeamRepository:
         Args:
             team_id: UUID of the team to delete.
         """
-        #delete team_users where team_id = team_id
+        # delete team_users where team_id = team_id
         await self.db.execute(delete(TeamUser).where(TeamUser.team_id == team_id))
-        #delete team where id = team_id
+        # delete team where id = team_id
         await self.db.execute(delete(Team).where(Team.id == team_id))
 
         await self.db.flush()
@@ -268,12 +274,10 @@ class StudentTeamRepository:
         Returns:
             int: The count of pending invitations/requests matching the criteria.
         """
-        query = (
-            select(func.count(TeamInvitation.id)).where(
-                and_(
-                    TeamInvitation.invitation_type == invitation_type,
-                    TeamInvitation.status == TeamInvitationStatus.PENDING,
-                )
+        query = select(func.count(TeamInvitation.id)).where(
+            and_(
+                TeamInvitation.invitation_type == invitation_type,
+                TeamInvitation.status == TeamInvitationStatus.PENDING,
             )
         )
         if invitation_type == InvitationType.INVITE:
@@ -284,7 +288,6 @@ class StudentTeamRepository:
 
         result = await self.db.execute(query)
         return result.scalar_one()
-
 
     async def get_student_team_invitations(
         self,
@@ -306,9 +309,13 @@ class StudentTeamRepository:
         Returns:
             list[TeamInvitation]: A list of TeamInvitation objects.
         """
-        query = select(TeamInvitation).where(TeamInvitation.invitation_type == invitation_type).options(
-            selectinload(TeamInvitation.team).selectinload(Team.members),
-            selectinload(TeamInvitation.sender),
+        query = (
+            select(TeamInvitation)
+            .where(TeamInvitation.invitation_type == invitation_type)
+            .options(
+                selectinload(TeamInvitation.team).selectinload(Team.members),
+                selectinload(TeamInvitation.sender),
+            )
         )
 
         if sent:
@@ -317,7 +324,9 @@ class StudentTeamRepository:
             if invitation_type == InvitationType.INVITE:
                 query = query.where(TeamInvitation.reciever_id == user_id)
             elif invitation_type == InvitationType.REQUEST:
-                query = query.join(Team, TeamInvitation.team_id == Team.id).where(Team.leader_id == user_id)
+                query = query.join(Team, TeamInvitation.team_id == Team.id).where(
+                    Team.leader_id == user_id
+                )
 
         if team_id:
             query = query.where(TeamInvitation.team_id == team_id)
@@ -350,26 +359,34 @@ class StudentTeamRepository:
             StudentTeamInvitationError: If invitation_type is INVITE and reciever_id is None.
         """
         if invitation_type == InvitationType.INVITE and reciever_id is None:
-            raise StudentTeamInvitationError("Receiver ID is required for invite invitations")
+            raise StudentTeamInvitationError(
+                "Receiver ID is required for invite invitations"
+            )
 
         team_invitation = TeamInvitation(
-            team_id = team_id,
-            reciever_id = reciever_id,
-            sender_id = sender_id,
-            invitation_type = invitation_type,
+            team_id=team_id,
+            reciever_id=reciever_id,
+            sender_id=sender_id,
+            invitation_type=invitation_type,
         )
         self.db.add(team_invitation)
         await self.db.flush()
 
-        query = select(TeamInvitation).where(TeamInvitation.id == team_invitation.id).options(
-            selectinload(TeamInvitation.team).selectinload(Team.members),
-            selectinload(TeamInvitation.sender),
+        query = (
+            select(TeamInvitation)
+            .where(TeamInvitation.id == team_invitation.id)
+            .options(
+                selectinload(TeamInvitation.team).selectinload(Team.members),
+                selectinload(TeamInvitation.sender),
+            )
         )
 
         invitations = await self.db.execute(query)
         return invitations.scalar_one()
 
-    async def get_student_team_invitation_or_raise(self, invitation_id: UUID) -> TeamInvitation:
+    async def get_student_team_invitation_or_raise(
+        self, invitation_id: UUID
+    ) -> TeamInvitation:
         """Retrieve a specific team invitation by ID or raise an error if not found.
 
         Args:
@@ -381,9 +398,13 @@ class StudentTeamRepository:
         Raises:
             StudentTeamInvitationNotFoundError: If the invitation does not exist.
         """
-        query = select(TeamInvitation).where(TeamInvitation.id == invitation_id).options(
-            selectinload(TeamInvitation.team).selectinload(Team.members),
-            selectinload(TeamInvitation.sender),
+        query = (
+            select(TeamInvitation)
+            .where(TeamInvitation.id == invitation_id)
+            .options(
+                selectinload(TeamInvitation.team).selectinload(Team.members),
+                selectinload(TeamInvitation.sender),
+            )
         )
         result = await self.db.execute(query)
         invitation = result.scalar_one_or_none()
@@ -407,12 +428,18 @@ class StudentTeamRepository:
             StudentTeamInvitationError: If the receiver ID is missing on acceptance.
         """
         if status == TeamInvitationStatus.ACCEPTED:
-            joined_user_id = team_invitation.reciever_id if team_invitation.invitation_type == InvitationType.INVITE else team_invitation.sender_id
+            joined_user_id = (
+                team_invitation.reciever_id
+                if team_invitation.invitation_type == InvitationType.INVITE
+                else team_invitation.sender_id
+            )
             if joined_user_id is None:
-                raise StudentTeamInvitationError("Receiver ID is missing from invitation")
+                raise StudentTeamInvitationError(
+                    "Receiver ID is missing from invitation"
+                )
             team_user = TeamUser(
-                team_id = team_invitation.team_id,
-                user_id = joined_user_id,
+                team_id=team_invitation.team_id,
+                user_id=joined_user_id,
             )
             team_invitation.status = TeamInvitationStatus.ACCEPTED
             self.db.add(team_user)
@@ -458,7 +485,7 @@ class StudentTeamRepository:
         """
         if name_query.isdigit() and len(name_query) == 6:
             # First attempt exact code match (must be public)
-            code_filter = and_(Team.code == name_query, Team.is_public == True)
+            code_filter = and_(Team.code == name_query, Team.is_public)
 
             # Count query for code match
             count_query = select(func.count(Team.id)).where(code_filter)
@@ -481,7 +508,7 @@ class StudentTeamRepository:
                 return PaginatedResult(total=total, items=list(teams))
 
         # Fallback to name partial search on public teams
-        name_filter = and_(Team.name.ilike(f"%{name_query}%"), Team.is_public == True)
+        name_filter = and_(Team.name.ilike(f"%{name_query}%"), Team.is_public)
 
         # Count query
         count_query = select(func.count(Team.id)).where(name_filter)
@@ -507,7 +534,9 @@ class StudentTeamRepository:
 
         return PaginatedResult(total=total, items=list(teams))
 
-    async def get_user_pending_join_requests_data(self, user_id: UUID) -> tuple[set[UUID], int]:
+    async def get_user_pending_join_requests_data(
+        self, user_id: UUID
+    ) -> tuple[set[UUID], int]:
         """Retrieve both the set of team IDs the user requested to join,
         and the count of pending join requests for teams led by the user.
 
@@ -547,8 +576,7 @@ class StudentTeamRepository:
 
         return requested_team_ids, requests_count
 
-
-    async def leave_team(self,team_id: UUID,user_id:UUID):
+    async def leave_team(self, team_id: UUID, user_id: UUID):
         """Remove a user from a team.
 
         Args:
@@ -614,6 +642,7 @@ class StudentTeamRepository:
 
         # Ordering / Sorting
         from typing import Any
+
         sort_col: Any = TeamUser.joined_at
         if sort_by == "name":
             sort_col = User.name
@@ -634,7 +663,7 @@ class StudentTeamRepository:
             stmt = select(ContestTeamMember.user_id).where(
                 ContestTeamMember.contest_id == contest_id,
                 ContestTeamMember.user_id.in_(user_ids),
-                ContestTeamMember.status == ContestTeamMemberStatus.ACCEPTED
+                ContestTeamMember.status == ContestTeamMemberStatus.ACCEPTED,
             )
             res = await self.db.execute(stmt)
             in_contest_user_ids = set(res.scalars().all())
@@ -642,19 +671,8 @@ class StudentTeamRepository:
         members_list = []
         for team_user, user, leader_id in rows:
             team_role = (
-                TeamMemberRole.LEADER
-                if user.id == leader_id
-                else TeamMemberRole.MEMBER
+                TeamMemberRole.LEADER if user.id == leader_id else TeamMemberRole.MEMBER
             )
             is_in_contest = user.id in in_contest_user_ids if contest_id else None
             members_list.append((user, team_role, team_user.joined_at, is_in_contest))
         return members_list
-
-
-
-
-
-
-
-
-

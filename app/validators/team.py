@@ -145,9 +145,8 @@ class TeamValidator:
             missing_id = next(iter(missing_members))
             raise MemberNotInTeamError(str(missing_id), team_name)
 
-
     @staticmethod
-    def validate_team_confirmation(team_status: TeamStatus, team_name: str)->None:
+    def validate_team_confirmation(team_status: TeamStatus, team_name: str) -> None:
         """
         Raises if the team is confirmed.
         """
@@ -155,8 +154,12 @@ class TeamValidator:
             raise TeamIsConfirmedError(team_name)
 
     @staticmethod
-    def validate_allowed_student_team_status(team_status:TeamStatus)->None:
-        allowed_team_statuses = {TeamStatus.CONFIRMED, TeamStatus.DRAFT, TeamStatus.CANCELLED}
+    def validate_allowed_student_team_status(team_status: TeamStatus) -> None:
+        allowed_team_statuses = {
+            TeamStatus.CONFIRMED,
+            TeamStatus.DRAFT,
+            TeamStatus.CANCELLED,
+        }
         if team_status not in allowed_team_statuses:
             raise AccessDeniedTeamStatusError(team_status)
 
@@ -213,4 +216,3 @@ class TeamValidator:
         """
         if contest_mode == ContestMode.INDIVIDUAL:
             raise IndividualModeActionNotAllowedError(action)
-

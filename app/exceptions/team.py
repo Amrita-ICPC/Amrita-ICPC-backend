@@ -178,9 +178,17 @@ class TeamMemberAccessDeniedError(AppBaseException):
             detail="Only team members are permitted to perform this operation.",
         )
 
+
 class TeamNotHavingRequiredNumberOfMembersException(AppBaseException):
     """Raised when a team does not have the required number of members."""
-    def __init__(self, team_name: str, team_member_count: int, min_team_size: int, max_team_size: int):
+
+    def __init__(
+        self,
+        team_name: str,
+        team_member_count: int,
+        min_team_size: int,
+        max_team_size: int,
+    ):
         super().__init__(
             message=f"Team '{team_name}' does not have the required number of members.",
             status_code=400,
@@ -208,7 +216,3 @@ class IndividualModeActionNotAllowedError(AppBaseException):
             status_code=400,
             detail=f"Operation '{action}' is not permitted in individual contest mode.",
         )
-
-
-
-

@@ -156,9 +156,15 @@ class ContestRepository:
         Raises:
             ContestNotFoundError: If the contest with the given ID does not exist.
         """
-        result = await self.db.execute(select(Contest).filter(Contest.id == contest_id).options(
-            selectinload(Contest.audience_links).selectinload(ContestAudience.audience)
-            ))
+        result = await self.db.execute(
+            select(Contest)
+            .filter(Contest.id == contest_id)
+            .options(
+                selectinload(Contest.audience_links).selectinload(
+                    ContestAudience.audience
+                )
+            )
+        )
         contest = result.scalars().first()
         if not contest:
             raise ContestNotFoundError(str(contest_id))
@@ -239,9 +245,7 @@ class ContestRepository:
             )
         return query
 
-    def _apply_search_and_status_filters(
-        self, query, filters: ContestFilters
-    ):
+    def _apply_search_and_status_filters(self, query, filters: ContestFilters):
         """
         Apply search term and status filters.
 
@@ -255,9 +259,7 @@ class ContestRepository:
             Filtered query
         """
         if filters.search_term:
-            query = query.filter(
-                Contest.name.ilike(f"%{filters.search_term}%")
-            )
+            query = query.filter(Contest.name.ilike(f"%{filters.search_term}%"))
 
         if filters.status:
             query = query.filter(Contest.status == filters.status)
@@ -573,7 +575,6 @@ class ContestRepository:
         contest.status = ContestStatus.PUBLISHED
 
         await self.db.flush()
-
 
     async def get_all_instructors_for_contest(self, contest_id: UUID) -> list[User]:
         """
@@ -1032,7 +1033,6 @@ class ContestRepository:
 
         await self.db.execute(stmt)
         await self.db.flush()
-
 
     async def get_contest_problems(
         self,

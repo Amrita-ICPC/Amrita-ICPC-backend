@@ -41,7 +41,9 @@ class Team(Base):
     is_public: Mapped[bool] = mapped_column(Boolean, default=True)
 
     audience_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("audience.id", ondelete="SET NULL"), nullable=True
+        UUID(as_uuid=True),
+        ForeignKey("audience.id", ondelete="SET NULL"),
+        nullable=True,
     )
 
     created_at: Mapped[datetime] = mapped_column(
@@ -81,6 +83,7 @@ class TeamUser(Base):
 
     team = relationship("Team", back_populates="members")
     user = relationship("User", back_populates="teams")
+
 
 class TeamInvitation(Base):
     __tablename__ = "team_invitation"
@@ -126,9 +129,7 @@ class TeamInvitation(Base):
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
-    expires_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
 
     status: Mapped[TeamInvitationStatus] = mapped_column(
         Enum(TeamInvitationStatus, native_enum=False),

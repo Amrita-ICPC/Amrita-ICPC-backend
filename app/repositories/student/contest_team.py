@@ -121,19 +121,27 @@ class ContestTeamRepository:
         return int(result.scalar_one())
 
     async def get_contest_team_member_by_user_id(
-        self, user_id: UUID, stauts: ContestTeamMemberStatus | None
+        self,
+        user_id: UUID,
+        stauts: ContestTeamMemberStatus | None = None,
+        approval_status: TeamApprovalStatus | None = None,
+        team_status: TeamStatus | None = None,
+        contest_id: UUID | None = None,
     ) -> ContestTeamMember | None:
         """Get the contest team member record for a given user ID.
 
         Args:
             user_id: The ID of the user.
-            status: The status of the contest team member.
+            stauts: The status of the contest team member.
+            team_status: The status of the contest team.
+            contest_id: The ID of the contest.
         Returns:
             ContestTeamMember: The contest team member record associated with the user ID, or None if
             not found.
         """
         stmt = (
             select(ContestTeamMember)
+            .join(ContestTeam)
             .where(ContestTeamMember.user_id == user_id)
             .options(
                 selectinload(ContestTeamMember.contest),
@@ -154,9 +162,67 @@ class ContestTeamRepository:
         )
         if stauts is not None:
             stmt = stmt.where(ContestTeamMember.status == stauts)
+        if team_status is not None:
+            stmt = stmt.where(ContestTeam.team_status == team_status)
+        if approval_status is not None:
+            stmt = stmt.where(ContestTeam.approval_status == approval_status)
+        if contest_id is not None:
+            stmt = stmt.where(ContestTeamMember.contest_id == contest_id)
 
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def get_contest_team_members_by_user_id(
+        self,
+        user_id: UUID,
+        status: ContestTeamMemberStatus | None = None,
+        approval_status: TeamApprovalStatus | None = None,
+        team_status: TeamStatus | None = None,
+        contest_id: UUID | None = None,
+    ) -> list[ContestTeamMember]:
+        """Get the contest team member records for a given user ID.
+
+        Args:
+            user_id: The ID of the user.
+            status: The status of the contest team member.
+            approval_status: The approval status of the contest team.
+            team_status: The status of the contest team.
+            contest_id: The ID of the contest.
+        Returns:
+            list[ContestTeamMember]: The contest team member records associated with the user ID.
+        """
+        stmt = (
+            select(ContestTeamMember)
+            .join(ContestTeam)
+            .where(ContestTeamMember.user_id == user_id)
+            .options(
+                selectinload(ContestTeamMember.contest),
+                selectinload(ContestTeamMember.contest_team)
+                .selectinload(ContestTeam.contest_team_member)
+                .selectinload(ContestTeamMember.user),
+            )
+            .order_by(
+                case(
+                    (ContestTeamMember.status == ContestTeamMemberStatus.INVITED, 1),
+                    (ContestTeamMember.status == ContestTeamMemberStatus.ACCEPTED, 2),
+                    (ContestTeamMember.status == ContestTeamMemberStatus.LEFT, 3),
+                    (ContestTeamMember.status == ContestTeamMemberStatus.REJECTED, 4),
+                    (ContestTeamMember.status == ContestTeamMemberStatus.REMOVED, 5),
+                    (ContestTeamMember.status == ContestTeamMemberStatus.CANCELLED, 6),
+                ),
+            )
+        )
+        if status is not None:
+            stmt = stmt.where(ContestTeamMember.status == status)
+        if team_status is not None:
+            stmt = stmt.where(ContestTeam.team_status == team_status)
+        if approval_status is not None:
+            stmt = stmt.where(ContestTeam.approval_status == approval_status)
+        if contest_id is not None:
+            stmt = stmt.where(ContestTeamMember.contest_id == contest_id)
+
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
 
     async def count_teams(
         self, contest_id: UUID, status: TeamStatus, approval_status: TeamApprovalStatus

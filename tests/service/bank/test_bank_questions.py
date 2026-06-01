@@ -9,20 +9,10 @@ from app.exceptions.bank import (
     BankQuestionNotFoundError,
 )
 from app.exceptions.bank_validation import BankValidationError
-from app.exceptions.question import InvalidQuestionError
 from app.models.bank import Bank, BankQuestion
 from app.models.language import Language
 from app.models.question import Question, QuestionLanguage, QuestionTemplate
 from app.models.question import TestCase as QuestionTestCase
-from app.repositories.dto import PaginatedResult
-from app.schema.question import (
-    AddQuestionTemplatesRequest,
-    AddQuestionTestCasesRequest,
-    QuestionTemplateCreate,
-    QuestionTestCaseCreate,
-    RemoveQuestionTemplatesRequest,
-    RemoveQuestionTestCasesRequest,
-)
 from app.utils.enums import QuestionDifficulty
 
 
@@ -267,8 +257,6 @@ async def test_remove_question_from_bank_not_found(
         )
 
 
-
-
 @pytest.mark.asyncio
 async def test_clone_selected_questions_between_banks_success(
     bank_question_service,
@@ -386,11 +374,3 @@ async def test_clone_selected_questions_raises_when_not_in_source_bank(
             copy_all=False,
             question_ids=[selected_question_id],
         )
-
-
-
-
-
-
-
-

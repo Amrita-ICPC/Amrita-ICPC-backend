@@ -1,18 +1,18 @@
-import pytest
 import datetime
-from uuid import uuid4
 from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
 
-from app.service.student.contest_team import ContestTeamService
+import pytest
+
+from app.core.guards.contest_student import ContestStudentGuard
+from app.core.guards.team_student import TeamStudentGuard
+from app.exceptions.team import LeaderMustBeMemberError
+from app.models import Contest, ContestTeam, Team, TeamUser
+from app.repositories.contest import ContestRepository
 from app.repositories.student.contest_team import ContestTeamRepository
 from app.repositories.student.team import StudentTeamRepository
-from app.core.guards.team_student import TeamStudentGuard
-from app.repositories.contest import ContestRepository
-from app.core.guards.contest_student import ContestStudentGuard
-from app.models import Contest, ContestTeam, Team, TeamUser
-from app.utils.enums import TeamStatus
 from app.schema.team import ContestTeamImport
-from app.exceptions.team import LeaderMustBeMemberError
+from app.service.student.contest_team import ContestTeamService
 
 
 @pytest.fixture
@@ -90,7 +90,9 @@ async def test_import_team_success(
     team_user2.user_id = member2_id
     mock_team.members = [team_user1, team_user2]
 
-    mock_student_team_repository.get_student_team_by_id_or_raise.return_value = mock_team
+    mock_student_team_repository.get_student_team_by_id_or_raise.return_value = (
+        mock_team
+    )
 
     # Call import_team
     contest_team_import = ContestTeamImport(
@@ -146,7 +148,9 @@ async def test_import_team_fails_when_leader_not_in_members(
     team_user2.user_id = member2_id
     mock_team.members = [team_user1, team_user2]
 
-    mock_student_team_repository.get_student_team_by_id_or_raise.return_value = mock_team
+    mock_student_team_repository.get_student_team_by_id_or_raise.return_value = (
+        mock_team
+    )
 
     # Call import_team without the leader in member_ids
     contest_team_import = ContestTeamImport(
@@ -170,6 +174,7 @@ async def test_import_team_fails_when_max_teams_reached(
     mock_contest_team_repository,
 ):
     from app.exceptions.contest import ContestMaxTeamsReachedError
+
     contest_id = uuid4()
     team_id = uuid4()
     leader_id = uuid4()
@@ -197,7 +202,9 @@ async def test_import_team_fails_when_max_teams_reached(
     team_user2.user_id = member2_id
     mock_team.members = [team_user1, team_user2]
 
-    mock_student_team_repository.get_student_team_by_id_or_raise.return_value = mock_team
+    mock_student_team_repository.get_student_team_by_id_or_raise.return_value = (
+        mock_team
+    )
 
     # Mock repository to return 5 approved teams
     mock_contest_team_repository.count_teams_by_status.return_value = {

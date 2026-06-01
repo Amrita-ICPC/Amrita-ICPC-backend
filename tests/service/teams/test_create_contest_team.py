@@ -1,17 +1,18 @@
-import pytest
 import datetime
-from uuid import uuid4
 from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
 
-from app.service.student.contest_team import ContestTeamService
+import pytest
+
+from app.core.guards.contest_student import ContestStudentGuard
+from app.core.guards.team_student import TeamStudentGuard
+from app.models import Contest, ContestTeam
+from app.repositories.contest import ContestRepository
 from app.repositories.student.contest_team import ContestTeamRepository
 from app.repositories.student.team import StudentTeamRepository
-from app.core.guards.team_student import TeamStudentGuard
-from app.repositories.contest import ContestRepository
-from app.core.guards.contest_student import ContestStudentGuard
-from app.models import Contest, ContestTeam, ContestTeamMember
-from app.utils.enums import TeamStatus, ContestTeamMemberStatus
 from app.schema.team import ContestTeamCreate
+from app.service.student.contest_team import ContestTeamService
+from app.utils.enums import ContestTeamMemberStatus
 
 
 @pytest.fixture
@@ -105,6 +106,7 @@ async def test_create_contest_team_fails_when_max_teams_reached(
     mock_contest_team_repository,
 ):
     from app.exceptions.contest import ContestMaxTeamsReachedError
+
     contest_id = uuid4()
     user_id = uuid4()
 

@@ -15,7 +15,9 @@ from app.service.code_execution_service import CodeExecutionService
 router = APIRouter(prefix="/execution", tags=["execution"])
 
 
-def get_code_execution_service(db: AsyncSession = Depends(get_db)) -> CodeExecutionService:
+def get_code_execution_service(
+    db: AsyncSession = Depends(get_db),
+) -> CodeExecutionService:
     """Dependency: Provide CodeExecutionService instance for practice runs."""
     return CodeExecutionService(db)
 
@@ -100,4 +102,3 @@ async def run_code(
     )
 
     return result
-
