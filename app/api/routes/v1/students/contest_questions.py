@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, status
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,11 +13,16 @@ from app.repositories.contest_runtime import ContestRuntimeRepository
 from app.repositories.contest_team_progress import ContestTeamProgressRepository
 from app.repositories.student.contest_question import StudentContestQuestionRepository
 from app.repositories.student.contest_team import ContestTeamRepository
+from app.repositories.testcase import TestCaseRepository
 from app.schema.base import APIResponse
 from app.schema.student import WorkspaceData, WorkspacePutRequest
 from app.schema.student.contests import (
     StudentContestQuestionsListResponse,
     StudentQuestionDetailResponse,
+)
+from app.schema.student.run import (
+    StudentCodeRunRequest,
+    StudentCodeRunResponse,
 )
 from app.service.student.contest_question import StudentContestQuestionService
 from app.service.student.workspace import WorkspaceService
@@ -34,6 +39,7 @@ def get_student_contest_service(
     contest_team_repository = ContestTeamRepository(db)
     contest_team_progress_repository = ContestTeamProgressRepository(db)
     contest_runtime_repository = ContestRuntimeRepository(db)
+    testcase_repository = TestCaseRepository(db)
     workspace_service = WorkspaceService(redis_client)
     return StudentContestQuestionService(
         repository=contest_question_repository,
@@ -41,6 +47,7 @@ def get_student_contest_service(
         contest_team_repository=contest_team_repository,
         contest_team_progress_repository=contest_team_progress_repository,
         contest_runtime_repository=contest_runtime_repository,
+        testcase_repository=testcase_repository,
         workspace_service=workspace_service,
     )
 
@@ -144,4 +151,35 @@ async def save_workspace(
         request,
         data=None,
         message="Workspace saved successfully",
+    )
+
+
+@router.post(
+    "/{contest_id}/questions/{question_id}/run",
+    response_model=APIResponse[StudentCodeRunResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Run student code against sample test cases",
+)
+async def run_student_code(
+    request: Request,
+    contest_id: UUID,
+    question_id: UUID,
+    payload: StudentCodeRunRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    service: StudentContestQuestionService = Depends(get_student_contest_service),
+):
+    """
+    Run student code against public (non-hidden) test cases for immediate feedback.
+    """
+    result = await service.run_code(
+        contest_id=contest_id,
+        question_id=question_id,
+        user_id=user_id,
+        code=payload.code,
+        language_id=payload.language_id,
+    )
+    return create_api_response(
+        request,
+        data=result,
+        message="Code execution completed",
     )

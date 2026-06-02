@@ -89,6 +89,22 @@ class TestCaseRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_non_hidden_by_id(self, testcase_id: UUID) -> TestCase | None:
+        """Fetch a single non-hidden test case by ID.
+
+        Args:
+            testcase_id: Test case ID to fetch.
+
+        Returns:
+            TestCase object if found and non-hidden, None otherwise.
+        """
+        result = await self.db.execute(
+            select(TestCase).where(
+                TestCase.id == testcase_id, TestCase.is_hidden.is_(False)
+            )
+        )
+        return result.scalar_one_or_none()
+
     async def get_by_ids(self, testcase_ids: list[UUID]) -> list[TestCase]:
         """Fetch multiple test cases by IDs.
 
