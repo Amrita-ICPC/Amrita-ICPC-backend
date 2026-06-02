@@ -80,14 +80,14 @@ class StudentTestCaseRunResultDTO:
 class StudentCodeRunResponseDTO:
     """Complete response DTO for a code run operation.
 
-    Contains result of running code against a test case.
+    Contains result of running code against all non-hidden test cases.
     """
 
     question_id: UUID
     """Problem that was tested."""
 
-    result: StudentTestCaseRunResultDTO
-    """Execution result details."""
+    results: list[StudentTestCaseRunResultDTO]
+    """Execution result details for each test case."""
 
     message: str
     """Success/error message."""

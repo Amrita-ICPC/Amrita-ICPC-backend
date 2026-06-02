@@ -1,9 +1,11 @@
 from uuid import UUID
 
+from app.core.logger import logger
 from app.exceptions.contest import (
     ContestRuntimeFinishedError,
     QuestionNotInContestError,
 )
+from app.exceptions.question import QuestionNotFoundError
 from app.exceptions.student.contests import (
     ContestSessionNotStartedError,
     NoContestTeamMemberFoundError,
@@ -12,13 +14,20 @@ from app.models import Contest, ContestTeam, ContestTeamMember
 from app.repositories.contest import ContestRepository
 from app.repositories.contest_runtime import ContestRuntimeRepository
 from app.repositories.contest_team_progress import ContestTeamProgressRepository
+from app.repositories.dto.judge0 import Judge0ExecutionRequestDTO
+from app.repositories.judge0 import Judge0Repository
 from app.repositories.student.contest_question import StudentContestQuestionRepository
 from app.repositories.student.contest_team import ContestTeamRepository
+from app.repositories.testcase import TestCaseRepository
 from app.schema.student import (
     StudentContestQuestionResponse,
     StudentContestQuestionsListResponse,
     StudentQuestionDetailResponse,
     WorkspaceData,
+)
+from app.schema.student.run import (
+    StudentCodeRunResponse,
+    StudentTestCaseRunResultResponse,
 )
 from app.service.student.workspace import WorkspaceService
 from app.utils.contest import calculate_effective_times
@@ -41,6 +50,7 @@ class StudentContestQuestionService:
         contest_team_repository: ContestTeamRepository,
         contest_runtime_repository: ContestRuntimeRepository,
         contest_team_progress_repository: ContestTeamProgressRepository,
+        testcase_repository: TestCaseRepository,
         workspace_service: WorkspaceService,
     ):
         self.repository = repository
@@ -48,7 +58,9 @@ class StudentContestQuestionService:
         self.contest_team_repository = contest_team_repository
         self.contest_runtime_repository = contest_runtime_repository
         self.contest_team_progress_repository = contest_team_progress_repository
+        self.testcase_repository = testcase_repository
         self.workspace_service = workspace_service
+        self.judge0_repo = Judge0Repository()
 
     async def _validate_session_and_get_contest(
         self, contest_id: UUID, user_id: UUID
@@ -234,4 +246,106 @@ class StudentContestQuestionService:
             key=key,
             language_id=language_id,
             source_code=source_code,
+        )
+
+    async def run_code(
+        self,
+        contest_id: UUID,
+        question_id: UUID,
+        user_id: UUID,
+        code: str,
+        language_id: int,
+    ) -> StudentCodeRunResponse:
+        """
+        Execute student code against all non-hidden test cases of the question.
+        """
+        import asyncio
+
+        # Validate student eligibility, contest runtime status, session progress, and remaining time.
+        await self._validate_session_and_get_contest(contest_id, user_id)
+
+        # Retrieve contest question details (includes templates and language mappings)
+        question = await self.repository.get_contest_question_details(
+            contest_id, question_id
+        )
+        if not question:
+            raise QuestionNotInContestError(str(question_id), str(contest_id))
+
+        # Retrieve public (non-hidden) test cases
+        non_hidden = await self.testcase_repository.get_non_hidden_by_question(
+            question_id
+        )
+        if not non_hidden:
+            raise QuestionNotFoundError(
+                f"No non-hidden test case found for question {question_id}"
+            )
+
+        # Retrieve driver code from template if available
+        driver_code = ""
+        for template in question.templates:
+            if template.language_id == language_id:
+                driver_code = template.driver_code or ""
+                break
+
+        full_source_code = code
+        if driver_code:
+            full_source_code = f"{code}\n\n{driver_code}"
+
+        logger.info(
+            f"Running code for user {user_id} on question {question_id} in contest {contest_id} "
+            f"against {len(non_hidden)} test cases"
+        )
+
+        # Build Judge0 request DTO with full source code (solution + driver)
+        judge0_request = Judge0ExecutionRequestDTO(
+            question_id=str(question_id),
+            source_code=full_source_code,
+            language_id=language_id,
+        )
+
+        # Submit code to Judge0 for all testcases in parallel
+        submit_tasks = [
+            self.judge0_repo.submit_code(judge0_request, tc.input) for tc in non_hidden
+        ]
+        submissions = await asyncio.gather(*submit_tasks)
+
+        # Wait for all submissions in parallel
+        wait_tasks = [
+            self.judge0_repo.wait_for_completion(sub.token) for sub in submissions
+        ]
+        judge0_results = await asyncio.gather(*wait_tasks)
+
+        # Map results to Schema models
+        results = []
+        for testcase, judge0_result in zip(non_hidden, judge0_results):
+            status_id = judge0_result.status_id or 0
+            testcase_stdout = (judge0_result.stdout or "").strip()
+            testcase_expected = (testcase.output or "").strip()
+            # Code run passed only if execution succeeded and output matched expected output
+            passed = (status_id == 3) and (testcase_stdout == testcase_expected)
+
+            results.append(
+                StudentTestCaseRunResultResponse(
+                    testcase_id=testcase.id,
+                    passed=passed,
+                    status_description=judge0_result.status.name
+                    if judge0_result.status
+                    else "Unknown",
+                    time=judge0_result.time or 0.0,
+                    memory=judge0_result.memory or 0.0,
+                    stdout=judge0_result.stdout,
+                    stderr=judge0_result.stderr,
+                    compile_output=judge0_result.compile_output,
+                    expected_output=testcase.output,
+                    input=testcase.input,
+                )
+            )
+
+        overall_passed = all(r.passed for r in results)
+
+        return StudentCodeRunResponse(
+            passed=overall_passed,
+            results=results,
+            message="Code executed successfully",
+            question_id=question_id,
         )

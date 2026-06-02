@@ -6,11 +6,9 @@ aren't used by the current routers, since importing any submodule under
 """
 
 from app.service.student.contests import StudentContestService
-from app.service.student.student_run_service import StudentRunService
 from app.service.student.team import StudentTeamService
 
 __all__ = [
     "StudentContestService",
-    "StudentRunService",
     "StudentTeamService",
 ]

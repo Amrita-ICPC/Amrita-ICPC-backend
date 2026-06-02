@@ -37,11 +37,6 @@ class StudentCodeRunRequest(BaseModel):
     )
     """Judge0 language identifier."""
 
-    testcase_id: UUID | None = Field(
-        None, description="Specific test case to run. If null, runs first test case."
-    )
-    """Optional test case. Runs first if not specified."""
-
 
 class StudentTestCaseRunResultResponse(BaseModel):
     """Response with execution result for a test case.
@@ -91,33 +86,16 @@ class StudentTestCaseRunResultResponse(BaseModel):
     expected_output: str | None = Field(None, description="What output was expected")
     """Expected output for debugging purposes."""
 
+    input: str | None = Field(None, description="Program input")
+    """What input was provided to the program."""
+
     model_config = ConfigDict(from_attributes=True)
 
 
 class StudentCodeRunResponse(BaseModel):
     """Response to student code run request.
 
-    Contains execution result for the requested test case.
-
-    Example:
-        ```json
-        {
-            "success": true,
-            "message": "Test case executed successfully",
-            "question_id": "550e8400-e29b-41d4-a716-446655440001",
-            "result": {
-                "testcase_id": "550e8400-e29b-41d4-a716-446655440002",
-                "passed": true,
-                "status_description": "Accepted",
-                "time": 0.125,
-                "memory": 12.5,
-                "stdout": "output",
-                "stderr": null,
-                "compile_output": null,
-                "expected_output": "output"
-            }
-        }
-        ```
+    Contains execution results for the public test cases.
     """
 
     success: bool = Field(alias="passed")
@@ -129,7 +107,7 @@ class StudentCodeRunResponse(BaseModel):
     question_id: UUID
     """Problem that was tested."""
 
-    result: StudentTestCaseRunResultResponse
+    results: list[StudentTestCaseRunResultResponse]
     """Execution result details."""
 
     model_config = ConfigDict(from_attributes=True)
