@@ -17,3 +17,7 @@ def build_workspace_key(
         )
 
     return f"contest_workspace:{contest_id}:team:{contest_team_id}:{question_id}"
+
+
+def get_contest_channel_key(contest_id: UUID) -> str:
+    return f"contest:{contest_id}:events"

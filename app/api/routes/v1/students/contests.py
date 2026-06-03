@@ -1,11 +1,16 @@
 # TODO: Implement RBAC auth gaurd
+import asyncio
+from collections.abc import AsyncIterable
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
+from fastapi.sse import EventSourceResponse, ServerSentEvent
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user_id
 from app.core.clients.database import get_db
+from app.core.clients.redis import get_redis
 from app.core.guards.contest_student import ContestStudentGuard
 from app.core.guards.team_student import TeamStudentGuard
 from app.core.logger import logger
@@ -42,6 +47,7 @@ router = APIRouter()
 
 def get_student_contest_service(
     db: AsyncSession = Depends(get_db),
+    redis_client: Redis = Depends(get_redis),
 ) -> StudentContestService:
     repository = StudentContestRepository(db)
     contest_repository = ContestRepository(db)
@@ -51,13 +57,14 @@ def get_student_contest_service(
     contest_team_progress_repository = ContestTeamProgressRepository(db)
     contest_runtime_repository = ContestRuntimeRepository(db)
     return StudentContestService(
-        repository,
-        contest_repository,
-        contest_team_repository,
-        team_repository,
-        contest_student_guard,
-        contest_team_progress_repository,
-        contest_runtime_repository,
+        repository=repository,
+        contest_repository=contest_repository,
+        contest_team_reposiotry=contest_team_repository,
+        team_repository=team_repository,
+        contest_student_guard=contest_student_guard,
+        contest_team_progress_repository=contest_team_progress_repository,
+        contest_runtime_repository=contest_runtime_repository,
+        redis=redis_client,
     )
 
 
@@ -435,3 +442,23 @@ async def get_runtime_session(
         data=result,
         message="Contest session fetched successfully",
     )
+
+
+@router.get(
+    "/{contest_id}/events",
+    summary="Get contest events stream (SSE) for students",
+    response_class=EventSourceResponse,
+)
+async def get_contest_events_stream(
+    contest_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: StudentContestService = Depends(get_student_contest_service),
+) -> AsyncIterable[ServerSentEvent]:
+    """
+    Establish a Server-Sent Events (SSE) stream for contest lifecycle events on the student side.
+    """
+    try:
+        async for event in service.subscribe_contest_events(contest_id, user_id):
+            yield event
+    except asyncio.CancelledError:
+        logger.info("SSE connection cancelled by client")

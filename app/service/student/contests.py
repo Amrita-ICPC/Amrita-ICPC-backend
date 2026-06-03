@@ -1,8 +1,15 @@
+import asyncio
 from datetime import datetime, timezone
+from typing import AsyncGenerator
 from uuid import UUID
+
+from fastapi.sse import ServerSentEvent
+from redis.asyncio import Redis
 
 from app.core.cache.decorators import cache_get
 from app.core.guards.contest_student import ContestStudentGuard
+from app.core.logger import logger
+from app.exceptions.contest import ContestNotFoundError
 from app.exceptions.student.contests import (
     ContestSessionNotStartedError,
     NoContestTeamMemberFoundError,
@@ -29,6 +36,7 @@ from app.repositories.dto.student.contests import StudentContestFilters
 from app.repositories.student.contest import StudentContestRepository
 from app.repositories.student.contest_team import ContestTeamRepository
 from app.repositories.team import TeamRepository
+from app.schema.contest import ContestEvent
 from app.schema.student.contest_team_progress import (
     ContestTeamProgressResponse,
 )
@@ -52,6 +60,7 @@ from app.utils.enums import (
     TeamMemberRole,
     TeamStatus,
 )
+from app.utils.key_builder import get_contest_channel_key
 from app.validators.contest_team import ContestTeamValidator
 
 
@@ -71,6 +80,7 @@ class StudentContestService:
         contest_student_guard: ContestStudentGuard,
         contest_team_progress_repository: ContestTeamProgressRepository,
         contest_runtime_repository: ContestRuntimeRepository,
+        redis: Redis,
     ) -> None:
         """Initialize the StudentContestService with required dependencies.
 
@@ -79,6 +89,7 @@ class StudentContestService:
             contest_repository: Repository for general contest operations.
             team_repository: Repository for team operations.
             contest_student_guard: Guard for student eligibility checks.
+            redis: Redis client instance.
         """
         self.repository = repository
         self.contest_student_guard = contest_student_guard
@@ -87,6 +98,7 @@ class StudentContestService:
         self.contest_team_repository = contest_team_reposiotry
         self.contest_team_progress_repository = contest_team_progress_repository
         self.contest_runtime_repository = contest_runtime_repository
+        self.redis = redis
 
     @cache_get(
         key_builder=lambda self, user_id, request, search, pagination: (
@@ -578,3 +590,63 @@ class StudentContestService:
         self, contest_id: UUID, user_id: UUID
     ) -> ContestTeamProgressResponse:
         return await self.get_contest_session(contest_id, user_id, is_start=False)
+
+    async def subscribe_contest_events(
+        self, contest_id: UUID, user_id: UUID
+    ) -> AsyncGenerator[ServerSentEvent, None]:
+        """
+        Subscribe to contest events and yield them as ServerSentEvent objects.
+        Validates that the contest exists, is not deleted, and the user belongs to an approved team.
+        """
+        contest = await self.contest_repository.get_contest_or_raise(contest_id)
+        if contest.is_deleted:
+            raise ContestNotFoundError(str(contest_id))
+
+        contest_team_member = (
+            await self.contest_team_repository.get_contest_team_member_by_user_id(
+                user_id=user_id,
+                stauts=ContestTeamMemberStatus.ACCEPTED,
+                team_status=TeamStatus.CONFIRMED,
+                approval_status=TeamApprovalStatus.APPROVED,
+                contest_id=contest_id,
+            )
+        )
+        if not contest_team_member:
+            raise NoContestTeamMemberFoundError()
+
+        pubsub = self.redis.pubsub()
+        channel = get_contest_channel_key(contest_id)
+        await pubsub.subscribe(channel)
+        logger.info(f"Subscribed to ${channel}")
+
+        yield ServerSentEvent(comment="stream of contest lifecycle updates")
+
+        try:
+            while True:
+                message = await pubsub.get_message(
+                    ignore_subscribe_messages=True, timeout=15.0
+                )
+                if message:
+                    if message["type"] == "message":
+                        data = message["data"]
+                        if isinstance(data, bytes):
+                            data = data.decode("utf-8")
+                        logger.info(
+                            f"SSE event message received on channel {channel}: {data}"
+                        )
+                        try:
+                            event_data = ContestEvent.model_validate_json(data)
+                            yield ServerSentEvent(
+                                data=event_data, event="contest_event"
+                            )
+                        except Exception as e:
+                            logger.error(
+                                f"Failed to validate ContestEvent from message data: {e}"
+                            )
+
+        except asyncio.CancelledError:
+            logger.info("SSE client disconnected")
+            raise
+        finally:
+            await pubsub.unsubscribe(channel)
+            await pubsub.close()

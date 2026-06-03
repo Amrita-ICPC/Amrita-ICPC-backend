@@ -5,6 +5,7 @@ from app.exceptions.auth import PermissionDeniedError
 from app.exceptions.base import AppBaseException
 from app.exceptions.contest import (
     ContestNotFoundError,
+    ContestRuntimeNotInitializedError,
     InstructorAlreadyAssignedError,
     InstructorNotAssignedError,
     InvalidContestError,
@@ -451,3 +452,84 @@ class ContestValidator:
             raise PermissionDeniedError("Contest has not started yet")
         if end_time is not None and current_time > _aware(end_time):
             raise PermissionDeniedError("Contest has already ended")
+
+    @staticmethod
+    def validate_contest_can_be_paused(
+        runtime: ContestRuntime | None, contest_id: UUID
+    ) -> None:
+        """
+        Validate that the contest runtime is in a state that can be paused.
+
+        Args:
+            runtime: The ContestRuntime model instance
+            contest_id: ID of the contest
+
+        Raises:
+            ContestRuntimeNotInitializedError: If runtime is None
+            InvalidContestStateError: If current runtime status is not RUNNING
+        """
+        if runtime is None:
+            raise ContestRuntimeNotInitializedError()
+
+        if runtime.runtime_status != ContestRuntimeStatus.RUNNING:
+            raise InvalidContestStateError(
+                str(contest_id),
+                "pause",
+                runtime.runtime_status.value,
+                ContestRuntimeStatus.RUNNING.value,
+            )
+
+    @staticmethod
+    def validate_contest_can_be_resumed(
+        runtime: ContestRuntime | None, contest_id: UUID
+    ) -> None:
+        """
+        Validate that the contest runtime is in a state that can be resumed.
+
+        Args:
+            runtime: The ContestRuntime model instance
+            contest_id: ID of the contest
+
+        Raises:
+            ContestRuntimeNotInitializedError: If runtime is None
+            InvalidContestStateError: If current runtime status is not PAUSED
+        """
+        if runtime is None:
+            raise ContestRuntimeNotInitializedError()
+
+        if runtime.runtime_status != ContestRuntimeStatus.PAUSED:
+            raise InvalidContestStateError(
+                str(contest_id),
+                "resume",
+                runtime.runtime_status.value,
+                ContestRuntimeStatus.PAUSED.value,
+            )
+
+    @staticmethod
+    def validate_contest_can_be_cancelled(
+        runtime: ContestRuntime | None, contest_id: UUID
+    ) -> None:
+        """
+        Validate that the contest runtime is in a state that can be cancelled.
+
+        Args:
+            runtime: The ContestRuntime model instance
+            contest_id: ID of the contest
+
+        Raises:
+            ContestRuntimeNotInitializedError: If runtime is None
+            InvalidContestStateError: If current runtime status is FINISHED or CANCELLED
+        """
+        if runtime is None:
+            raise ContestRuntimeNotInitializedError()
+
+        if runtime.runtime_status in (
+            ContestRuntimeStatus.FINISHED,
+            ContestRuntimeStatus.CANCELLED,
+        ):
+            raise InvalidContestStateError(
+                str(contest_id),
+                "cancel",
+                runtime.runtime_status.value,
+                f"not {runtime.runtime_status.value}",
+            )
