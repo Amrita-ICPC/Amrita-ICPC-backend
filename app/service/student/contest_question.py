@@ -38,7 +38,7 @@ from app.utils.enums import (
     TeamApprovalStatus,
     TeamStatus,
 )
-from app.utils.workspace_key_builder import build_workspace_key
+from app.utils.key_builder import build_workspace_key
 from app.validators.contest_team import ContestTeamValidator
 
 

@@ -1,6 +1,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, status
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import (
@@ -11,6 +12,7 @@ from app.auth.dependencies import (
     get_current_user_id,
 )
 from app.core.clients.database import get_db
+from app.core.clients.redis import get_redis
 from app.core.guards.contest import ContestOperationGuard
 from app.core.logger import logger
 from app.core.response import create_api_response
@@ -43,6 +45,7 @@ from app.schema.question import (
     QuestionResponse,
     QuestionUpdate,
 )
+from app.service.contest_event_publish import ContestEventPublisher
 from app.service.contest_question_service import ContestQuestionService
 from app.service.contest_service import ContestService
 from app.utils.enums import (
@@ -57,12 +60,16 @@ from app.validators.contest import ContestValidator
 router = APIRouter()
 
 
-def get_contest_service(db: AsyncSession = Depends(get_db)) -> ContestService:
+def get_contest_service(
+    db: AsyncSession = Depends(get_db),
+    redis_client: Redis = Depends(get_redis),
+) -> ContestService:
     """
     Dependency injector linking repository, guard, and validator into the service.
 
     Args:
         db (AsyncSession): Database session passed from FastAPI dependencies.
+        redis_client (Redis): Redis client instance.
 
     Returns:
         ContestService: Fully configured service class instance.
@@ -75,13 +82,15 @@ def get_contest_service(db: AsyncSession = Depends(get_db)) -> ContestService:
     team_repository = TeamRepository(db)
     guard = ContestOperationGuard(db)
     validator = ContestValidator()
+    event_publisher = ContestEventPublisher(redis_client)
     return ContestService(
-        contest_repository,
-        user_repository,
-        guard,
-        validator,
-        audience_repository,
-        team_repository,
+        repository=contest_repository,
+        user_repository=user_repository,
+        guard=guard,
+        validator=validator,
+        audience_repository=audience_repository,
+        team_repository=team_repository,
+        event_publisher=event_publisher,
     )
 
 
@@ -1106,4 +1115,76 @@ async def update_contest_question(
         request,
         data=question,
         message="Contest question updated successfully",
+    )
+
+
+@router.post(
+    "/{contest_id}/pause",
+    response_model=APIResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Pause a running contest",
+)
+async def pause_contest(
+    request: Request,
+    contest_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: ContestService = Depends(get_contest_service),
+):
+    """
+    Pause a running contest.
+    """
+    await service.pause_contest(contest_id, user_id)
+    logger.info(f"Contest {contest_id} paused (actor=REDACTED)")
+    return create_api_response(
+        request,
+        data=None,
+        message="Contest paused successfully",
+    )
+
+
+@router.post(
+    "/{contest_id}/resume",
+    response_model=APIResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Resume a paused contest",
+)
+async def resume_contest(
+    request: Request,
+    contest_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: ContestService = Depends(get_contest_service),
+):
+    """
+    Resume a paused contest.
+    """
+    await service.resume_contest(contest_id, user_id)
+    logger.info(f"Contest {contest_id} resumed (actor=REDACTED)")
+    return create_api_response(
+        request,
+        data=None,
+        message="Contest resumed successfully",
+    )
+
+
+@router.post(
+    "/{contest_id}/cancel",
+    response_model=APIResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Cancel a contest",
+)
+async def cancel_contest(
+    request: Request,
+    contest_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: ContestService = Depends(get_contest_service),
+):
+    """
+    Cancel a contest.
+    """
+    await service.cancel_contest(contest_id, user_id)
+    logger.info(f"Contest {contest_id} cancelled (actor=REDACTED)")
+    return create_api_response(
+        request,
+        data=None,
+        message="Contest cancelled successfully",
     )
