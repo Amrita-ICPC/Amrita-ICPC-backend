@@ -43,7 +43,6 @@ class StudentContestRepository:
                 )
             )
             .filter(
-                Contest.is_deleted.is_(False),
                 Contest.status == ContestStatus.PUBLISHED,
             )
         )

@@ -294,7 +294,7 @@ class ContestRepository:
         base_query = self._apply_permission_filter(base_query, user_id, is_admin)
 
         # Filter out soft-deleted contests
-        base_query = base_query.filter(Contest.is_deleted.is_(False))
+        base_query = base_query.filter(Contest.status != ContestStatus.DELETED)
 
         # Apply search and status filters
         base_query = self._apply_search_and_status_filters(base_query, filters)
@@ -368,7 +368,7 @@ class ContestRepository:
         base_query = self._apply_permission_filter(base_query, user_id, is_admin)
 
         # Filter for soft-deleted contests only
-        base_query = base_query.filter(Contest.is_deleted.is_(True))
+        base_query = base_query.filter(Contest.status == ContestStatus.DELETED)
 
         # Apply search and status filters
         base_query = self._apply_search_and_status_filters(base_query, filters)
@@ -473,7 +473,7 @@ class ContestRepository:
             .join(Contest, Contest.id == ContestAudience.contest_id)
             .where(
                 ContestAudience.contest_id == contest_id,
-                Contest.is_deleted.is_(False),
+                Contest.status != ContestStatus.DELETED,
             )
         )
         return set(result.scalars().all())
@@ -499,7 +499,7 @@ class ContestRepository:
             .join(Contest, Contest.id == ContestAudience.contest_id)
             .where(
                 ContestAudience.contest_id == contest_id,
-                Contest.is_deleted.is_(False),
+                Contest.status != ContestStatus.DELETED,
             )
         )
         return list(result.scalars().all())
@@ -539,7 +539,7 @@ class ContestRepository:
             contest: Contest object to soft delete
             user_id: ID of the user performing the soft delete
         """
-        contest.is_deleted = True
+        contest.status = ContestStatus.DELETED
         contest.deleted_at = datetime.now(timezone.utc)
         contest.deleted_by = user_id
         await self.db.flush()
@@ -554,7 +554,7 @@ class ContestRepository:
         Returns:
             The restored Contest object
         """
-        contest.is_deleted = False
+        contest.status = ContestStatus.DRAFT
         contest.deleted_at = None
         contest.deleted_by = None
         await self.db.flush()

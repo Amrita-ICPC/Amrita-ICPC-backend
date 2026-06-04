@@ -67,10 +67,14 @@ class ContestStatus(str, enum.Enum):
     Attributes:
         DRAFT: Contest is being configured and not visible to participants.
         PUBLISHED: Contest is published and visible to participants.
+        CANCELLED: Contest has been cancelled.
+        DELETED: Contest has been soft-deleted.
     """
 
     DRAFT = "DRAFT"
     PUBLISHED = "PUBLISHED"
+    CANCELLED = "CANCELLED"
+    DELETED = "DELETED"
 
 
 class ContestRunStatus(str, enum.Enum):
@@ -89,25 +93,6 @@ class ContestRunStatus(str, enum.Enum):
     UPCOMING = "UPCOMING"
     LIVE = "LIVE"
     ENDED = "ENDED"
-
-
-class ContestRuntimeStatus(str, enum.Enum):
-    """
-    Enumeration of contest runtime status.
-
-    Attributes:
-        SCHEDULED: Contest is scheduled but not started.
-        RUNNING: Contest is currently running.
-        PAUSED: Contest is paused.
-        FINISHED: Contest has finished.
-        CANCELLED: Contest has been cancelled.
-    """
-
-    SCHEDULED = "SCHEDULED"
-    RUNNING = "RUNNING"
-    PAUSED = "PAUSED"
-    FINISHED = "FINISHED"
-    CANCELLED = "CANCELLED"
 
 
 class SortOrder(str, enum.Enum):
@@ -409,16 +394,6 @@ class WorkspaceRole(str, enum.Enum):
     VIEWER = "VIEWER"
 
 
-class WorkspaceMode(str, enum.Enum):
-    """
-    Enumeration of workspace collaboration modes.
-    """
-
-    INDIVIDUAL = "INDIVIDUAL"
-    LEADER_ONLY = "LEADER_ONLY"
-    SHARED_SINGLE_EDITOR = "SHARED_SINGLE_EDITOR"
-
-
 class InvitationType(str, enum.Enum):
     REQUEST = "REQUEST"
     INVITE = "INVITE"
@@ -440,10 +415,8 @@ class ContestTeamParticpationType(str, enum.Enum):
 
     Attributes:
         LEADER_ONLY: Only leader can code
-        SHARED_SINGLE_EDITOR_WORKSPACE: All team members can code but only one can edit
         INDIVIDUAL_WORKSPACE: Each team member has their own workspace
     """
 
     LEADER_ONLY = "LEADER_ONLY"
-    SHARED_SINGLE_EDITOR_WORKSPACE = "SHARED_SINGLE_EDITOR_WORKSPACE"
     INDIVIDUAL_WORKSPACE = "INDIVIDUAL_WORKSPACE"

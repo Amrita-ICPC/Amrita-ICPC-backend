@@ -33,8 +33,20 @@ class ContestSessionNotStartedError(AppBaseException):
         )
 
 
+class ContestSessionEndedError(AppBaseException):
+    """Raised when a user attempts to access a session that has already ended."""
+
+    def __init__(self, detail: str = "Contest session has ended."):
+        super().__init__(
+            message=detail,
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=detail,
+        )
+
+
 __all__ = [
     "ContestNotFoundError",
     "NoContestTeamMemberFoundError",
     "ContestSessionNotStartedError",
+    "ContestSessionEndedError",
 ]

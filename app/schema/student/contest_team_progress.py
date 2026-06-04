@@ -4,9 +4,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.utils.enums import (
-    ContestRuntimeStatus,
     TeamMemberRole,
-    WorkspaceMode,
     WorkspaceRole,
 )
 
@@ -39,30 +37,14 @@ class ContestRuntimeDetails(BaseModel):
     Schema representing the current runtime details of a contest.
 
     Attributes:
-        status: The current status of the contest runtime (e.g. RUNNING, PAUSED).
         effective_end_time: The effective end time of the contest for the team.
         remaining_seconds: Remaining seconds in the contest.
-        is_paused: Indicates if the contest is currently paused.
-        paused_at: Timestamp when the contest was paused, if applicable.
-        scoreboard_frozen: Indicates if the scoreboard is currently frozen.
     """
 
-    status: ContestRuntimeStatus = Field(
-        ..., description="The current status of the contest runtime"
-    )
     effective_end_time: datetime | None = Field(
         None, description="The effective end time of the contest for the team"
     )
     remaining_seconds: int = Field(..., description="Remaining seconds in the contest")
-    is_paused: bool = Field(
-        ..., description="Indicates if the contest is currently paused"
-    )
-    paused_at: datetime | None = Field(
-        None, description="Timestamp when the contest was paused"
-    )
-    scoreboard_frozen: bool = Field(
-        ..., description="Indicates if the scoreboard is currently frozen"
-    )
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -111,15 +93,9 @@ class WorkspaceDetails(BaseModel):
     Schema representing the team's shared workspace state.
 
     Attributes:
-        mode: The editor workspace mode.
-        current_editor_user_id: The user ID of the current active editor, if applicable.
         participants: List of participants in the workspace.
     """
 
-    mode: WorkspaceMode = Field(..., description="The editor workspace mode")
-    current_editor_user_id: UUID | None = Field(
-        None, description="The user ID of the current active editor, if applicable"
-    )
     participants: list[WorkspaceParticipant] = Field(
         ..., description="List of participants in the workspace"
     )
@@ -132,20 +108,10 @@ class TeamProgressDetails(BaseModel):
     Schema representing the performance and progress metrics of a team.
 
     Attributes:
-        score: The team's current score in the contest.
-        penalty: The team's penalty points.
-        solved_count: Number of questions solved by the team.
-        last_submission_at: Timestamp of the team's last code submission.
         extra_time_seconds: Amount of extra time granted to the team in seconds.
         has_extra_time: Indicates if the team has extra time.
     """
 
-    score: int = Field(..., description="The team's current score in the contest")
-    penalty: int = Field(..., description="The team's penalty points")
-    solved_count: int = Field(..., description="Number of questions solved by the team")
-    last_submission_at: datetime | None = Field(
-        None, description="Timestamp of the team's last code submission"
-    )
     extra_time_seconds: int = Field(
         ..., description="Amount of extra time granted to the team in seconds"
     )

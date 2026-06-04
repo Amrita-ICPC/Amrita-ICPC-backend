@@ -11,6 +11,7 @@ from app.core.guards.contest_student import ContestStudentGuard
 from app.core.logger import logger
 from app.exceptions.contest import ContestNotFoundError
 from app.exceptions.student.contests import (
+    ContestSessionEndedError,
     ContestSessionNotStartedError,
     NoContestTeamMemberFoundError,
 )
@@ -27,9 +28,8 @@ from app.mappers.student.contest_mappers import (
     to_student_contest_status_response,
     to_team_member_status,
 )
-from app.models import ContestTeamMemberProgress, ContestTeamProgress
+from app.models import ContestTeamProgress
 from app.repositories.contest import ContestRepository
-from app.repositories.contest_runtime import ContestRuntimeRepository
 from app.repositories.contest_team_progress import ContestTeamProgressRepository
 from app.repositories.dto.pagination import PaginationParams
 from app.repositories.dto.student.contests import StudentContestFilters
@@ -52,7 +52,8 @@ from app.utils.contest import (
     compute_run_status,
 )
 from app.utils.enums import (
-    ContestRuntimeStatus,
+    ContestRunStatus,
+    ContestStatus,
     ContestTeamMemberStatus,
     ContestTeamParticpationType,
     RegistrationState,
@@ -79,7 +80,6 @@ class StudentContestService:
         team_repository: TeamRepository,
         contest_student_guard: ContestStudentGuard,
         contest_team_progress_repository: ContestTeamProgressRepository,
-        contest_runtime_repository: ContestRuntimeRepository,
         redis: Redis,
     ) -> None:
         """Initialize the StudentContestService with required dependencies.
@@ -97,7 +97,6 @@ class StudentContestService:
         self.team_repository = team_repository
         self.contest_team_repository = contest_team_reposiotry
         self.contest_team_progress_repository = contest_team_progress_repository
-        self.contest_runtime_repository = contest_runtime_repository
         self.redis = redis
 
     @cache_get(
@@ -250,38 +249,43 @@ class StudentContestService:
             registration_status = RegistrationState.NOT_REGISTERED
 
         # Get contest runtime status
-        runtime = await self.contest_runtime_repository.get_contest_runtime_by_id(
-            contest_id
+        run_status = compute_run_status(contest.start_time, contest.end_time)
+
+        is_individual = (
+            contest.participation_type
+            == ContestTeamParticpationType.INDIVIDUAL_WORKSPACE
         )
-        contest_runtime_status = (
-            runtime.runtime_status if runtime else ContestRuntimeStatus.SCHEDULED
-        )
+        member_id_filter = contest_team_member.id if is_individual else None
 
         # Check if already started
         contest_team_progress = (
             await self.contest_team_progress_repository.get_contest_team_progress_by_id(
                 contest_id=contest_id,
                 contest_team_id=contest_team.id,
+                contest_team_member_id=member_id_filter,
             )
         )
 
-        is_individual = (
-            contest.participation_type
-            == ContestTeamParticpationType.INDIVIDUAL_WORKSPACE
+        already_started = contest_team_progress is not None
+        active_progress = contest_team_progress
+        extra_time = (
+            contest_team_progress.extra_time_seconds if contest_team_progress else 0
         )
-        if is_individual:
-            member_progress = await self.contest_team_progress_repository.get_contest_team_member_progress(
-                contest_id=contest_id,
-                contest_team_id=contest_team.id,
-                contest_team_member_id=contest_team_member.id,
-            )
-            already_started = member_progress is not None
-        else:
-            already_started = contest_team_progress is not None
 
         # Determine readiness by evaluating start/end time, runtime status, and leader checks
-        current_time = datetime.now(timezone.utc)
+        datetime.now(timezone.utc)
         is_leader = contest_team.leader_id == user_id
+
+        session_ended = False
+        if already_started and active_progress:
+            base_end_time = active_progress.end_time
+            if base_end_time is not None:
+                _, remaining_seconds = calculate_effective_times(
+                    base_end_time=base_end_time,
+                    extra_time_seconds=extra_time,
+                )
+                if remaining_seconds <= 0:
+                    session_ended = True
 
         if is_draft:
             can_start = False
@@ -289,31 +293,21 @@ class StudentContestService:
         elif not is_approved:
             can_start = False
             reason = "Team is not approved by contest organizers"
-        elif current_time < contest.start_time:
-            can_start = False
-            reason = "Contest has not started yet"
-        elif contest.end_time is not None and current_time > contest.end_time:
-            can_start = False
-            reason = "Contest has already ended"
-        elif contest_runtime_status == ContestRuntimeStatus.SCHEDULED:
-            can_start = False
-            reason = "Contest has not been started by organizers"
-        elif contest_runtime_status == ContestRuntimeStatus.PAUSED:
-            can_start = False
-            reason = "Contest is currently paused"
-        elif contest_runtime_status == ContestRuntimeStatus.FINISHED:
-            can_start = False
-            reason = "Contest has finished"
-        elif contest_runtime_status == ContestRuntimeStatus.CANCELLED:
+        elif contest.status == ContestStatus.CANCELLED:
             can_start = False
             reason = "Contest has been cancelled"
+        elif run_status == ContestRunStatus.UPCOMING:
+            can_start = False
+            reason = "Contest has not started yet"
+        elif run_status == ContestRunStatus.ENDED:
+            can_start = False
+            reason = "Contest has already ended"
+        elif session_ended:
+            can_start = False
+            reason = "Contest session has already ended"
         elif (
             not already_started
-            and contest.participation_type
-            in (
-                ContestTeamParticpationType.SHARED_SINGLE_EDITOR_WORKSPACE,
-                ContestTeamParticpationType.LEADER_ONLY,
-            )
+            and contest.participation_type == ContestTeamParticpationType.LEADER_ONLY
             and not is_leader
         ):
             can_start = False
@@ -365,7 +359,7 @@ class StudentContestService:
             team_approval_status=contest_team.approval_status,
             status=contest_team.team_status,
             team_id=contest_team.team_id,
-            contest_runtime_status=contest_runtime_status,
+            run_status=run_status,
             already_started=already_started,
         )
 
@@ -394,29 +388,19 @@ class StudentContestService:
         contest_team = contest_team_member.contest_team
         ContestTeamValidator.validate_student_contest_team(contest_team, contest_id)
 
-        # Get contest runtime
-        runtime = await self.contest_runtime_repository.get_contest_runtime_or_raise(
-            contest_id
+        is_individual = (
+            contest.participation_type
+            == ContestTeamParticpationType.INDIVIDUAL_WORKSPACE
         )
-        ContestTeamValidator.validate_student_contest_runtime(runtime)
+        member_id_filter = contest_team_member.id if is_individual else None
 
         # Get team progress record
         contest_team_progress = (
             await self.contest_team_progress_repository.get_contest_team_progress_by_id(
                 contest_id=contest_id,
                 contest_team_id=contest_team.id,
+                contest_team_member_id=member_id_filter,
             )
-        )
-
-        member_progress = await self.contest_team_progress_repository.get_contest_team_member_progress(
-            contest_id=contest_id,
-            contest_team_id=contest_team.id,
-            contest_team_member_id=contest_team_member.id,
-        )
-
-        is_individual = (
-            contest.participation_type
-            == ContestTeamParticpationType.INDIVIDUAL_WORKSPACE
         )
 
         # Check permission constraints based on participation_type
@@ -429,25 +413,12 @@ class StudentContestService:
             )
 
         # Check start permissions
-        if contest_team_progress is None:
-            if not is_start:
-                raise ContestSessionNotStartedError()
-
-            # For shared workspaces, only the leader can start it
-            if (
-                contest.participation_type
-                == ContestTeamParticpationType.SHARED_SINGLE_EDITOR_WORKSPACE
-            ):
-                self.contest_student_guard.check_is_contest_team_leader(
-                    user_id=user_id, contest_team=contest_team
-                )
-        else:
-            if member_progress is None and not is_start:
-                raise ContestSessionNotStartedError()
+        if contest_team_progress is None and not is_start:
+            raise ContestSessionNotStartedError()
 
         now_utc = datetime.now(timezone.utc)
         session_end_time = None
-        if contest_team_progress is None or member_progress is None:
+        if contest_team_progress is None:
             session_end_time = calculate_base_end_time(
                 start_time=now_utc,
                 end_time=contest.end_time,
@@ -459,51 +430,18 @@ class StudentContestService:
             contest_team_progress = ContestTeamProgress(
                 contest_id=contest_id,
                 contest_team_id=contest_team.id,
-                score=0,
-                penalty=0,
-                solved_questions_count=0,
-                is_flagged=False,
-                end_time=None if is_individual else session_end_time,
+                contest_team_member_id=member_id_filter,
+                end_time=session_end_time,
                 extra_time_seconds=0,
-                current_editor_user_id=None
-                if is_individual
-                else contest_team.leader_id,
                 created_at=now_utc,
                 updated_at=now_utc,
             )
             await self.contest_team_progress_repository.create_contest_team_progress(
                 contest_team_progress
             )
-            if not is_individual:
-                already_started = False
+            already_started = False
 
-        if member_progress is None:
-            member_progress = ContestTeamMemberProgress(
-                contest_id=contest_id,
-                contest_team_id=contest_team.id,
-                contest_team_member_id=contest_team_member.id,
-                started_at=now_utc,
-                end_time=session_end_time if is_individual else None,
-                submissions_count=0,
-                accepted_submissions_count=0,
-                score=0,
-                penalty=0,
-                solved_questions_count=0,
-                last_activity_at=now_utc,
-            )
-            await self.contest_team_progress_repository.create_contest_team_member_progress(
-                member_progress
-            )
-            if is_individual:
-                already_started = False
-
-        # Calculate effective times
-        if is_individual:
-            base_end_time = (
-                member_progress.end_time if member_progress is not None else None
-            )
-        else:
-            base_end_time = contest_team_progress.end_time
+        base_end_time = contest_team_progress.end_time
 
         if base_end_time is None:
             if session_end_time is None:
@@ -516,11 +454,11 @@ class StudentContestService:
 
         effective_end_time, remaining_seconds = calculate_effective_times(
             base_end_time=base_end_time,
-            total_paused_duration=runtime.total_paused_duration,
             extra_time_seconds=contest_team_progress.extra_time_seconds,
-            is_paused=(runtime.runtime_status == ContestRuntimeStatus.PAUSED),
-            paused_at=runtime.paused_at,
         )
+
+        if remaining_seconds <= 0:
+            raise ContestSessionEndedError()
 
         contest_team_members = (
             await self.contest_team_repository.get_contest_team_members(
@@ -533,8 +471,6 @@ class StudentContestService:
         )
 
         session_started_at = contest_team_progress.created_at
-        if is_individual and member_progress is not None:
-            session_started_at = member_progress.started_at
 
         session_status = build_session_status(
             already_started=already_started,
@@ -543,7 +479,6 @@ class StudentContestService:
         )
 
         runtime_state = build_runtime_state(
-            contest_runtime=runtime,
             effective_end_time=effective_end_time,
             remaining_seconds=remaining_seconds,
         )
@@ -559,12 +494,9 @@ class StudentContestService:
 
         team_progress = build_team_progress(
             progress=contest_team_progress,
-            member_progress=member_progress,
-            is_individual=is_individual,
         )
 
         permissions = build_permissions(
-            is_paused=(runtime.runtime_status == ContestRuntimeStatus.PAUSED),
             remaining_seconds=remaining_seconds,
             progress=contest_team_progress,
             user_id=user_id,
@@ -599,7 +531,7 @@ class StudentContestService:
         Validates that the contest exists, is not deleted, and the user belongs to an approved team.
         """
         contest = await self.contest_repository.get_contest_or_raise(contest_id)
-        if contest.is_deleted:
+        if contest.status == ContestStatus.DELETED:
             raise ContestNotFoundError(str(contest_id))
 
         contest_team_member = (

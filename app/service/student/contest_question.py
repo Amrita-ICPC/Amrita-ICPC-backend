@@ -2,17 +2,16 @@ from uuid import UUID
 
 from app.core.logger import logger
 from app.exceptions.contest import (
-    ContestRuntimeFinishedError,
     QuestionNotInContestError,
 )
 from app.exceptions.question import QuestionNotFoundError
 from app.exceptions.student.contests import (
+    ContestSessionEndedError,
     ContestSessionNotStartedError,
     NoContestTeamMemberFoundError,
 )
 from app.models import Contest, ContestTeam, ContestTeamMember
 from app.repositories.contest import ContestRepository
-from app.repositories.contest_runtime import ContestRuntimeRepository
 from app.repositories.contest_team_progress import ContestTeamProgressRepository
 from app.repositories.dto.judge0 import Judge0ExecutionRequestDTO
 from app.repositories.judge0 import Judge0Repository
@@ -32,7 +31,6 @@ from app.schema.student.run import (
 from app.service.student.workspace import WorkspaceService
 from app.utils.contest import calculate_effective_times
 from app.utils.enums import (
-    ContestRuntimeStatus,
     ContestTeamMemberStatus,
     ContestTeamParticpationType,
     TeamApprovalStatus,
@@ -48,7 +46,6 @@ class StudentContestQuestionService:
         repository: StudentContestQuestionRepository,
         contest_repository: ContestRepository,
         contest_team_repository: ContestTeamRepository,
-        contest_runtime_repository: ContestRuntimeRepository,
         contest_team_progress_repository: ContestTeamProgressRepository,
         testcase_repository: TestCaseRepository,
         workspace_service: WorkspaceService,
@@ -56,7 +53,6 @@ class StudentContestQuestionService:
         self.repository = repository
         self.contest_repository = contest_repository
         self.contest_team_repository = contest_team_repository
-        self.contest_runtime_repository = contest_runtime_repository
         self.contest_team_progress_repository = contest_team_progress_repository
         self.testcase_repository = testcase_repository
         self.workspace_service = workspace_service
@@ -88,50 +84,33 @@ class StudentContestQuestionService:
         contest_team = contest_team_member.contest_team
         ContestTeamValidator.validate_student_contest_team(contest_team, contest_id)
 
-        # 4. Get and validate contest runtime status
-        runtime = await self.contest_runtime_repository.get_contest_runtime_or_raise(
-            contest_id
-        )
-        # Use validate_contest_runtime_for_session which raises on paused states
-        ContestTeamValidator.validate_contest_runtime_for_session(runtime)
-
         # 5. Validate that progress exists (session is started)
-        member_progress = await self.contest_team_progress_repository.get_contest_team_member_progress(
-            contest_id=contest_id,
-            contest_team_id=contest_team.id,
-            contest_team_member_id=contest_team_member.id,
+        is_individual = (
+            contest.participation_type
+            == ContestTeamParticpationType.INDIVIDUAL_WORKSPACE
         )
-        if member_progress is None:
-            raise ContestSessionNotStartedError()
+        member_id_filter = contest_team_member.id if is_individual else None
 
         team_progress = (
             await self.contest_team_progress_repository.get_contest_team_progress_by_id(
                 contest_id=contest_id,
                 contest_team_id=contest_team.id,
+                contest_team_member_id=member_id_filter,
             )
         )
         if team_progress is None:
             raise ContestSessionNotStartedError()
 
         # 6. Validate session expiration (remaining seconds > 0)
-        is_individual = (
-            contest.participation_type
-            == ContestTeamParticpationType.INDIVIDUAL_WORKSPACE
-        )
-        base_end_time = (
-            member_progress.end_time if is_individual else team_progress.end_time
-        )
+        base_end_time = team_progress.end_time
 
         _, remaining_seconds = calculate_effective_times(
             base_end_time=base_end_time,
-            total_paused_duration=runtime.total_paused_duration,
             extra_time_seconds=team_progress.extra_time_seconds,
-            is_paused=(runtime.runtime_status == ContestRuntimeStatus.PAUSED),
-            paused_at=runtime.paused_at,
         )
 
         if remaining_seconds <= 0:
-            raise ContestRuntimeFinishedError()
+            raise ContestSessionEndedError()
 
         return contest, contest_team, contest_team_member
 
@@ -199,23 +178,11 @@ class StudentContestQuestionService:
         if not in_contest:
             raise QuestionNotInContestError(str(question_id), str(contest_id))
 
-        # Build key based on participation type
-        is_individual = (
-            contest.participation_type
-            == ContestTeamParticpationType.INDIVIDUAL_WORKSPACE
+        return build_workspace_key(
+            contest_id=contest_id,
+            question_id=question_id,
+            contest_team_member_id=contest_team_member.id,
         )
-        if is_individual:
-            return build_workspace_key(
-                contest_id=contest_id,
-                question_id=question_id,
-                contest_team_member_id=contest_team_member.id,
-            )
-        else:
-            return build_workspace_key(
-                contest_id=contest_id,
-                question_id=question_id,
-                contest_team_id=contest_team.id,
-            )
 
     async def get_workspace(
         self, contest_id: UUID, question_id: UUID, user_id: UUID

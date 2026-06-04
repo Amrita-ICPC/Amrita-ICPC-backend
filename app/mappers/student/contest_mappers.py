@@ -27,8 +27,6 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from app.models.contest import (
-    ContestRuntime,
-    ContestTeamMemberProgress,
     ContestTeamProgress,
 )
 from app.schema.student.contest_team_progress import (
@@ -50,7 +48,7 @@ from app.schema.student.contests import (
     TeamMemberStatus,
     TeamParticipationStatus,
 )
-from app.utils.enums import ContestRuntimeStatus, WorkspaceMode, WorkspaceRole
+from app.utils.enums import WorkspaceRole
 
 if TYPE_CHECKING:
     from app.repositories.dto import PaginatedResult
@@ -193,7 +191,7 @@ def to_student_contest_not_registered_response() -> StudentContestStatusResponse
         session=StudentContestSessionStatus(
             can_start=False,
             reason="Not registered for the contest",
-            contest_runtime_status=ContestRuntimeStatus.SCHEDULED,
+            run_status=ContestRunStatus.UPCOMING,
             already_started=False,
         ),
         team=None,
@@ -239,7 +237,7 @@ def to_student_contest_status_response(
     status: TeamStatus,
     team_approval_status: TeamApprovalStatus,
     team_id: UUID | None,
-    contest_runtime_status: ContestRuntimeStatus,
+    run_status: ContestRunStatus,
     already_started: bool,
 ) -> StudentContestStatusResponse:
     """
@@ -267,7 +265,7 @@ def to_student_contest_status_response(
         session=StudentContestSessionStatus(
             can_start=can_start,
             reason=reason,
-            contest_runtime_status=contest_runtime_status,
+            run_status=run_status,
             already_started=already_started,
         ),
         team=team_status,
@@ -344,24 +342,8 @@ def build_workspace(
 ) -> WorkspaceDetails:
     participants = []
     for member in contest_team_members:
-        if participation_type == ContestTeamParticpationType.INDIVIDUAL_WORKSPACE:
-            role = (
-                WorkspaceRole.EDITOR
-                if member.user_id == user_id
-                else WorkspaceRole.VIEWER
-            )
-        elif participation_type == ContestTeamParticpationType.LEADER_ONLY:
-            role = (
-                WorkspaceRole.EDITOR
-                if member.user_id == leader_id
-                else WorkspaceRole.VIEWER
-            )
-        else:
-            role = (
-                WorkspaceRole.EDITOR
-                if progress.current_editor_user_id == member.user_id
-                else WorkspaceRole.VIEWER
-            )
+        role = WorkspaceRole.EDITOR
+
         team_role = (
             TeamMemberRole.LEADER
             if member.user_id == leader_id
@@ -381,40 +363,22 @@ def build_workspace(
             )
         )
 
-    if participation_type == ContestTeamParticpationType.INDIVIDUAL_WORKSPACE:
-        mode = WorkspaceMode.INDIVIDUAL
-    elif participation_type == ContestTeamParticpationType.LEADER_ONLY:
-        mode = WorkspaceMode.LEADER_ONLY
-    else:
-        mode = WorkspaceMode.SHARED_SINGLE_EDITOR
-
     return WorkspaceDetails(
-        mode=mode,
-        current_editor_user_id=progress.current_editor_user_id,
         participants=participants,
     )
 
 
 def build_runtime_state(
-    contest_runtime: ContestRuntime,
     effective_end_time: datetime | None,
     remaining_seconds: int,
 ) -> ContestRuntimeDetails:
-    is_paused = contest_runtime.runtime_status == ContestRuntimeStatus.PAUSED
-    paused_at = contest_runtime.paused_at if is_paused else None
-
     return ContestRuntimeDetails(
-        status=contest_runtime.runtime_status,
         effective_end_time=effective_end_time,
         remaining_seconds=remaining_seconds,
-        is_paused=is_paused,
-        paused_at=paused_at,
-        scoreboard_frozen=contest_runtime.scoreboard_frozen,
     )
 
 
 def build_permissions(
-    is_paused: bool,
     remaining_seconds: int,
     progress: ContestTeamProgress,
     user_id: UUID,
@@ -422,22 +386,18 @@ def build_permissions(
 ) -> PermissionsDetails:
     is_time_up = remaining_seconds <= 0
     if participation_type == ContestTeamParticpationType.INDIVIDUAL_WORKSPACE:
-        can_edit = not is_paused and not is_time_up
-        can_submit = not is_paused and not is_time_up
+        can_edit = not is_time_up
+        can_submit = not is_time_up
         can_switch_editor = False
     elif participation_type == ContestTeamParticpationType.LEADER_ONLY:
         is_leader = progress.contest_team.leader_id == user_id
-        can_edit = not is_paused and not is_time_up and is_leader
-        can_submit = not is_paused and not is_time_up and is_leader
+        can_edit = not is_time_up and is_leader
+        can_submit = not is_time_up and is_leader
         can_switch_editor = False
     else:
-        can_edit = (
-            not is_paused
-            and not is_time_up
-            and progress.current_editor_user_id == user_id
-        )
-        can_submit = not is_paused and not is_time_up
-        can_switch_editor = not is_paused and not is_time_up
+        can_edit = False
+        can_submit = False
+        can_switch_editor = False
 
     return PermissionsDetails(
         can_view=True,
@@ -449,30 +409,8 @@ def build_permissions(
 
 def build_team_progress(
     progress: ContestTeamProgress,
-    member_progress: ContestTeamMemberProgress | None = None,
-    is_individual: bool = False,
 ) -> TeamProgressDetails:
-    score = (
-        member_progress.score
-        if is_individual and member_progress is not None
-        else progress.score
-    )
-    penalty = (
-        member_progress.penalty
-        if is_individual and member_progress is not None
-        else progress.penalty
-    )
-    solved_count = (
-        member_progress.solved_questions_count
-        if is_individual and member_progress is not None
-        else progress.solved_questions_count
-    )
-
     return TeamProgressDetails(
-        score=score,
-        penalty=penalty,
-        solved_count=solved_count,
-        last_submission_at=None,
         extra_time_seconds=progress.extra_time_seconds,
         has_extra_time=(progress.extra_time_seconds or 0) > 0,
     )

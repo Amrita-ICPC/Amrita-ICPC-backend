@@ -8,7 +8,6 @@ from app.utils.enums import (
     AudienceType,
     ContestMode,
     ContestRunStatus,
-    ContestRuntimeStatus,
     ContestStatus,
     ContestTeamParticpationType,
     ScoringType,
@@ -215,10 +214,6 @@ class ContestDetailResponse(ContestBase):
         None, description="User ID who published the contest"
     )
     duration: Optional[int] = Field(None, description="Contest duration in seconds")
-    contest_runtime_status: Optional[ContestRuntimeStatus] = Field(
-        None,
-        description="Current runtime status of the contest (only set for published contests)",
-    )
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -396,5 +391,5 @@ class ContestBankCloneRequest(BaseModel):
 
 
 class ContestEvent(BaseModel):
-    type: ContestRuntimeStatus
+    type: str
     payload: dict

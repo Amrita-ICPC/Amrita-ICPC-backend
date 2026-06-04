@@ -10,7 +10,7 @@ from app.schema.contest import (
     ContestSummaryResponse,
     ContestUpdate,
 )
-from app.utils.enums import ContestRunStatus, ContestRuntimeStatus
+from app.utils.enums import ContestRunStatus
 from app.utils.image import image_object_key_to_url
 
 
@@ -101,7 +101,6 @@ def to_contest_response(
     question_count: int | None = None,
     submission_count: int | None = None,
     participant_count: int | None = None,
-    contest_runtime_status: ContestRuntimeStatus | None = None,
 ) -> ContestResponse:
     """Map contest ORM object to detail response schema.
 
@@ -151,7 +150,6 @@ def to_contest_response(
         duration=contest.duration,
         show_leaderboard_during_contest=contest.show_leaderboard_during_contest,
         participation_type=contest.participation_type,
-        contest_runtime_status=contest_runtime_status,
     )
 
     return response

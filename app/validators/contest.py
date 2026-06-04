@@ -1,19 +1,16 @@
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
-from app.exceptions.auth import PermissionDeniedError
-from app.exceptions.base import AppBaseException
 from app.exceptions.contest import (
     ContestNotFoundError,
-    ContestRuntimeNotInitializedError,
     InstructorAlreadyAssignedError,
     InstructorNotAssignedError,
     InvalidContestError,
     InvalidContestStateError,
     QuestionNotInContestError,
 )
-from app.models.contest import ContestInstructor, ContestRuntime
-from app.utils.enums import ContestRuntimeStatus, ContestStatus
+from app.models.contest import ContestInstructor
+from app.utils.enums import ContestStatus
 
 
 class ContestValidator:
@@ -279,18 +276,18 @@ class ContestValidator:
             raise InvalidContestError(f"Cannot add more than {limit} questions at once")
 
     @staticmethod
-    def validate_not_deleted(is_deleted: bool, contest_id: UUID) -> None:
+    def validate_not_deleted(status: ContestStatus, contest_id: UUID) -> None:
         """
         Validate that the contest is not soft-deleted.
 
         Args:
-            is_deleted: Soft-deletion flag of the contest.
+            status: Status of the contest.
             contest_id: ID of the contest for error context.
 
         Raises:
             ContestNotFoundError: If the contest is marked as deleted.
         """
-        if is_deleted:
+        if status == ContestStatus.DELETED:
             raise ContestNotFoundError(str(contest_id))
 
     @staticmethod
@@ -313,18 +310,20 @@ class ContestValidator:
             )
 
     @staticmethod
-    def validate_contest_can_be_restored(is_deleted: bool, contest_id: UUID) -> None:
+    def validate_contest_can_be_restored(
+        status: ContestStatus, contest_id: UUID
+    ) -> None:
         """
         Validate that contest is soft-deleted before restoring.
 
         Args:
-            is_deleted: Soft-deletion flag of the contest
+            status: Status of the contest
             contest_id: ID of the contest
 
         Raises:
             InvalidContestStateError: If contest is not soft-deleted
         """
-        if not is_deleted:
+        if status != ContestStatus.DELETED:
             raise InvalidContestStateError(
                 str(contest_id), "restore", "active", "soft-deleted"
             )
@@ -382,154 +381,4 @@ class ContestValidator:
         if status != ContestStatus.PUBLISHED:
             raise InvalidContestStateError(
                 str(contest_id), "start session for", status, ContestStatus.PUBLISHED
-            )
-
-    @staticmethod
-    def validate_contest_runtime(
-        contest_runtime: ContestRuntime | None, contest_id: UUID
-    ) -> None:
-        """
-        Validate the contest runtime status and expiration.
-
-        Args:
-            contest_runtime: The ContestRuntime model instance or None.
-            contest_id: UUID of the contest.
-
-        Raises:
-            AppBaseException: If the runtime is invalid, scheduled, cancelled, or expired.
-        """
-        if contest_runtime is None:
-            raise AppBaseException(
-                message="Contest runtime has not been initialized",
-                status_code=400,
-            )
-
-        if (
-            contest_runtime.runtime_status == ContestRuntimeStatus.CANCELLED
-            or contest_runtime.cancelled_at is not None
-        ):
-            raise AppBaseException(
-                message="Contest has been cancelled",
-                status_code=400,
-            )
-
-        if contest_runtime.runtime_status == ContestRuntimeStatus.SCHEDULED:
-            raise AppBaseException(
-                message="Contest has not started yet",
-                status_code=400,
-            )
-
-        current_time = datetime.now(timezone.utc)
-        if (
-            contest_runtime.end_time is not None
-            and current_time > contest_runtime.end_time
-        ):
-            raise AppBaseException(
-                message="Contest has already ended",
-                status_code=400,
-            )
-
-    @staticmethod
-    def validate_contest_running(
-        start_time: datetime, end_time: datetime | None
-    ) -> None:
-        """
-        Validate that the contest is currently running (live).
-
-        Args:
-            start_time: Contest start time.
-            end_time: Contest end time.
-
-        Raises:
-            PermissionDeniedError: If the contest is not live yet or has already ended.
-        """
-
-        def _aware(dt: datetime) -> datetime:
-            return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
-
-        current_time = datetime.now(timezone.utc)
-        if current_time < _aware(start_time):
-            raise PermissionDeniedError("Contest has not started yet")
-        if end_time is not None and current_time > _aware(end_time):
-            raise PermissionDeniedError("Contest has already ended")
-
-    @staticmethod
-    def validate_contest_can_be_paused(
-        runtime: ContestRuntime | None, contest_id: UUID
-    ) -> None:
-        """
-        Validate that the contest runtime is in a state that can be paused.
-
-        Args:
-            runtime: The ContestRuntime model instance
-            contest_id: ID of the contest
-
-        Raises:
-            ContestRuntimeNotInitializedError: If runtime is None
-            InvalidContestStateError: If current runtime status is not RUNNING
-        """
-        if runtime is None:
-            raise ContestRuntimeNotInitializedError()
-
-        if runtime.runtime_status != ContestRuntimeStatus.RUNNING:
-            raise InvalidContestStateError(
-                str(contest_id),
-                "pause",
-                runtime.runtime_status.value,
-                ContestRuntimeStatus.RUNNING.value,
-            )
-
-    @staticmethod
-    def validate_contest_can_be_resumed(
-        runtime: ContestRuntime | None, contest_id: UUID
-    ) -> None:
-        """
-        Validate that the contest runtime is in a state that can be resumed.
-
-        Args:
-            runtime: The ContestRuntime model instance
-            contest_id: ID of the contest
-
-        Raises:
-            ContestRuntimeNotInitializedError: If runtime is None
-            InvalidContestStateError: If current runtime status is not PAUSED
-        """
-        if runtime is None:
-            raise ContestRuntimeNotInitializedError()
-
-        if runtime.runtime_status != ContestRuntimeStatus.PAUSED:
-            raise InvalidContestStateError(
-                str(contest_id),
-                "resume",
-                runtime.runtime_status.value,
-                ContestRuntimeStatus.PAUSED.value,
-            )
-
-    @staticmethod
-    def validate_contest_can_be_cancelled(
-        runtime: ContestRuntime | None, contest_id: UUID
-    ) -> None:
-        """
-        Validate that the contest runtime is in a state that can be cancelled.
-
-        Args:
-            runtime: The ContestRuntime model instance
-            contest_id: ID of the contest
-
-        Raises:
-            ContestRuntimeNotInitializedError: If runtime is None
-            InvalidContestStateError: If current runtime status is FINISHED or CANCELLED
-        """
-        if runtime is None:
-            raise ContestRuntimeNotInitializedError()
-
-        if runtime.runtime_status in (
-            ContestRuntimeStatus.FINISHED,
-            ContestRuntimeStatus.CANCELLED,
-        ):
-            raise InvalidContestStateError(
-                str(contest_id),
-                "cancel",
-                runtime.runtime_status.value,
-                f"not {runtime.runtime_status.value}",
             )

@@ -1119,54 +1119,6 @@ async def update_contest_question(
 
 
 @router.post(
-    "/{contest_id}/pause",
-    response_model=APIResponse,
-    status_code=status.HTTP_200_OK,
-    summary="Pause a running contest",
-)
-async def pause_contest(
-    request: Request,
-    contest_id: UUID,
-    user_id: UUID = Depends(get_current_user_id),
-    service: ContestService = Depends(get_contest_service),
-):
-    """
-    Pause a running contest.
-    """
-    await service.pause_contest(contest_id, user_id)
-    logger.info(f"Contest {contest_id} paused (actor=REDACTED)")
-    return create_api_response(
-        request,
-        data=None,
-        message="Contest paused successfully",
-    )
-
-
-@router.post(
-    "/{contest_id}/resume",
-    response_model=APIResponse,
-    status_code=status.HTTP_200_OK,
-    summary="Resume a paused contest",
-)
-async def resume_contest(
-    request: Request,
-    contest_id: UUID,
-    user_id: UUID = Depends(get_current_user_id),
-    service: ContestService = Depends(get_contest_service),
-):
-    """
-    Resume a paused contest.
-    """
-    await service.resume_contest(contest_id, user_id)
-    logger.info(f"Contest {contest_id} resumed (actor=REDACTED)")
-    return create_api_response(
-        request,
-        data=None,
-        message="Contest resumed successfully",
-    )
-
-
-@router.post(
     "/{contest_id}/cancel",
     response_model=APIResponse,
     status_code=status.HTTP_200_OK,
