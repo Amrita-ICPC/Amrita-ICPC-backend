@@ -123,7 +123,7 @@ class ContestTeamRepository:
     async def get_contest_team_member_by_user_id(
         self,
         user_id: UUID,
-        stauts: ContestTeamMemberStatus | None = None,
+        status: ContestTeamMemberStatus | None = None,
         approval_status: TeamApprovalStatus | None = None,
         team_status: TeamStatus | None = None,
         contest_id: UUID | None = None,
@@ -160,8 +160,8 @@ class ContestTeamRepository:
                 ),
             )
         )
-        if stauts is not None:
-            stmt = stmt.where(ContestTeamMember.status == stauts)
+        if status is not None:
+            stmt = stmt.where(ContestTeamMember.status == status)
         if team_status is not None:
             stmt = stmt.where(ContestTeam.team_status == team_status)
         if approval_status is not None:

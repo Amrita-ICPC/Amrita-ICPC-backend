@@ -26,7 +26,7 @@ from app.utils.enums import (
     ContestMode,
     ContestStatus,
     ContestTeamMemberStatus,
-    ContestTeamParticpationType,
+    ContestTeamParticipationType,
     ScoringType,
     TeamApprovalMode,
     TeamApprovalStatus,
@@ -135,10 +135,10 @@ class Contest(Base):
         Boolean, default=False
     )
 
-    participation_type: Mapped[ContestTeamParticpationType] = mapped_column(
+    participation_type: Mapped[ContestTeamParticipationType] = mapped_column(
         "participation_type",
-        Enum(ContestTeamParticpationType, name="contest_team_participation_type"),
-        default=ContestTeamParticpationType.LEADER_ONLY,
+        Enum(ContestTeamParticipationType, name="contest_team_participation_type"),
+        default=ContestTeamParticipationType.LEADER_ONLY,
     )
 
     created_by: Mapped[uuid.UUID | None] = mapped_column(
@@ -261,8 +261,8 @@ class ContestTeamProgress(Base):
         ForeignKey("contest_team.id", ondelete="CASCADE"), nullable=False
     )
 
-    contest_team_member_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("contest_team_member.id", ondelete="CASCADE"), nullable=True
+    contest_team_member_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("contest_team_member.id", ondelete="CASCADE"), nullable=False
     )
 
     # Flagging related fields
@@ -282,11 +282,15 @@ class ContestTeamProgress(Base):
     )
     extra_time_seconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
-    contest_team = relationship("ContestTeam", back_populates="progress", uselist=False)
+    contest_team: Mapped["ContestTeam"] = relationship(
+        "ContestTeam", back_populates="progress", uselist=False
+    )
 
     contest = relationship("Contest", back_populates="progress")
 
-    contest_team_member = relationship("ContestTeamMember", back_populates="progress")
+    contest_team_member: Mapped["ContestTeamMember | None"] = relationship(
+        "ContestTeamMember", back_populates="progress"
+    )
 
     # User relationships
     flagger = relationship("User", foreign_keys=[flagged_by])
@@ -364,7 +368,7 @@ class ContestTeam(Base):
     contest_team_member: Mapped[list["ContestTeamMember"]] = relationship(
         "ContestTeamMember", back_populates="contest_team", cascade="all, delete-orphan"
     )
-    progress = relationship(
+    progress: Mapped[list["ContestTeamProgress"]] = relationship(
         "ContestTeamProgress",
         back_populates="contest_team",
         cascade="all, delete-orphan",

@@ -409,7 +409,7 @@ class RegistrationState(str, enum.Enum):
     APPROVED = "APPROVED"
 
 
-class ContestTeamParticpationType(str, enum.Enum):
+class ContestTeamParticipationType(str, enum.Enum):
     """
     Enumeration of contest team participation types.
 

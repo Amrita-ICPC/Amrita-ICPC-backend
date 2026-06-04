@@ -130,7 +130,7 @@ class ContestTeamService:
 
         # Check the audiences of the members
         if not contest.is_public:
-            await self.contest_student_guard.check_student_aduiences_for_contest(
+            await self.contest_student_guard.check_student_audiences_for_contest(
                 user_ids=contest_team_import.member_ids,
                 contest_id=contest_id,
             )
@@ -201,7 +201,7 @@ class ContestTeamService:
 
         # Check user's audience eligibility for the contest
         if not contest.is_public:
-            await self.contest_student_guard.check_student_aduiences_for_contest(
+            await self.contest_student_guard.check_student_audiences_for_contest(
                 user_ids=[user_id],
                 contest_id=contest_id,
             )
@@ -657,7 +657,7 @@ class ContestTeamService:
 
         # Validate student audience eligibility for the contest
         if not contest.is_public:
-            await self.contest_student_guard.check_student_aduiences_for_contest(
+            await self.contest_student_guard.check_student_audiences_for_contest(
                 user_ids=invite_user_ids,
                 contest_id=contest_id,
             )

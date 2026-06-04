@@ -1,4 +1,5 @@
 import asyncio
+import json
 import uuid
 from typing import List
 from uuid import UUID
@@ -292,7 +293,7 @@ class BankQuestionService:
 
     @cache_get(
         key_builder=lambda self, bank_id, user_id, skip=0, limit=100, filters=None: (
-            f"banks:questions:v2:{bank_id}:user:{user_id}:skip:{skip}:limit:{limit}:filters:{hash(str(filters))}"
+            f"banks:questions:v2:{bank_id}:user:{user_id}:skip:{skip}:limit:{limit}:filters:{json.dumps(filters, sort_keys=True, separators=(',', ':'), default=str) if filters is not None else 'null'}"
         ),
         ttl=300,
     )

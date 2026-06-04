@@ -3,12 +3,14 @@ from datetime import datetime, timezone
 from typing import AsyncGenerator
 from uuid import UUID
 
+from fastapi import status
 from fastapi.sse import ServerSentEvent
 from redis.asyncio import Redis
 
 from app.core.cache.decorators import cache_get
 from app.core.guards.contest_student import ContestStudentGuard
 from app.core.logger import logger
+from app.exceptions.base import AppBaseException
 from app.exceptions.contest import ContestNotFoundError
 from app.exceptions.student.contests import (
     ContestSessionEndedError,
@@ -55,7 +57,7 @@ from app.utils.enums import (
     ContestRunStatus,
     ContestStatus,
     ContestTeamMemberStatus,
-    ContestTeamParticpationType,
+    ContestTeamParticipationType,
     RegistrationState,
     TeamApprovalStatus,
     TeamMemberRole,
@@ -253,7 +255,7 @@ class StudentContestService:
 
         is_individual = (
             contest.participation_type
-            == ContestTeamParticpationType.INDIVIDUAL_WORKSPACE
+            == ContestTeamParticipationType.INDIVIDUAL_WORKSPACE
         )
         member_id_filter = contest_team_member.id if is_individual else None
 
@@ -307,7 +309,7 @@ class StudentContestService:
             reason = "Contest session has already ended"
         elif (
             not already_started
-            and contest.participation_type == ContestTeamParticpationType.LEADER_ONLY
+            and contest.participation_type == ContestTeamParticipationType.LEADER_ONLY
             and not is_leader
         ):
             can_start = False
@@ -374,7 +376,7 @@ class StudentContestService:
         contest_team_member = (
             await self.contest_team_repository.get_contest_team_member_by_user_id(
                 user_id=user_id,
-                stauts=ContestTeamMemberStatus.ACCEPTED,
+                status=ContestTeamMemberStatus.ACCEPTED,
                 team_status=TeamStatus.CONFIRMED,
                 approval_status=TeamApprovalStatus.APPROVED,
                 contest_id=contest_id,
@@ -390,7 +392,7 @@ class StudentContestService:
 
         is_individual = (
             contest.participation_type
-            == ContestTeamParticpationType.INDIVIDUAL_WORKSPACE
+            == ContestTeamParticipationType.INDIVIDUAL_WORKSPACE
         )
         member_id_filter = contest_team_member.id if is_individual else None
 
@@ -406,7 +408,7 @@ class StudentContestService:
         # Check permission constraints based on participation_type
         if (
             is_start
-            and contest.participation_type == ContestTeamParticpationType.LEADER_ONLY
+            and contest.participation_type == ContestTeamParticipationType.LEADER_ONLY
         ):
             self.contest_student_guard.check_is_contest_team_leader(
                 user_id=user_id, contest_team=contest_team
@@ -483,7 +485,12 @@ class StudentContestService:
             remaining_seconds=remaining_seconds,
         )
 
-        assert contest_team.leader_id is not None
+        if contest_team.leader_id is None:
+            raise AppBaseException(
+                message="Contest team has no leader assigned",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Contest team leader_id is None",
+            )
         workspace = build_workspace(
             contest_team_members=contest_team_members,
             progress=contest_team_progress,
@@ -537,7 +544,7 @@ class StudentContestService:
         contest_team_member = (
             await self.contest_team_repository.get_contest_team_member_by_user_id(
                 user_id=user_id,
-                stauts=ContestTeamMemberStatus.ACCEPTED,
+                status=ContestTeamMemberStatus.ACCEPTED,
                 team_status=TeamStatus.CONFIRMED,
                 approval_status=TeamApprovalStatus.APPROVED,
                 contest_id=contest_id,
@@ -569,7 +576,7 @@ class StudentContestService:
                         try:
                             event_data = ContestEvent.model_validate_json(data)
                             yield ServerSentEvent(
-                                data=event_data, event="contest_event"
+                                data=event_data.model_dump_json(), event="contest_event"
                             )
                         except Exception as e:
                             logger.error(
