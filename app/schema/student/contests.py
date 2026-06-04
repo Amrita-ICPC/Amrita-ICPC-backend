@@ -2,17 +2,9 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 from uuid import UUID
 
-if TYPE_CHECKING:
-    from app.models.question import Question
-
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-
-from app.schema.contest import ContestAudienceResponse
-from app.schema.tag import TagResponse
 from app.utils.enums import (
     ContestMode,
     ContestRunStatus,
-    ContestRuntimeStatus,
     ContestStatus,
     ContestTeamParticpationType,
     QuestionDifficulty,
@@ -22,6 +14,14 @@ from app.utils.enums import (
     TeamMemberRole,
     TeamStatus,
 )
+
+if TYPE_CHECKING:
+    from app.models.question import Question
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from app.schema.contest import ContestAudienceResponse
+from app.schema.tag import TagResponse
 
 
 class StudentContestRegistrationRequest(BaseModel):
@@ -176,8 +176,8 @@ class StudentContestSessionStatus(BaseModel):
     reason: Optional[str] = Field(
         None, description="Reason if the student/team cannot start"
     )
-    contest_runtime_status: ContestRuntimeStatus = Field(
-        ..., description="The runtime status of the contest"
+    run_status: ContestRunStatus = Field(
+        ..., description="The temporal run state of the contest"
     )
     already_started: bool = Field(
         ..., description="Whether the student/team has already started the session"

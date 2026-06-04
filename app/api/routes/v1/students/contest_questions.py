@@ -9,7 +9,6 @@ from app.core.clients.database import get_db
 from app.core.clients.redis import get_redis
 from app.core.response import create_api_response
 from app.repositories.contest import ContestRepository
-from app.repositories.contest_runtime import ContestRuntimeRepository
 from app.repositories.contest_team_progress import ContestTeamProgressRepository
 from app.repositories.student.contest_question import StudentContestQuestionRepository
 from app.repositories.student.contest_team import ContestTeamRepository
@@ -38,7 +37,6 @@ def get_student_contest_service(
     contest_repository = ContestRepository(db)
     contest_team_repository = ContestTeamRepository(db)
     contest_team_progress_repository = ContestTeamProgressRepository(db)
-    contest_runtime_repository = ContestRuntimeRepository(db)
     testcase_repository = TestCaseRepository(db)
     workspace_service = WorkspaceService(redis_client)
     return StudentContestQuestionService(
@@ -46,7 +44,6 @@ def get_student_contest_service(
         contest_repository=contest_repository,
         contest_team_repository=contest_team_repository,
         contest_team_progress_repository=contest_team_progress_repository,
-        contest_runtime_repository=contest_runtime_repository,
         testcase_repository=testcase_repository,
         workspace_service=workspace_service,
     )

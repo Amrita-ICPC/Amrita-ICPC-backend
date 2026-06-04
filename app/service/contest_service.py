@@ -3,7 +3,6 @@ from typing import AsyncGenerator, List, cast
 from uuid import UUID
 
 from app.core.cache.decorators import cache_delete, cache_get
-from app.core.clients.scheduler import scheduler
 from app.core.guards.contest import ContestOperationGuard
 from app.core.logger import logger
 from app.core.permissions import AudiencePermission
@@ -12,7 +11,6 @@ from app.exceptions.contest import (
     ContestNotFoundError,
     InvalidContestError,
 )
-from app.jobs.contest import ContestJobs
 from app.mappers.contest import (
     apply_contest_updates,
     build_contest_entity,
@@ -21,10 +19,8 @@ from app.mappers.contest import (
     to_contest_response,
     to_contest_summary_response,
 )
-from app.models.contest import ContestRuntime
 from app.repositories.audience import AudienceRepository
 from app.repositories.contest import ContestRepository
-from app.repositories.contest_runtime import ContestRuntimeRepository
 from app.repositories.dto import (
     UNSET,
     ContestFilters,
@@ -46,7 +42,6 @@ from app.service.contest_event_publish import ContestEventPublisher
 from app.utils.contest import compute_run_status
 from app.utils.enums import (
     ContestRunStatus,
-    ContestRuntimeStatus,
     ContestStatus,
     UserRole,
 )
@@ -96,7 +91,6 @@ class ContestService:
         validator: ContestValidator,
         audience_repository: AudienceRepository,
         team_repository: TeamRepository | None = None,
-        runtime_repository: ContestRuntimeRepository | None = None,
         event_publisher: ContestEventPublisher | None = None,
     ):
         self.repository = repository
@@ -105,9 +99,6 @@ class ContestService:
         self.validator = validator
         self.audience_repository = audience_repository
         self.team_repository = team_repository
-        self.runtime_repository = runtime_repository or ContestRuntimeRepository(
-            repository.db
-        )
         self.event_publisher = event_publisher
 
     async def _validate_contest_not_deleted_and_has_permission(
@@ -130,7 +121,7 @@ class ContestService:
             PermissionDeniedError: If user lacks permission
         """
         contest = await self.repository.get_contest_or_raise(contest_id)
-        if contest.is_deleted:
+        if contest.status == ContestStatus.DELETED:
             raise ContestNotFoundError(str(contest_id))
         await self.guard.check_manage_contest(user_id=user_id, contest=contest)
 
@@ -225,7 +216,7 @@ class ContestService:
         contest = await self.repository.get_contest_or_raise(contest_id)
 
         # Check if contest is soft-deleted
-        if contest.is_deleted:
+        if contest.status == ContestStatus.DELETED:
             raise ContestNotFoundError(str(contest_id))
 
         # Check permissions
@@ -244,10 +235,6 @@ class ContestService:
             contest_id
         )
 
-        # Fetch runtime status — only exists for published contests
-        runtime = await self.runtime_repository.get_contest_runtime_by_id(contest_id)
-        contest_runtime_status = runtime.runtime_status if runtime is not None else None
-
         return to_contest_response(
             contest,
             run_status=compute_run_status(contest.start_time, contest.end_time),
@@ -255,7 +242,6 @@ class ContestService:
             question_count=question_count,
             submission_count=submission_count,
             participant_count=participant_count,
-            contest_runtime_status=contest_runtime_status,
         )
 
     @cache_get(
@@ -491,6 +477,7 @@ class ContestService:
 
         # Update contest via repository
         updated_contest = await self.repository.update_contest(contest, user_id)
+
         return to_contest_response(
             updated_contest,
             run_status=compute_run_status(
@@ -691,7 +678,7 @@ class ContestService:
         contest = await self.repository.get_contest_or_raise(contest_id)
 
         # Check if contest is soft-deleted
-        if contest.is_deleted:
+        if contest.status == ContestStatus.DELETED:
             raise ContestNotFoundError(str(contest_id))
 
         # Validate contest state (must be DRAFT)
@@ -702,51 +689,6 @@ class ContestService:
 
         # Publish contest
         await self.repository.publish_contest(contest, user_id)
-
-        # Determine runtime status based on start_time
-        now = datetime.now(timezone.utc)
-        start_time = contest.start_time
-        if start_time.tzinfo is None:
-            start_time = start_time.replace(tzinfo=timezone.utc)
-
-        if start_time > now:
-            runtime_status = ContestRuntimeStatus.SCHEDULED
-        else:
-            runtime_status = ContestRuntimeStatus.RUNNING
-
-        contest_runtime = ContestRuntime(
-            contest_id=contest_id,
-            runtime_status=runtime_status,
-            end_time=contest.end_time,
-        )
-        await self.runtime_repository.create_contest_runtime(contest_runtime)
-
-        # Schedule start job if in the future
-        if start_time > now:
-            scheduler.add_job(
-                ContestJobs.auto_start_contest,
-                trigger="date",
-                run_date=start_time,
-                args=[contest_id],
-                id=f"start_contest_{contest_id}",
-                replace_existing=True,
-            )
-
-        # Schedule finish job
-        end_time = contest.end_time
-        if end_time is not None:
-            if end_time.tzinfo is None:
-                end_time = end_time.replace(tzinfo=timezone.utc)
-
-            scheduler.add_job(
-                ContestJobs.finish_contest,
-                trigger="date",
-                run_date=end_time,
-                args=[contest_id],
-                id=f"finish_contest_{contest_id}",
-                replace_existing=True,
-            )
-
         logger.info(f"Contest {contest_id} published ")
 
     @cache_delete(
@@ -771,7 +713,7 @@ class ContestService:
         contest = await self.repository.get_contest_or_raise(contest_id)
 
         # Check if already soft-deleted
-        if contest.is_deleted:
+        if contest.status == ContestStatus.DELETED:
             raise ContestNotFoundError(str(contest_id))
 
         # Check permissions
@@ -807,7 +749,7 @@ class ContestService:
         contest = await self.repository.get_contest_or_raise(contest_id)
 
         # Validate contest is actually soft-deleted before restoring
-        self.validator.validate_contest_can_be_restored(contest.is_deleted, contest_id)
+        self.validator.validate_contest_can_be_restored(contest.status, contest_id)
 
         # Check permissions
         await self.guard.check_manage_contest(user_id=user_id, contest=contest)
@@ -880,96 +822,12 @@ class ContestService:
             List of audiences with details
         """
         contest = await self.repository.get_contest_or_raise(contest_id)
-        if contest.is_deleted:
+        if contest.status == ContestStatus.DELETED:
             raise ContestNotFoundError(str(contest_id))
         await self.guard.check_read_contest(user_id=user_id, contest=contest)
 
         audiences = await self.repository.get_contest_audiences_with_details(contest_id)
         return [ContestAudienceResponse.model_validate(a) for a in audiences]
-
-    async def pause_contest(self, contest_id: UUID, user_id: UUID) -> None:
-        """
-        Pause a running contest.
-
-        Args:
-            contest_id: ID of the contest
-            user_id: ID of the user requesting the pause
-        """
-        contest = await self.repository.get_contest_or_raise(contest_id)
-        if contest.is_deleted:
-            raise ContestNotFoundError(str(contest_id))
-
-        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
-
-        runtime = await self.runtime_repository.get_contest_runtime_or_raise(contest_id)
-        self.validator.validate_contest_can_be_paused(runtime, contest_id)
-
-        now = datetime.now(timezone.utc)
-        runtime.runtime_status = ContestRuntimeStatus.PAUSED
-        runtime.paused_at = now
-        runtime.updated_by = user_id
-
-        await self.runtime_repository.update_contest_runtime(runtime)
-
-        if self.event_publisher:
-            event = ContestEvent(
-                type=ContestRuntimeStatus.PAUSED,
-                payload={
-                    "contest_id": str(contest_id),
-                    "paused_at": now.isoformat(),
-                },
-            )
-            await self.event_publisher.publish(contest_id, event)
-            logger.info(f"Published event: {event.model_dump_json()}")
-        if self.event_publisher is None:
-            logger.warning("No event publisher")
-
-    async def resume_contest(self, contest_id: UUID, user_id: UUID) -> None:
-        """
-        Resume a paused contest.
-
-        Args:
-            contest_id: ID of the contest
-            user_id: ID of the user requesting the resume
-        """
-        contest = await self.repository.get_contest_or_raise(contest_id)
-        if contest.is_deleted:
-            raise ContestNotFoundError(str(contest_id))
-
-        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
-
-        runtime = await self.runtime_repository.get_contest_runtime_or_raise(contest_id)
-        self.validator.validate_contest_can_be_resumed(runtime, contest_id)
-
-        now = datetime.now(timezone.utc)
-        paused_at = runtime.paused_at
-        if paused_at is not None:
-            if paused_at.tzinfo is None:
-                paused_at = paused_at.replace(tzinfo=timezone.utc)
-            paused_duration = int((now - paused_at).total_seconds())
-            runtime.total_paused_duration += max(paused_duration, 0)
-
-        runtime.runtime_status = ContestRuntimeStatus.RUNNING
-        runtime.paused_at = None
-        runtime.updated_by = user_id
-
-        await self.runtime_repository.update_contest_runtime(runtime)
-
-        if self.event_publisher:
-            event = ContestEvent(
-                type=ContestRuntimeStatus.RUNNING,
-                payload={
-                    "contest_id": str(contest_id),
-                    "resumed_at": now.isoformat(),
-                    "total_paused_duration": runtime.total_paused_duration,
-                },
-            )
-
-            await self.event_publisher.publish(contest_id, event)
-            logger.info(f"Published event: {event.model_dump_json()}")
-
-        if self.event_publisher is None:
-            logger.warning("No event publisher")
 
     async def cancel_contest(self, contest_id: UUID, user_id: UUID) -> None:
         """
@@ -980,24 +838,21 @@ class ContestService:
             user_id: ID of the user requesting the cancellation
         """
         contest = await self.repository.get_contest_or_raise(contest_id)
-        if contest.is_deleted:
+        if contest.status == ContestStatus.DELETED:
             raise ContestNotFoundError(str(contest_id))
 
         await self.guard.check_manage_contest(user_id=user_id, contest=contest)
 
-        runtime = await self.runtime_repository.get_contest_runtime_or_raise(contest_id)
-        self.validator.validate_contest_can_be_cancelled(runtime, contest_id)
-
+        # Remove validator logic checking runtime
+        # Set contest status to cancelled
         now = datetime.now(timezone.utc)
-        runtime.runtime_status = ContestRuntimeStatus.CANCELLED
-        runtime.cancelled_at = now
-        runtime.updated_by = user_id
-
-        await self.runtime_repository.update_contest_runtime(runtime)
+        contest.status = ContestStatus.CANCELLED
+        contest.updated_by = user_id
+        await self.repository.db.flush()
 
         if self.event_publisher:
             event = ContestEvent(
-                type=ContestRuntimeStatus.CANCELLED,
+                type="CANCELLED",
                 payload={
                     "contest_id": str(contest_id),
                     "cancelled_at": now.isoformat(),

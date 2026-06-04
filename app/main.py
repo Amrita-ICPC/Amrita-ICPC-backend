@@ -5,7 +5,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.errors import setup_exception_handlers
 from app.api.route import api_router
-from app.core.clients import scheduler
 from app.core.clients.database import init_db
 from app.core.clients.judge0 import close_judge0, init_judge0
 from app.core.clients.minio import close_minio, init_minio
@@ -36,9 +35,6 @@ async def lifespan(app: FastAPI):
     # Initialize Judge0
     await init_judge0()
 
-    # Start the scheduler
-    scheduler.start()
-
     yield
 
     # Close Judge0
@@ -49,9 +45,6 @@ async def lifespan(app: FastAPI):
 
     # Close Redis
     await close_redis()
-
-    # Stop the scheduler
-    scheduler.shutdown()
 
     logger.info("Shutting down application")
 

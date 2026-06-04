@@ -49,6 +49,7 @@ from app.schema.question import (
 )
 from app.utils.enums import (
     ContestQuestionSortBy,
+    ContestStatus,
     QuestionDifficulty,
     SortOrder,
 )
@@ -107,7 +108,7 @@ class ContestQuestionService:
             PermissionDeniedError: If user lacks required permission.
         """
         contest = await self.repository.get_contest_or_raise(contest_id)
-        if contest.is_deleted:
+        if contest.status == ContestStatus.DELETED:
             raise ContestNotFoundError(str(contest_id))
 
         if permission_level == "manage":

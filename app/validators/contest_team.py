@@ -7,10 +7,6 @@ from app.exceptions.base import AppBaseException
 from app.exceptions.contest import (
     AccessDeniedTeamStatusError,
     ContestMaxTeamsReachedError,
-    ContestRuntimeCancelledError,
-    ContestRuntimeFinishedError,
-    ContestRuntimeNotInitializedError,
-    ContestRuntimePausedError,
     ContestTeamNotFoundException,
     TeamCanceledError,
     TeamDisqualifiedError,
@@ -19,9 +15,8 @@ from app.exceptions.student.teams import (
     InvalidContestTeamMemberStatusUpdateException,
     TeamMemberAccessDeniedError,
 )
-from app.models import ContestRuntime, ContestTeam
+from app.models import ContestTeam
 from app.utils.enums import (
-    ContestRuntimeStatus,
     ContestTeamMemberStatus,
     TeamApprovalStatus,
     TeamStatus,
@@ -31,46 +26,6 @@ from app.utils.enums import (
 class ContestTeamValidator:
     def __init__(self) -> None:
         pass
-
-    @staticmethod
-    def validate_contest_runtime_for_session(
-        contest_runtime: ContestRuntime | None,
-    ) -> None:
-        """
-        Validate the contest runtime status and expiration for starting a session.
-
-        Args:
-            contest_runtime: The ContestRuntime model instance or None.
-
-        Raises:
-            ContestRuntimeNotInitializedError: If the runtime is None.
-            ContestRuntimeCancelledError: If the runtime is cancelled.
-            ContestRuntimeFinishedError: If the runtime is finished or ended.
-            ContestRuntimePausedError: If the runtime is paused.
-        """
-        if contest_runtime is None:
-            raise ContestRuntimeNotInitializedError()
-
-        if (
-            contest_runtime.runtime_status == ContestRuntimeStatus.CANCELLED
-            or contest_runtime.cancelled_at is not None
-        ):
-            raise ContestRuntimeCancelledError()
-
-        if contest_runtime.runtime_status == ContestRuntimeStatus.FINISHED:
-            raise ContestRuntimeFinishedError()
-
-        if contest_runtime.runtime_status == ContestRuntimeStatus.PAUSED:
-            raise ContestRuntimePausedError()
-
-        from datetime import datetime, timezone
-
-        current_time = datetime.now(timezone.utc)
-        if (
-            contest_runtime.end_time is not None
-            and current_time > contest_runtime.end_time
-        ):
-            raise ContestRuntimeFinishedError()
 
     @staticmethod
     def validate_members_are_in_team(
@@ -208,42 +163,3 @@ class ContestTeamValidator:
 
         if contest_team.approval_status != TeamApprovalStatus.APPROVED:
             raise PermissionDeniedError("Team is not approved by contest organizers")
-
-    @staticmethod
-    def validate_student_contest_runtime(
-        contest_runtime: ContestRuntime | None,
-    ) -> None:
-        """
-        Validate the contest runtime status and expiration for student sessions.
-
-        Args:
-            contest_runtime: The ContestRuntime model instance or None.
-
-        Raises:
-            ContestRuntimeNotInitializedError: If the runtime has not been initialized.
-            ContestRuntimeCancelledError: If the contest is cancelled.
-            ContestRuntimeFinishedError: If the contest has already finished.
-        """
-        if (
-            contest_runtime is None
-            or contest_runtime.runtime_status == ContestRuntimeStatus.SCHEDULED
-        ):
-            raise ContestRuntimeNotInitializedError()
-
-        if (
-            contest_runtime.runtime_status == ContestRuntimeStatus.CANCELLED
-            or contest_runtime.cancelled_at is not None
-        ):
-            raise ContestRuntimeCancelledError()
-
-        if contest_runtime.runtime_status == ContestRuntimeStatus.FINISHED:
-            raise ContestRuntimeFinishedError()
-
-        from datetime import datetime, timezone
-
-        current_time = datetime.now(timezone.utc)
-        if (
-            contest_runtime.end_time is not None
-            and current_time > contest_runtime.end_time
-        ):
-            raise ContestRuntimeFinishedError()

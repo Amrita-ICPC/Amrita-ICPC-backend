@@ -31,19 +31,13 @@ def compute_run_status(
 
 def calculate_effective_times(
     base_end_time: datetime | None,
-    total_paused_duration: int,
     extra_time_seconds: int | None,
-    is_paused: bool = False,
-    paused_at: datetime | None = None,
 ) -> tuple[datetime | None, int]:
     """Calculate the effective end time and remaining seconds.
 
     Args:
         base_end_time: The base end time of the contest (optional).
-        total_paused_duration: Total seconds the contest has been paused.
         extra_time_seconds: Extra seconds granted to the team/user.
-        is_paused: True if the contest is currently paused.
-        paused_at: The timestamp when the contest was paused.
 
     Returns:
         tuple[datetime | None, int]: A tuple containing the effective end time
@@ -59,16 +53,9 @@ def calculate_effective_times(
 
     extra_time = extra_time_seconds if extra_time_seconds is not None else 0
 
-    effective_end_time = (
-        _aware(base_end_time)
-        + timedelta(seconds=total_paused_duration)
-        + timedelta(seconds=extra_time)
-    )
+    effective_end_time = _aware(base_end_time) + timedelta(seconds=extra_time)
 
-    if is_paused and paused_at is not None:
-        reference_time = _aware(paused_at)
-    else:
-        reference_time = datetime.now(timezone.utc)
+    reference_time = datetime.now(timezone.utc)
 
     remaining_seconds = max(
         int((effective_end_time - reference_time).total_seconds()),

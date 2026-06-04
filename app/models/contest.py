@@ -12,7 +12,6 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
-    PrimaryKeyConstraint,
     String,
     Text,
     UniqueConstraint,
@@ -23,10 +22,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
 from app.models.team import Team
-from app.models.user import User
 from app.utils.enums import (
     ContestMode,
-    ContestRuntimeStatus,
     ContestStatus,
     ContestTeamMemberStatus,
     ContestTeamParticpationType,
@@ -50,11 +47,6 @@ class Contest(Base):
         ),
         CheckConstraint("end_time > start_time", name="check_contest_dates"),
         CheckConstraint("max_team_size >= min_team_size", name="check_team_size"),
-        CheckConstraint(
-            "(contest_mode = 'individual' AND min_team_size = 1 AND max_team_size = 1) OR "
-            "(contest_mode = 'team')",
-            name="check_mode_team_size_consistency",
-        ),
         CheckConstraint(
             "duration IS NULL OR duration <= EXTRACT(EPOCH FROM (end_time - start_time))",
             name="check_duration_less_than_contest_length",
@@ -107,7 +99,6 @@ class Contest(Base):
     )
     publisher = relationship("User", foreign_keys=[published_by])
     # recovery
-    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deleted_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
@@ -230,79 +221,51 @@ class ContestQuestion(Base):
     creator = relationship("User", back_populates="creator_contest_questions")
 
 
-class ContestRuntime(Base):
-    __tablename__ = "contest_runtime"
-
-    contest_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("contest.id", ondelete="CASCADE"), primary_key=True
-    )
-    runtime_status: Mapped[ContestRuntimeStatus] = mapped_column(
-        Enum(ContestRuntimeStatus, name="contest_run_time_status"),
-        nullable=False,
-        default=ContestRuntimeStatus.SCHEDULED,
-    )
-
-    end_time: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-
-    paused_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    total_paused_duration: Mapped[int] = mapped_column(Integer, default=0)
-    cancelled_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    finished_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    scoreboard_frozen: Mapped[bool] = mapped_column(Boolean, default=False)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
-    )
-    updated_by: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("users.id"), nullable=True
-    )
-    updated_user: Mapped["User"] = relationship(
-        "User", lazy="joined", foreign_keys=[updated_by]
-    )
-
-
 class ContestTeamProgress(Base):
     """
-    Model representing the progress and status of a team in a contest.
+    Model representing the progress and status of a team or individual in a contest.
 
     Attributes:
+        id: Unique identifier for the progress record.
         contest_id: generic-uuid foreign key to the contest.
-        team_id: generic-uuid foreign key to the team.
-        score: The team's score in the contest.
-        is_flagged: Boolean indicating if the team is flagged for review.
-        flagged_at: Timestamp when the team was flagged.
-        flagged_by: generic-uuid of the user who flagged the team.
-        flagged_reason: Reason for flagging the team.
-        start_time: Timestamp when the team started the contest.
-        end_time: Timestamp when the team finished the contest.
+        contest_team_id: generic-uuid foreign key to the team.
+        contest_team_member_id: generic-uuid foreign key to the team member (nullable for LEADER_ONLY).
+        flagged_at: Timestamp when the progress was flagged.
+        flagged_by: generic-uuid of the user who flagged the progress.
+        flagged_reason: Reason for flagging.
+        end_time: The base end time of the contest session.
+        ended_at: Timestamp when the session was explicitly ended.
+        extra_time_seconds: Amount of extra time in seconds.
     """
 
     __tablename__ = "contest_team_progress"
-    __table_args__ = (UniqueConstraint("contest_id", "contest_team_id"),)
+    __table_args__ = (
+        Index(
+            "uq_contest_team_progress",
+            "contest_id",
+            "contest_team_id",
+            "contest_team_member_id",
+            unique=True,
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+
     contest_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("contest.id", ondelete="CASCADE"), primary_key=True
+        ForeignKey("contest.id", ondelete="CASCADE"), nullable=False
     )
 
     contest_team_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("contest_team.id", ondelete="CASCADE"), primary_key=True
+        ForeignKey("contest_team.id", ondelete="CASCADE"), nullable=False
     )
 
-    # Scoring related fields
-    score: Mapped[int] = mapped_column(Integer, default=0)
-    penalty: Mapped[int] = mapped_column(Integer, default=0)
-    solved_questions_count: Mapped[int] = mapped_column(Integer, default=0)
+    contest_team_member_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("contest_team_member.id", ondelete="CASCADE"), nullable=True
+    )
 
     # Flagging related fields
-    is_flagged: Mapped[bool] = mapped_column(Boolean, default=False)
     flagged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     flagged_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
@@ -319,19 +282,11 @@ class ContestTeamProgress(Base):
     )
     extra_time_seconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
-    # Editor field
-    current_editor_user_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
-    )
-    current_editor_user: Mapped["User"] = relationship(
-        "User",
-        foreign_keys=[current_editor_user_id],
-        lazy="selectin",
-    )
-
     contest_team = relationship("ContestTeam", back_populates="progress", uselist=False)
 
     contest = relationship("Contest", back_populates="progress")
+
+    contest_team_member = relationship("ContestTeamMember", back_populates="progress")
 
     # User relationships
     flagger = relationship("User", foreign_keys=[flagged_by])
@@ -463,8 +418,8 @@ class ContestTeamMember(Base):
         foreign_keys=[contest_team_id],
     )
     user = relationship("User", back_populates="team_registration_members")
-    member_progress: Mapped[list[ContestTeamMemberProgress]] = relationship(
-        "ContestTeamMemberProgress",
+    progress: Mapped[list["ContestTeamProgress"]] = relationship(
+        "ContestTeamProgress",
         back_populates="contest_team_member",
         cascade="all, delete-orphan",
     )
@@ -520,82 +475,6 @@ class ContestTeamViolation(Base):
     contest = relationship("Contest", back_populates="team_violations")
     team = relationship("Team", back_populates="contest_violations")
     violator = relationship("User", foreign_keys=[violated_by])
-
-
-class ContestTeamMemberProgress(Base):
-    """
-    Model representing the progress of a specific team member in a contest.
-
-    Attributes:
-        contest_id: UUID of the contest.
-        contest_team_id: UUID of the contest team.
-        contest_team_member_id: UUID of the contest team member.
-        started_at: Timestamp when the member started.
-        submissions_count: Number of submissions made by the member.
-        accepted_submissions_count: Number of accepted submissions by the member.
-        last_activity_at: Timestamp of the last activity by the member.
-    """
-
-    __tablename__ = "contest_team_member_progress"
-    __table_args__ = (
-        PrimaryKeyConstraint(
-            "contest_id",
-            "contest_team_id",
-            "contest_team_member_id",
-        ),
-    )
-
-    contest_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("contest.id", ondelete="CASCADE"), nullable=False
-    )
-    contest_team_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("contest_team.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    contest_team_member_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("contest_team_member.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    started_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        nullable=False,
-    )
-
-    end_time: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-
-    ended_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-
-    submissions_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-
-    score: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-
-    penalty: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-
-    accepted_submissions_count: Mapped[int] = mapped_column(
-        Integer, default=0, nullable=False
-    )
-
-    solved_questions_count: Mapped[int] = mapped_column(
-        Integer, default=0, nullable=False
-    )
-
-    last_activity_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-
-    # Relationships
-    contest_team_member: Mapped[ContestTeamMember] = relationship(
-        "ContestTeamMember",
-        back_populates="member_progress",
-        foreign_keys=[contest_team_member_id],
-    )
 
 
 class ContestSubmission(Base):
