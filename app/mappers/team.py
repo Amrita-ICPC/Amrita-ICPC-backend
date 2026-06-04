@@ -166,7 +166,7 @@ def build_team_creation_entities(
     )
 
     progress = ContestTeamProgress(contest_id=team_data.contest_id)
-    contest_team.progress = progress
+    contest_team.progress = [progress]
 
     team_users = [
         TeamUser(team=team, user_id=member_id) for member_id in team_data.member_ids

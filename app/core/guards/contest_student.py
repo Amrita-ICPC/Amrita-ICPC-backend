@@ -51,7 +51,7 @@ class ContestStudentGuard:
                 user_id=str(user_id), contest_id=str(contest.id)
             )
 
-    async def check_student_aduiences_for_contest(
+    async def check_student_audiences_for_contest(
         self, user_ids: list[UUID], contest_id: UUID
     ) -> None:
         # extract the audiences for the contest

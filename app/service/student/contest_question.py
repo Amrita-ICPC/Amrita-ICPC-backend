@@ -32,7 +32,7 @@ from app.service.student.workspace import WorkspaceService
 from app.utils.contest import calculate_effective_times
 from app.utils.enums import (
     ContestTeamMemberStatus,
-    ContestTeamParticpationType,
+    ContestTeamParticipationType,
     TeamApprovalStatus,
     TeamStatus,
 )
@@ -49,6 +49,7 @@ class StudentContestQuestionService:
         contest_team_progress_repository: ContestTeamProgressRepository,
         testcase_repository: TestCaseRepository,
         workspace_service: WorkspaceService,
+        judge0_repository: Judge0Repository,
     ):
         self.repository = repository
         self.contest_repository = contest_repository
@@ -56,7 +57,7 @@ class StudentContestQuestionService:
         self.contest_team_progress_repository = contest_team_progress_repository
         self.testcase_repository = testcase_repository
         self.workspace_service = workspace_service
-        self.judge0_repo = Judge0Repository()
+        self.judge0_repo = judge0_repository
 
     async def _validate_session_and_get_contest(
         self, contest_id: UUID, user_id: UUID
@@ -71,7 +72,7 @@ class StudentContestQuestionService:
         contest_team_member = (
             await self.contest_team_repository.get_contest_team_member_by_user_id(
                 user_id=user_id,
-                stauts=ContestTeamMemberStatus.ACCEPTED,
+                status=ContestTeamMemberStatus.ACCEPTED,
                 team_status=TeamStatus.CONFIRMED,
                 approval_status=TeamApprovalStatus.APPROVED,
                 contest_id=contest_id,
@@ -87,7 +88,7 @@ class StudentContestQuestionService:
         # 5. Validate that progress exists (session is started)
         is_individual = (
             contest.participation_type
-            == ContestTeamParticpationType.INDIVIDUAL_WORKSPACE
+            == ContestTeamParticipationType.INDIVIDUAL_WORKSPACE
         )
         member_id_filter = contest_team_member.id if is_individual else None
 

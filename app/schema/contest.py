@@ -9,7 +9,7 @@ from app.utils.enums import (
     ContestMode,
     ContestRunStatus,
     ContestStatus,
-    ContestTeamParticpationType,
+    ContestTeamParticipationType,
     ScoringType,
     TeamApprovalMode,
 )
@@ -52,8 +52,8 @@ class ContestBase(BaseModel):
     show_leaderboard_during_contest: bool = Field(
         default=False, description="Whether to show leaderboard during the contest"
     )
-    participation_type: ContestTeamParticpationType = Field(
-        default=ContestTeamParticpationType.LEADER_ONLY,
+    participation_type: ContestTeamParticipationType = Field(
+        default=ContestTeamParticipationType.LEADER_ONLY,
         description="Participation type for team contests",
     )
 
@@ -122,7 +122,7 @@ class ContestUpdate(BaseModel):
     show_leaderboard_during_contest: Optional[bool] = Field(
         None, description="Whether to show leaderboard during the contest"
     )
-    participation_type: Optional[ContestTeamParticpationType] = Field(
+    participation_type: Optional[ContestTeamParticipationType] = Field(
         None, description="Participation type for team contests"
     )
 
@@ -176,7 +176,7 @@ class ContestSummaryResponse(BaseModel):
     show_leaderboard_during_contest: bool = Field(
         ..., description="Whether to show leaderboard during the contest"
     )
-    participation_type: ContestTeamParticpationType = Field(
+    participation_type: ContestTeamParticipationType = Field(
         ..., description="Participation type for team contests"
     )
     audiences: list[ContestAudienceResponse] = Field(
@@ -392,4 +392,4 @@ class ContestBankCloneRequest(BaseModel):
 
 class ContestEvent(BaseModel):
     type: str
-    payload: dict
+    payload: dict[str, object]

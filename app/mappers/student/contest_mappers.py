@@ -59,7 +59,7 @@ from app.schema.contest import ContestAudienceResponse
 from app.utils.enums import (
     ContestRunStatus,
     ContestTeamMemberStatus,
-    ContestTeamParticpationType,
+    ContestTeamParticipationType,
     RegistrationState,
     TeamApprovalMode,
     TeamApprovalStatus,
@@ -337,7 +337,7 @@ def build_workspace(
     contest_team_members: list[ContestTeamMember],
     progress: ContestTeamProgress,
     user_id: UUID,
-    participation_type: ContestTeamParticpationType,
+    participation_type: ContestTeamParticipationType,
     leader_id: UUID,
 ) -> WorkspaceDetails:
     participants = []
@@ -382,14 +382,14 @@ def build_permissions(
     remaining_seconds: int,
     progress: ContestTeamProgress,
     user_id: UUID,
-    participation_type: ContestTeamParticpationType,
+    participation_type: ContestTeamParticipationType,
 ) -> PermissionsDetails:
     is_time_up = remaining_seconds <= 0
-    if participation_type == ContestTeamParticpationType.INDIVIDUAL_WORKSPACE:
+    if participation_type == ContestTeamParticipationType.INDIVIDUAL_WORKSPACE:
         can_edit = not is_time_up
         can_submit = not is_time_up
         can_switch_editor = False
-    elif participation_type == ContestTeamParticpationType.LEADER_ONLY:
+    elif participation_type == ContestTeamParticipationType.LEADER_ONLY:
         is_leader = progress.contest_team.leader_id == user_id
         can_edit = not is_time_up and is_leader
         can_submit = not is_time_up and is_leader

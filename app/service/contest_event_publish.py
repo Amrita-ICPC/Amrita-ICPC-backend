@@ -26,7 +26,7 @@ class ContestEventPublisher:
             logger.info(f"Event published with:{count}")
 
         except Exception:
-            logger.error(
+            logger.exception(
                 "Error publishing contest event",
                 extra={
                     "contest_id": contest_id,

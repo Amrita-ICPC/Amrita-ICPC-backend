@@ -6,7 +6,7 @@ from app.utils.enums import (
     ContestMode,
     ContestRunStatus,
     ContestStatus,
-    ContestTeamParticpationType,
+    ContestTeamParticipationType,
     QuestionDifficulty,
     RegistrationState,
     TeamApprovalMode,
@@ -96,7 +96,7 @@ class StudentContestAvailableResponse(BaseModel):
     show_leaderboard_during_contest: bool = Field(
         ..., description="Whether to show leaderboard during the contest"
     )
-    participation_type: ContestTeamParticpationType = Field(
+    participation_type: ContestTeamParticipationType = Field(
         ..., description="Participation type for team contests"
     )
 

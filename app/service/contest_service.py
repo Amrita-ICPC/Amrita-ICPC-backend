@@ -829,6 +829,13 @@ class ContestService:
         audiences = await self.repository.get_contest_audiences_with_details(contest_id)
         return [ContestAudienceResponse.model_validate(a) for a in audiences]
 
+    @cache_delete(
+        key_builder=lambda self, contest_id, user_id: [
+            f"contest:{contest_id}*",
+            "contests:*",
+            "student:contests:user:*",
+        ],
+    )
     async def cancel_contest(self, contest_id: UUID, user_id: UUID) -> None:
         """
         Cancel a contest.
@@ -846,9 +853,7 @@ class ContestService:
         # Remove validator logic checking runtime
         # Set contest status to cancelled
         now = datetime.now(timezone.utc)
-        contest.status = ContestStatus.CANCELLED
-        contest.updated_by = user_id
-        await self.repository.db.flush()
+        await self.repository.cancel_contest(contest, user_id)
 
         if self.event_publisher:
             event = ContestEvent(
