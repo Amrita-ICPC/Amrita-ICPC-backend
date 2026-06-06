@@ -21,7 +21,7 @@ from app.schema.bank import (
     BankUpdate,
 )
 from app.schema.user import UserBasicInfo
-from app.utils.enums import BankPermission
+from app.utils.enums import BankPermission, BankSortBy
 from app.validators.bank import BankValidator
 
 
@@ -125,13 +125,18 @@ class BankService:
         return to_bank_detail_response(bank)
 
     @cache_get(
-        key_builder=lambda self, user_id, skip=0, limit=100: (
-            f"banks:user:{user_id}:skip:{skip}:limit:{limit}"
+        key_builder=lambda self, user_id, skip=0, limit=100, search_term=None, sort_by=None: (
+            f"banks:user:{user_id}:skip:{skip}:limit:{limit}:search:{search_term or ''}:sort:{sort_by.value if sort_by else ''}"
         ),
         ttl=300,
     )
     async def get_all_banks(
-        self, user_id: UUID, skip: int = 0, limit: int = 100
+        self,
+        user_id: UUID,
+        skip: int = 0,
+        limit: int = 100,
+        search_term: str | None = None,
+        sort_by: BankSortBy | None = None,
     ) -> tuple[int, List[BankResponse]]:
         """Fetch paginated list of banks accessible to the user.
 
@@ -141,11 +146,15 @@ class BankService:
             user_id: User ID filtering accessible banks.
             skip: Pagination offset.
             limit: Maximum results to return.
+            search_term: Search query string.
+            sort_by: Optional sort parameter.
 
         Returns:
             Tuple of (total count, paginated bank responses).
         """
-        filters, pagination = build_bank_query_params(skip=skip, limit=limit)
+        filters, pagination = build_bank_query_params(
+            skip=skip, limit=limit, search_term=search_term, sort_by=sort_by
+        )
 
         result = await self.repository.get_banks_with_filters(
             user_id=user_id, filters=filters, pagination=pagination

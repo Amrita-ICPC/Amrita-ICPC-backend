@@ -26,6 +26,7 @@ from app.schema.bank import (
 )
 from app.schema.base import APIResponse
 from app.service.bank_service import BankService
+from app.utils.enums import BankSortBy
 from app.utils.pagination import get_pagination
 from app.validators.bank import BankValidator
 
@@ -94,6 +95,8 @@ async def get_all_banks(
     request: Request,
     page: int = Query(1, ge=1, description="Page number (starts from 1)"),
     page_size: int = Query(10, ge=1, le=100, description="Number of banks per page"),
+    search: str | None = Query(None, description="Search by name"),
+    sort_by: BankSortBy = Query(BankSortBy.CREATED_AT, description="Sort by field"),
     user_id: UUID = Depends(get_current_user_id),
     service: BankService = Depends(get_bank_service),
 ):
@@ -106,6 +109,8 @@ async def get_all_banks(
         request (Request): Framework context.
         page (int): Page number (starts from 1).
         page_size (int): Number of banks per page.
+        search (str): Search term.
+        sort_by (BankSortBy): Sort by field.
         user_id (UUID): Authenticated user ID.
         service (BankService): Injected domain service.
 
@@ -113,7 +118,9 @@ async def get_all_banks(
         APIResponse: Standardized response encapsulating the list of banks and pagination state.
     """
     skip = (page - 1) * page_size
-    total, banks = await service.get_all_banks(user_id, skip, page_size)
+    total, banks = await service.get_all_banks(
+        user_id, skip, page_size, search_term=search, sort_by=sort_by
+    )
 
     pagination = get_pagination(total=total, page=page, page_size=page_size)
 

@@ -1,7 +1,12 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from app.utils.enums import BankQuestionSortBy, QuestionDifficulty, SortOrder
+from app.utils.enums import (
+    BankQuestionSortBy,
+    BankSortBy,
+    QuestionDifficulty,
+    SortOrder,
+)
 
 
 @dataclass
@@ -13,9 +18,11 @@ class BankFilters:
 
     Attributes:
         search_term: Text to search for within the bank name.
+        sort_by: Sorting field of type BankSortBy.
     """
 
     search_term: Optional[str] = None
+    sort_by: Optional[BankSortBy] = None
 
 
 @dataclass
