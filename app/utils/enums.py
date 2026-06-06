@@ -140,6 +140,23 @@ class BankQuestionSortBy(str, enum.Enum):
     DIFFICULTY = "difficulty"
 
 
+class BankSortBy(str, enum.Enum):
+    """
+    Enumeration for bank sorting options.
+
+    Attributes:
+        NAME: Sort alphabetically by bank name.
+        UPDATED_NEW: Sort by updated_at descending (most recently updated first).
+        UPDATED_OLD: Sort by updated_at ascending (oldest updated first).
+        CREATED_AT: Sort by created_at descending (most recently created first).
+    """
+
+    NAME = "name"
+    UPDATED_NEW = "updated_new"
+    UPDATED_OLD = "updated_old"
+    CREATED_AT = "created_at"
+
+
 class ScoringType(str, enum.Enum):
     """
     Enumeration of scoring methods for contest evaluation.

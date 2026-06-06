@@ -17,7 +17,7 @@ from app.repositories.dto import (
     PaginatedResult,
     PaginationParams,
 )
-from app.utils.enums import BankPermission, BankQuestionSortBy, SortOrder
+from app.utils.enums import BankPermission, BankQuestionSortBy, BankSortBy, SortOrder
 
 
 class BankRepository:
@@ -143,6 +143,16 @@ class BankRepository:
         )
         total = (await self.db.execute(count_query)).scalar()
 
+        # Apply sorting
+        if filters.sort_by == BankSortBy.NAME:
+            base_query = base_query.order_by(Bank.name.asc(), Bank.id.asc())
+        elif filters.sort_by == BankSortBy.UPDATED_NEW:
+            base_query = base_query.order_by(Bank.updated_at.desc(), Bank.id.asc())
+        elif filters.sort_by == BankSortBy.UPDATED_OLD:
+            base_query = base_query.order_by(Bank.updated_at.asc(), Bank.id.asc())
+        else:
+            base_query = base_query.order_by(Bank.created_at.desc(), Bank.id.asc())
+
         result = await self.db.execute(
             base_query.offset(pagination.skip).limit(pagination.limit)
         )
@@ -238,6 +248,16 @@ class BankRepository:
             base_query.with_only_columns(Bank.id).subquery()
         )
         total = (await self.db.execute(count_query)).scalar() or 0
+
+        # Apply sorting
+        if filters.sort_by == BankSortBy.NAME:
+            base_query = base_query.order_by(Bank.name.asc(), Bank.id.asc())
+        elif filters.sort_by == BankSortBy.UPDATED_NEW:
+            base_query = base_query.order_by(Bank.updated_at.desc(), Bank.id.asc())
+        elif filters.sort_by == BankSortBy.UPDATED_OLD:
+            base_query = base_query.order_by(Bank.updated_at.asc(), Bank.id.asc())
+        else:
+            base_query = base_query.order_by(Bank.created_at.desc(), Bank.id.asc())
 
         result = await self.db.execute(
             base_query.offset(pagination.skip).limit(pagination.limit)

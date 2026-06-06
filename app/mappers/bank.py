@@ -4,7 +4,7 @@ from app.models.bank import Bank
 from app.repositories.dto.bank import BankFilters
 from app.repositories.dto.pagination import PaginationParams
 from app.schema.bank import BankDetailResponse, BankResponse
-from app.utils.enums import QuestionDifficulty
+from app.utils.enums import BankSortBy, QuestionDifficulty
 
 
 def build_bank_query_params(
@@ -12,9 +12,10 @@ def build_bank_query_params(
     skip: int,
     limit: int,
     search_term: str | None = None,
+    sort_by: BankSortBy | None = None,
 ) -> tuple[BankFilters, PaginationParams]:
     """Build repository filter and pagination DTOs for bank queries."""
-    return BankFilters(search_term=search_term), PaginationParams(
+    return BankFilters(search_term=search_term, sort_by=sort_by), PaginationParams(
         skip=skip, limit=limit
     )
 

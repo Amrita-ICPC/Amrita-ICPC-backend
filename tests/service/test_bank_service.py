@@ -11,7 +11,7 @@ from app.exceptions.bank import (
     BankPermissionError,
 )
 from app.schema.bank import BankCreate, BankShareItem, BankUpdate
-from app.utils.enums import BankPermission
+from app.utils.enums import BankPermission, BankSortBy
 
 if TYPE_CHECKING:
     from app.service.bank_service import BankService
@@ -295,3 +295,36 @@ async def test_restore_bank_owner_success(
     mock_repository.get_deleted_bank_or_raise.assert_called_once_with(existing_bank.id)
     mock_repository.restore_bank.assert_called_once_with(deleted_bank)
     assert result.id == existing_bank.id
+
+
+@pytest.mark.asyncio
+async def test_get_all_banks_with_search_and_sort(
+    bank_service, mock_repository, existing_bank
+):
+    """Test get_all_banks with sorting and searching parameters."""
+    user_id = existing_bank.created_by
+    from app.repositories.dto import PaginatedResult
+
+    mock_paginated = PaginatedResult(total=1, items=[existing_bank])
+    mock_repository.get_banks_with_filters.return_value = mock_paginated
+
+    total, items = await bank_service.get_all_banks(
+        user_id=user_id,
+        skip=0,
+        limit=10,
+        search_term="Test",
+        sort_by=BankSortBy.NAME,
+    )
+
+    assert total == 1
+    assert len(items) == 1
+    assert items[0].id == existing_bank.id
+
+    # Verify the parameters passed to get_banks_with_filters
+    mock_repository.get_banks_with_filters.assert_called_once()
+    args, kwargs = mock_repository.get_banks_with_filters.call_args
+    assert kwargs["user_id"] == user_id
+    assert kwargs["filters"].search_term == "Test"
+    assert kwargs["filters"].sort_by == BankSortBy.NAME
+    assert kwargs["pagination"].skip == 0
+    assert kwargs["pagination"].limit == 10
