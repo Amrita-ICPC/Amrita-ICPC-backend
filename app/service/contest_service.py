@@ -155,7 +155,10 @@ class ContestService:
         # Validate contest data
         self.validator.validate_contest_dates(contest.start_time, contest.end_time)
         self.validator.validate_registration_dates(
-            contest.registration_start, contest.registration_end, contest.start_time
+            contest.registration_start,
+            contest.registration_end,
+            contest.start_time,
+            contest.end_time,
         )
         self.validator.validate_team_size_constraints(
             contest.min_team_size, contest.max_team_size
@@ -468,6 +471,7 @@ class ContestService:
                 cast(datetime, new_reg_start),
                 cast(datetime, new_reg_end),
                 validated_start,
+                cast(datetime, new_end),
             )
         self.validator.validate_team_size_constraints(
             cast(int, new_min_size), cast(int, new_max_size)

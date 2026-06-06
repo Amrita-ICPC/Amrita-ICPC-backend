@@ -67,6 +67,7 @@ class ContestValidator:
         registration_start: datetime | None,
         registration_end: datetime | None,
         start_time: datetime | None,
+        end_time: datetime | None,
     ) -> None:
         """
         Validates that registration period is valid.
@@ -79,14 +80,19 @@ class ContestValidator:
         Raises:
             InvalidContestError: If registration dates are invalid
         """
-        if registration_end is None or registration_start is None or start_time is None:
+        if (
+            registration_end is None
+            or registration_start is None
+            or start_time is None
+            or end_time is None
+        ):
             raise InvalidContestError("Registration dates are required")
 
         if registration_end <= registration_start:
             raise InvalidContestError(
                 "registration_end must be after registration_start"
             )
-        if registration_end > start_time:
+        if registration_end > end_time:
             raise InvalidContestError(
                 "registration_end must be before or equal to contest start_time"
             )
