@@ -11,5 +11,11 @@ def build_workspace_key(
     )
 
 
-def get_contest_channel_key(contest_id: UUID) -> str:
+def get_contest_channel_key(
+    contest_id: UUID,
+    team_id: UUID | None = None,
+    contest_team_member_id: UUID | None = None,
+) -> str:
+    if team_id and contest_team_member_id:
+        return f"contest:{contest_id}:team:{team_id}:members:{contest_team_member_id}"
     return f"contest:{contest_id}:events"

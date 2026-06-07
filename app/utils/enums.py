@@ -316,11 +316,13 @@ class SubmissionStatus(str, enum.Enum):
 
     QUEUED = "QUEUED"
     RUNNING = "RUNNING"
+    SYSTEM_ERROR = "SYSTEM_ERROR"
     AC = "AC"
     WA = "WA"
     TLE = "TLE"
     RE = "RE"
     CE = "CE"
+    MLE = "MLE"
 
 
 class AudienceType(str, enum.Enum):

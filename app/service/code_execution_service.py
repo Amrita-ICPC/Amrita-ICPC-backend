@@ -29,11 +29,14 @@ JUDGE0_TO_EXECUTION_STATUS: dict[Judge0StatusCode, ExecutionStatus] = {
     Judge0StatusCode.ACCEPTED: ExecutionStatus.ACCEPTED,
     Judge0StatusCode.WRONG_ANSWER: ExecutionStatus.WRONG_ANSWER,
     Judge0StatusCode.TIME_LIMIT_EXCEEDED: ExecutionStatus.TIME_LIMIT_EXCEEDED,
-    Judge0StatusCode.RUNTIME_ERROR: ExecutionStatus.RUNTIME_ERROR,
-    Judge0StatusCode.MEMORY_LIMIT_EXCEEDED: ExecutionStatus.MEMORY_LIMIT_EXCEEDED,
-    Judge0StatusCode.CPU_TIME_LIMIT_EXCEEDED: ExecutionStatus.CPU_TIME_LIMIT_EXCEEDED,
-    Judge0StatusCode.SYSTEM_ERROR: ExecutionStatus.SYSTEM_ERROR,
+    Judge0StatusCode.RUNTIME_ERROR_SIGSEGV: ExecutionStatus.RUNTIME_ERROR,
+    Judge0StatusCode.RUNTIME_ERROR_SIGXFSZ: ExecutionStatus.RUNTIME_ERROR,
+    Judge0StatusCode.RUNTIME_ERROR_SIGFPE: ExecutionStatus.RUNTIME_ERROR,
+    Judge0StatusCode.RUNTIME_ERROR_SIGABRT: ExecutionStatus.RUNTIME_ERROR,
+    Judge0StatusCode.RUNTIME_ERROR_NZEC: ExecutionStatus.RUNTIME_ERROR,
+    Judge0StatusCode.RUNTIME_ERROR_OTHER: ExecutionStatus.RUNTIME_ERROR,
     Judge0StatusCode.INTERNAL_ERROR: ExecutionStatus.INTERNAL_ERROR,
+    Judge0StatusCode.EXEC_FORMAT_ERROR: ExecutionStatus.RUNTIME_ERROR,
 }
 
 
@@ -130,7 +133,8 @@ class CodeExecutionService:
 
         logger.debug(f"Submitting code to Judge0 for {len(testcases)} test cases")
         submit_tasks = [
-            self.judge0_repo.submit_code(request, tc.input) for tc in testcases
+            self.judge0_repo.submit_code(request, tc.input, tc.output)
+            for tc in testcases
         ]
         submissions = await asyncio.gather(*submit_tasks)
 
@@ -190,10 +194,7 @@ class CodeExecutionService:
                 )
                 raise CompilationError(first_result.stderr or "Code execution failed")
 
-        if first_result.status in (
-            Judge0StatusCode.SYSTEM_ERROR,
-            Judge0StatusCode.INTERNAL_ERROR,
-        ):
+        if first_result.status == Judge0StatusCode.INTERNAL_ERROR:
             error_msg = (
                 first_result.message
                 or f"Judge0 infrastructure error (Status: {first_result.status.name})"
@@ -206,13 +207,11 @@ class CodeExecutionService:
             )
 
         first_testcase = token_to_testcase[first_token]
-        first_stdout = (first_result.stdout or "").strip()
-        first_expected = (first_testcase.output or "").strip()
         first_execution = Judge0ExecutionResultDTO(
             question_id=str(question_id),
             testcase_id=str(first_testcase.id),
             status=first_result.status,
-            passed=(first_stdout == first_expected),
+            passed=(first_result.status == Judge0StatusCode.ACCEPTED),
             stdout=first_result.stdout,
             stderr=first_result.stderr,
             expected_output=first_testcase.output,
@@ -276,10 +275,7 @@ class CodeExecutionService:
                     logger.warning(f"No result for token {token}, skipping")
                     continue
 
-                if submission_result.status in (
-                    Judge0StatusCode.SYSTEM_ERROR,
-                    Judge0StatusCode.INTERNAL_ERROR,
-                ):
+                if submission_result.status == Judge0StatusCode.INTERNAL_ERROR:
                     error_msg = (
                         submission_result.message
                         or f"Judge0 infrastructure error (Status: {submission_result.status.name})"
@@ -292,13 +288,11 @@ class CodeExecutionService:
                     )
 
                 testcase = token_to_testcase[token]
-                testcase_stdout = (submission_result.stdout or "").strip()
-                testcase_expected = (testcase.output or "").strip()
                 execution_result = Judge0ExecutionResultDTO(
                     question_id=str(question_id),
                     testcase_id=str(testcase.id),
                     status=submission_result.status,
-                    passed=(testcase_stdout == testcase_expected),
+                    passed=(submission_result.status == Judge0StatusCode.ACCEPTED),
                     stdout=submission_result.stdout,
                     stderr=submission_result.stderr,
                     expected_output=testcase.output,
@@ -381,7 +375,7 @@ class CodeExecutionService:
             f"Submitting draft code to Judge0 for {len(request.test_cases)} test cases"
         )
         submit_tasks = [
-            self.judge0_repo.submit_code(judge0_request, tc.input)
+            self.judge0_repo.submit_code(judge0_request, tc.input, tc.expected_output)
             for tc in request.test_cases
         ]
         submissions = await asyncio.gather(*submit_tasks)
@@ -425,22 +419,17 @@ class CodeExecutionService:
             ):
                 raise CompilationError(first_result.stderr or "Code execution failed")
 
-        if first_result.status in (
-            Judge0StatusCode.SYSTEM_ERROR,
-            Judge0StatusCode.INTERNAL_ERROR,
-        ):
+        if first_result.status == Judge0StatusCode.INTERNAL_ERROR:
             error_msg = first_result.message or "Judge0 infrastructure error"
             raise CodeExecutionError(error_msg)
 
         # Map first result
         first_testcase = token_to_testcase[first_token]
-        first_stdout = (first_result.stdout or "").strip()
-        first_expected = (first_testcase.expected_output or "").strip()
         first_execution = Judge0ExecutionResultDTO(
             question_id="draft",
             testcase_id="draft_0",
             status=first_result.status,
-            passed=(first_stdout == first_expected),
+            passed=(first_result.status == Judge0StatusCode.ACCEPTED),
             stdout=first_result.stdout,
             stderr=first_result.stderr,
             expected_output=first_testcase.expected_output,
@@ -492,15 +481,13 @@ class CodeExecutionService:
                     continue
 
                 testcase = token_to_testcase[token]
-                testcase_stdout = (submission_result.stdout or "").strip()
-                testcase_expected = (testcase.expected_output or "").strip()
 
                 all_execution_results.append(
                     Judge0ExecutionResultDTO(
                         question_id="draft",
                         testcase_id=f"draft_{i}",
                         status=submission_result.status,
-                        passed=(testcase_stdout == testcase_expected),
+                        passed=(submission_result.status == Judge0StatusCode.ACCEPTED),
                         stdout=submission_result.stdout,
                         stderr=submission_result.stderr,
                         expected_output=testcase.expected_output,

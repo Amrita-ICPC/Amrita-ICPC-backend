@@ -7,10 +7,18 @@ from sqlalchemy.orm import selectinload
 
 from app.exceptions.question import QuestionNotFoundError
 from app.models.bank import Bank, BankQuestion, BankShare
-from app.models.contest import Contest, ContestInstructor, ContestQuestion, ContestTeam
-from app.models.question import Question, QuestionLanguage, QuestionTemplate
+from app.models.contest import (
+    Contest,
+    ContestInstructor,
+    ContestQuestion,
+    ContestSubmission,
+    ContestTeam,
+)
+from app.models.question import Question, QuestionLanguage, QuestionTemplate, Submission
 from app.models.tag import QuestionTag
 from app.models.team import TeamUser
+from app.repositories.dto.evaluation import EvaluationResult
+from app.utils.enums import SubmissionStatus
 
 
 class QuestionRepository:
@@ -241,3 +249,73 @@ class QuestionRepository:
             .options(selectinload(QuestionTemplate.language))
         )
         return cast(list[QuestionTemplate], result.scalars().all())
+
+    async def create_submission(
+        self,
+        submission: Submission,
+        contest_submission: ContestSubmission | None = None,
+    ) -> Submission:
+        """
+        Create a new submission and link it to a contest if provided.
+
+        Args:
+            submission: The Submission ORM object to persist.
+            contest_submission: Optional ContestSubmission ORM object to associate with the submission.
+
+        Returns:
+            Submission: The persisted submission object.
+        """
+        self.db.add(submission)
+        if contest_submission:
+            self.db.add(contest_submission)
+        await self.db.flush()
+        return submission
+
+    async def get_submission(self, submission_id: UUID) -> Submission | None:
+        """
+        Retrieve a submission by its ID.
+
+        Args:
+            submission_id: ID of the submission to retrieve.
+
+        Returns:
+            The Submission object if found, otherwise None.
+        """
+        result = await self.db.execute(
+            select(Submission)
+            .options(
+                selectinload(Submission.contest_submission).selectinload(
+                    ContestSubmission.contest_team
+                )
+            )
+            .where(Submission.id == submission_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def mark_submission_running(self, submission: Submission) -> None:
+        """Mark a submission as running."""
+        submission.status = SubmissionStatus.RUNNING
+        await self.db.commit()
+
+    async def complete_submission(
+        self, submission: Submission, result: EvaluationResult
+    ) -> None:
+        """Complete a submission with the evaluation result."""
+        submission.status = result.status
+        submission.passed_testcases = result.passed_testcases
+        submission.total_testcases = result.total_testcases
+        submission.total_time = result.total_time
+        submission.total_memory = result.total_memory
+
+        if (
+            result.passed_testcases == result.total_testcases
+            and result.total_testcases > 0
+        ):
+            submission.score = 100
+
+        self.db.add_all(result.testcase_results)
+        await self.db.commit()
+
+    async def commit(self) -> None:
+        """Commit the active transaction."""
+        await self.db.commit()
