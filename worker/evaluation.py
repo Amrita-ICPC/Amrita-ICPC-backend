@@ -151,6 +151,7 @@ async def _evaluate_submission_async(submission_id: UUID) -> None:
 
         # 2. Update status to RUNNING
         await repository.mark_submission_running(submission)
+        await db.commit()
 
         # 3. Publish RUNNING event
         if contest_id and team_id and contest_team_member_id:
@@ -183,6 +184,7 @@ async def _evaluate_submission_async(submission_id: UUID) -> None:
                 testcase_results=[],
             )
             await repository.complete_submission(submission, result)
+            await db.commit()
             if contest_id and team_id and contest_team_member_id:
                 event = StudentSubmissionUpdateEvent(
                     type="submission_update",
@@ -207,6 +209,7 @@ async def _evaluate_submission_async(submission_id: UUID) -> None:
                 testcase_results=[],
             )
             await repository.complete_submission(submission, result)
+            await db.commit()
             if contest_id and team_id and contest_team_member_id:
                 event = StudentSubmissionUpdateEvent(
                     type="submission_update",
@@ -233,6 +236,7 @@ async def _evaluate_submission_async(submission_id: UUID) -> None:
                 testcase_results=[],
             )
             await repository.complete_submission(submission, result)
+            await db.commit()
             if contest_id and team_id and contest_team_member_id:
                 event = StudentSubmissionUpdateEvent(
                     type="submission_update",
@@ -263,18 +267,19 @@ async def _evaluate_submission_async(submission_id: UUID) -> None:
 
         # 6. Save final results and publish
         await repository.complete_submission(submission, eval_result)
-
-        event = StudentSubmissionUpdateEvent(
-            type="submission_update",
-            payload=StudentSubmissionUpdatePayload(
-                submission_id=str(submission.id),
-                question_id=str(submission.question_id),
-                status=submission.status.value,
-            ),
-        )
-        await event_service.publish_event(
-            contest_id, team_id, contest_team_member_id, event
-        )
+        await db.commit()
+        if contest_id and team_id and contest_team_member_id:
+            event = StudentSubmissionUpdateEvent(
+                type="submission_update",
+                payload=StudentSubmissionUpdatePayload(
+                    submission_id=str(submission.id),
+                    question_id=str(submission.question_id),
+                    status=submission.status.value,
+                ),
+            )
+            await event_service.publish_event(
+                contest_id, team_id, contest_team_member_id, event
+            )
 
         logger.info(
             f"Finished evaluation for submission {submission.id} with status {submission.status}"

@@ -4,6 +4,7 @@ from celery import Celery  # type: ignore[import-untyped]
 from celery.signals import worker_process_init, worker_process_shutdown
 
 from app.core.config import config
+from app.core.logger import logger
 
 celery_app = Celery(
     "amrita_icpc",
@@ -44,8 +45,12 @@ def init_worker_process(**kwargs):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
-    loop.run_until_complete(init_redis())
-    loop.run_until_complete(init_judge0())
+    try:
+        loop.run_until_complete(init_redis())
+        loop.run_until_complete(init_judge0())
+    except Exception:
+        logger.exception("Failed to initialize async clients in worker process")
+        raise
 
 
 @worker_process_shutdown.connect
@@ -62,5 +67,9 @@ def shutdown_worker_process(**kwargs):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
-    loop.run_until_complete(close_judge0())
-    loop.run_until_complete(close_redis())
+    try:
+        loop.run_until_complete(close_judge0())
+        loop.run_until_complete(close_redis())
+    except Exception:
+        logger.exception("Failed to close async clients in worker process")
+        raise

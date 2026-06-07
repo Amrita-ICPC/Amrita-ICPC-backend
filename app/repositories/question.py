@@ -295,7 +295,7 @@ class QuestionRepository:
     async def mark_submission_running(self, submission: Submission) -> None:
         """Mark a submission as running."""
         submission.status = SubmissionStatus.RUNNING
-        await self.db.commit()
+        await self.db.flush()
 
     async def complete_submission(
         self, submission: Submission, result: EvaluationResult
@@ -314,8 +314,4 @@ class QuestionRepository:
             submission.score = 100
 
         self.db.add_all(result.testcase_results)
-        await self.db.commit()
-
-    async def commit(self) -> None:
-        """Commit the active transaction."""
-        await self.db.commit()
+        await self.db.flush()

@@ -26,3 +26,4 @@ class ContestEventService:
             await redis_client.publish(channel, event.model_dump_json())
         except Exception as e:
             logger.error(f"Failed to publish event to {contest_id}: {e}")
+            raise
