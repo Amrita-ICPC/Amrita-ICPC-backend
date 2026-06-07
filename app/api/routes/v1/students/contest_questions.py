@@ -1,16 +1,20 @@
+import asyncio
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, status
+from fastapi.sse import EventSourceResponse
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user_id
 from app.core.clients.database import get_db
 from app.core.clients.redis import get_redis
+from app.core.logger import logger
 from app.core.response import create_api_response
 from app.repositories.contest import ContestRepository
 from app.repositories.contest_team_progress import ContestTeamProgressRepository
 from app.repositories.judge0 import Judge0Repository
+from app.repositories.question import QuestionRepository
 from app.repositories.student.contest_question import StudentContestQuestionRepository
 from app.repositories.student.contest_team import ContestTeamRepository
 from app.repositories.testcase import TestCaseRepository
@@ -23,6 +27,10 @@ from app.schema.student.contests import (
 from app.schema.student.run import (
     StudentCodeRunRequest,
     StudentCodeRunResponse,
+)
+from app.schema.student.submission import (
+    StudentSubmissionRequest,
+    StudentSubmissionResponse,
 )
 from app.service.student.contest_question import StudentContestQuestionService
 from app.service.student.workspace import WorkspaceService
@@ -41,6 +49,7 @@ def get_student_contest_service(
     testcase_repository = TestCaseRepository(db)
     workspace_service = WorkspaceService(redis_client)
     judge0_repository = Judge0Repository()
+    question_repository = QuestionRepository(db)
     return StudentContestQuestionService(
         repository=contest_question_repository,
         contest_repository=contest_repository,
@@ -49,6 +58,8 @@ def get_student_contest_service(
         testcase_repository=testcase_repository,
         workspace_service=workspace_service,
         judge0_repository=judge0_repository,
+        question_repository=question_repository,
+        redis=redis_client,
     )
 
 
@@ -183,3 +194,93 @@ async def run_student_code(
         data=result,
         message="Code execution completed",
     )
+
+
+@router.post(
+    "/{contest_id}/questions/{question_id}/submit",
+    response_model=APIResponse[StudentSubmissionResponse],
+    status_code=status.HTTP_201_CREATED,
+    summary="Submit student code to a contest question",
+)
+async def submit_contest_question(
+    request: Request,
+    contest_id: UUID,
+    question_id: UUID,
+    payload: StudentSubmissionRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    service: StudentContestQuestionService = Depends(get_student_contest_service),
+):
+    """
+    Submit code for a specific contest question.
+
+    Verifies the student's eligibility (session must be started and not ended)
+    and logs the submission status as QUEUED.
+    """
+    result = await service.submit_code(
+        contest_id=contest_id,
+        question_id=question_id,
+        user_id=user_id,
+        code=payload.code,
+        language_id=payload.language_id,
+    )
+    return create_api_response(
+        request,
+        data=result,
+        message="Submission received and queued",
+    )
+
+
+@router.get(
+    "/{contest_id}/questions/{question_id}/submissions",
+    response_model=APIResponse[list[StudentSubmissionResponse]],
+    summary="Get all submissions for a question",
+)
+async def get_question_submissions(
+    request: Request,
+    contest_id: UUID,
+    question_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: StudentContestQuestionService = Depends(get_student_contest_service),
+):
+    """
+    Retrieve all past submissions made by the student/team for a specific question.
+    """
+    result = await service.get_question_submissions(
+        contest_id=contest_id, question_id=question_id, user_id=user_id
+    )
+    return create_api_response(
+        request,
+        data=result,
+        message="Submissions fetched successfully",
+    )
+
+
+@router.get(
+    "/{contest_id}/submission",
+    summary="Get submission events stream (SSE)",
+    response_class=EventSourceResponse,
+    include_in_schema=False,
+    responses={
+        200: {
+            "description": "Submission events stream",
+            "content": {
+                "text/event-stream": {
+                    "schema": {"type": "string", "payload": "data: event\n\n"}
+                }
+            },
+        }
+    },
+)
+async def get_submission_events_stream(
+    contest_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: StudentContestQuestionService = Depends(get_student_contest_service),
+):
+    """
+    Establish a Server-Sent Events (SSE) stream for submission progress updates.
+    """
+    try:
+        async for event in service.subscribe_submission_events(contest_id, user_id):
+            yield event
+    except asyncio.CancelledError:
+        logger.info("SSE connection cancelled by client")

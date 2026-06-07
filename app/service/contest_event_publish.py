@@ -16,10 +16,12 @@ class ContestEventPublisher:
         self,
         contest_id: UUID,
         event: ContestEvent,
+        team_id: UUID | None = None,
+        contest_team_member_id: UUID | None = None,
     ) -> None:
         try:
             count = await self.redis.publish(
-                get_contest_channel_key(contest_id),
+                get_contest_channel_key(contest_id, team_id, contest_team_member_id),
                 event.model_dump_json(),
             )
 
@@ -35,11 +37,15 @@ class ContestEventPublisher:
             )
 
     async def subscribe(
-        self, contest_id: UUID, user_id: UUID | None = None
+        self,
+        contest_id: UUID,
+        team_id: UUID | None = None,
+        contest_team_member_id: UUID | None = None,
+        user_id: UUID | None = None,
     ) -> AsyncGenerator[str, None]:
         """Subscribe to contest events and yield them as SSE data packets."""
         pubsub = self.redis.pubsub()
-        channel = get_contest_channel_key(contest_id)
+        channel = get_contest_channel_key(contest_id, team_id, contest_team_member_id)
         await pubsub.subscribe(channel)
         logger.info(f"Subscribed user={user_id} contest={contest_id} channel={channel}")
         try:

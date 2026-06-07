@@ -61,6 +61,33 @@ services:
       timeout: 5s
       retries: 5
 
+  api:
+    build: .
+    container_name: amrita_icpc_api
+    restart: always
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery_worker:
+    build: .
+    container_name: amrita_icpc_celery_worker
+    restart: always
+    command: celery -A app.core.clients.celery:celery_app worker --concurrency=4 --loglevel=info
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
 volumes:
   postgres_data:
   redis_data:

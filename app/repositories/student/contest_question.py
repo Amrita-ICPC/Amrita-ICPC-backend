@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models import ContestQuestion, Question
+from app.models.question import Submission
 
 
 class StudentContestQuestionRepository:
@@ -54,3 +55,24 @@ class StudentContestQuestionRepository:
         )
         result = await self.db.execute(stmt)
         return result.scalars().first()
+
+    async def get_submissions_by_team_and_question(
+        self, contest_team_id: UUID, question_id: UUID
+    ) -> list[Submission]:
+        """
+        Retrieve all submissions for a question made by a contest team,
+        ordered by submission time descending.
+        """
+        from app.models.contest import ContestSubmission
+
+        stmt = (
+            select(Submission)
+            .join(ContestSubmission, ContestSubmission.submission_id == Submission.id)
+            .where(
+                ContestSubmission.contest_team_id == contest_team_id,
+                Submission.question_id == question_id,
+            )
+            .order_by(Submission.created_at.desc())
+        )
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())

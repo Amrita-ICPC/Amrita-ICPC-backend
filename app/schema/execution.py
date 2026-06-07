@@ -48,7 +48,7 @@ class TestCaseRunResult(BaseModel):
     testcase_id: str = Field(..., description="Test case UUID")
     status: ExecutionStatus = Field(
         ...,
-        description="Execution status from Judge0 (ACCEPTED, WRONG_ANSWER, RUNTIME_ERROR, TIME_LIMIT_EXCEEDED, SYSTEM_ERROR, etc.)",
+        description="Execution status from Judge0 (ACCEPTED, WRONG_ANSWER, RUNTIME_ERROR, TIME_LIMIT_EXCEEDED, INTERNAL_ERROR, etc.)",
     )
     passed: bool = Field(
         ..., description="Whether this test case passed (output matches expected)"

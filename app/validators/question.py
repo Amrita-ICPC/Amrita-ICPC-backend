@@ -1,5 +1,9 @@
 from collections.abc import Mapping, Sequence
+from typing import TYPE_CHECKING
 from uuid import UUID
+
+if TYPE_CHECKING:
+    from app.models.question import Question, QuestionTemplate
 
 from app.exceptions.question import InvalidQuestionError
 from app.repositories.language import LanguageRepository
@@ -191,3 +195,26 @@ class QuestionValidator:
             raise InvalidQuestionError(
                 "At least one metadata field must be provided for update"
             )
+
+    @staticmethod
+    def validate_submission_language(
+        question: "Question", language_id: int
+    ) -> "QuestionTemplate":
+        """Validate that the question supports the given language.
+
+        Args:
+            question: The question to validate against.
+            language_id: The language ID from the submission.
+
+        Returns:
+            The QuestionTemplate for the specified language.
+
+        Raises:
+            InvalidQuestionError: If the template for the language does not exist.
+        """
+        for template in question.templates:
+            if template.language_id == language_id:
+                return template
+        raise InvalidQuestionError(
+            f"Language ID {language_id} is not supported for this question"
+        )

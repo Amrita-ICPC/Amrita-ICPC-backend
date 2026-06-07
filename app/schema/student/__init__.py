@@ -27,6 +27,10 @@ from app.schema.student.run import (
     StudentCodeRunResponse,
     StudentTestCaseRunResultResponse,
 )
+from app.schema.student.submission import (
+    StudentSubmissionRequest,
+    StudentSubmissionResponse,
+)
 from app.schema.student.teams import (
     StudentTeamCardResponse,
     StudentTeamCreateRequest,
@@ -85,4 +89,7 @@ __all__ = [
     # Workspace schemas
     "WorkspaceData",
     "WorkspacePutRequest",
+    # Submission schemas
+    "StudentSubmissionRequest",
+    "StudentSubmissionResponse",
 ]

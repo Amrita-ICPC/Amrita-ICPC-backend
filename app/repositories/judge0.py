@@ -78,7 +78,10 @@ class Judge0Repository:
             return value
 
     async def submit_code(
-        self, request: Judge0ExecutionRequestDTO, stdin: str
+        self,
+        request: Judge0ExecutionRequestDTO,
+        stdin: str,
+        expected_output: str | None = None,
     ) -> Judge0SubmissionDTO:
         """Submit source code to Judge0 for execution with stdin.
 
@@ -88,6 +91,7 @@ class Judge0Repository:
         Args:
             request: Execution request with source code, language ID, question ID
             stdin: Standard input for the program (from TestCase.input)
+            expected_output: Expected standard output for the program
 
         Returns:
             Judge0SubmissionDTO with submission token and initial status
@@ -107,6 +111,10 @@ class Judge0Repository:
                 "language_id": request.language_id,
                 "stdin": base64.b64encode(stdin.encode("utf-8")).decode("utf-8"),
             }
+            if expected_output is not None:
+                payload["expected_output"] = base64.b64encode(
+                    expected_output.encode("utf-8")
+                ).decode("utf-8")
 
             # Submit to Judge0
             response = await client.post(

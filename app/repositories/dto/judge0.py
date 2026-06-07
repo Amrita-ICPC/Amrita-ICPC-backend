@@ -40,7 +40,7 @@ class Judge0ExecutionResultDTO:
     """Test case ID being executed."""
 
     status: Judge0StatusCode
-    """Execution status (ACCEPTED, WRONG_ANSWER, RUNTIME_ERROR, TIME_LIMIT_EXCEEDED, SYSTEM_ERROR).
+    """Execution status (ACCEPTED, WRONG_ANSWER, RUNTIME_ERROR, TIME_LIMIT_EXCEEDED, INTERNAL_ERROR).
 
     Note: COMPILATION_ERROR is NOT included here - use Judge0CompilationErrorDTO instead.
     """
@@ -104,6 +104,18 @@ class Judge0SubmissionDTO:
 
     message: Optional[str] = None
     """Status message."""
+
+    def __post_init__(self) -> None:
+        if self.time is not None and not isinstance(self.time, float):
+            try:
+                self.time = float(self.time)
+            except (ValueError, TypeError):
+                self.time = None
+        if self.memory is not None and not isinstance(self.memory, int):
+            try:
+                self.memory = int(self.memory)
+            except (ValueError, TypeError):
+                self.memory = None
 
     @property
     def status(self) -> Judge0StatusCode:

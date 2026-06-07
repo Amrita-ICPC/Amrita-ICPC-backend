@@ -1,4 +1,11 @@
-from uuid import UUID
+import asyncio
+import json
+from datetime import datetime, timezone
+from typing import AsyncGenerator
+from uuid import UUID, uuid4
+
+from fastapi.sse import ServerSentEvent
+from redis.asyncio import Redis
 
 from app.core.logger import logger
 from app.exceptions.contest import (
@@ -10,11 +17,13 @@ from app.exceptions.student.contests import (
     ContestSessionNotStartedError,
     NoContestTeamMemberFoundError,
 )
-from app.models import Contest, ContestTeam, ContestTeamMember
+from app.models import Contest, ContestSubmission, ContestTeam, ContestTeamMember
+from app.models.question import Submission
 from app.repositories.contest import ContestRepository
 from app.repositories.contest_team_progress import ContestTeamProgressRepository
 from app.repositories.dto.judge0 import Judge0ExecutionRequestDTO
 from app.repositories.judge0 import Judge0Repository
+from app.repositories.question import QuestionRepository
 from app.repositories.student.contest_question import StudentContestQuestionRepository
 from app.repositories.student.contest_team import ContestTeamRepository
 from app.repositories.testcase import TestCaseRepository
@@ -28,16 +37,21 @@ from app.schema.student.run import (
     StudentCodeRunResponse,
     StudentTestCaseRunResultResponse,
 )
+from app.schema.student.submission import (
+    StudentSubmissionResponse,
+)
 from app.service.student.workspace import WorkspaceService
 from app.utils.contest import calculate_effective_times
 from app.utils.enums import (
     ContestTeamMemberStatus,
     ContestTeamParticipationType,
+    SubmissionStatus,
     TeamApprovalStatus,
     TeamStatus,
 )
-from app.utils.key_builder import build_workspace_key
+from app.utils.key_builder import build_workspace_key, get_contest_channel_key
 from app.validators.contest_team import ContestTeamValidator
+from worker.evaluation import evaluate_submission
 
 
 class StudentContestQuestionService:
@@ -50,6 +64,8 @@ class StudentContestQuestionService:
         testcase_repository: TestCaseRepository,
         workspace_service: WorkspaceService,
         judge0_repository: Judge0Repository,
+        question_repository: QuestionRepository,
+        redis: Redis,
     ):
         self.repository = repository
         self.contest_repository = contest_repository
@@ -58,6 +74,8 @@ class StudentContestQuestionService:
         self.testcase_repository = testcase_repository
         self.workspace_service = workspace_service
         self.judge0_repo = judge0_repository
+        self.question_repository = question_repository
+        self.redis = redis
 
     async def _validate_session_and_get_contest(
         self, contest_id: UUID, user_id: UUID
@@ -273,7 +291,8 @@ class StudentContestQuestionService:
 
         # Submit code to Judge0 for all testcases in parallel
         submit_tasks = [
-            self.judge0_repo.submit_code(judge0_request, tc.input) for tc in non_hidden
+            self.judge0_repo.submit_code(judge0_request, tc.input, tc.output)
+            for tc in non_hidden
         ]
         submissions = await asyncio.gather(*submit_tasks)
 
@@ -287,10 +306,8 @@ class StudentContestQuestionService:
         results = []
         for testcase, judge0_result in zip(non_hidden, judge0_results):
             status_id = judge0_result.status_id or 0
-            testcase_stdout = (judge0_result.stdout or "").strip()
-            testcase_expected = (testcase.output or "").strip()
-            # Code run passed only if execution succeeded and output matched expected output
-            passed = (status_id == 3) and (testcase_stdout == testcase_expected)
+            # Code run passed only if execution succeeded (status_id == 3 is ACCEPTED)
+            passed = status_id == 3
 
             results.append(
                 StudentTestCaseRunResultResponse(
@@ -317,3 +334,157 @@ class StudentContestQuestionService:
             message="Code executed successfully",
             question_id=question_id,
         )
+
+    async def submit_code(
+        self,
+        contest_id: UUID,
+        question_id: UUID,
+        user_id: UUID,
+        code: str,
+        language_id: int,
+    ) -> StudentSubmissionResponse:
+        """
+        Submit student code for a question in a contest.
+
+        Validates session status, eligibility, and question existence, then stores a new submission.
+
+        Args:
+            contest_id: ID of the contest.
+            question_id: ID of the question.
+            user_id: ID of the student.
+            code: Source code to submit.
+            language_id: Language ID of the code.
+
+        Returns:
+            StudentSubmissionResponse: The created submission details.
+        """
+        # Validate student eligibility, contest runtime status, session progress, and remaining time.
+        (
+            _,
+            contest_team,
+            contest_team_member,
+        ) = await self._validate_session_and_get_contest(
+            contest_id=contest_id, user_id=user_id
+        )
+
+        # Verify that the question exists in the contest
+        in_contest = await self.contest_repository.is_question_in_contest(
+            contest_id, question_id
+        )
+        if not in_contest:
+            raise QuestionNotInContestError(str(question_id), str(contest_id))
+
+        # Retrieve test cases to count total test cases
+        testcases = await self.testcase_repository.get_all_by_question(question_id)
+
+        # Create submission record
+        submission = Submission(
+            id=uuid4(),
+            question_id=question_id,
+            source_code=code,
+            language_id=language_id,
+            status=SubmissionStatus.QUEUED,
+            score=0,
+            passed_testcases=0,
+            total_testcases=len(testcases),
+            created_at=datetime.now(timezone.utc),
+        )
+
+        # Create contest submission mapping
+        contest_submission = ContestSubmission(
+            submission=submission,
+            contest_id=contest_id,
+            contest_team_id=contest_team.id,
+            contest_team_member_id=contest_team_member.id,
+        )
+
+        # Save to postgres
+        await self.question_repository.create_submission(
+            submission=submission, contest_submission=contest_submission
+        )
+
+        # Trigger background evaluation task via Celery
+        evaluate_submission.delay(str(submission.id))
+
+        return StudentSubmissionResponse.model_validate(submission)
+
+    async def get_question_submissions(
+        self, contest_id: UUID, question_id: UUID, user_id: UUID
+    ) -> list[StudentSubmissionResponse]:
+        """
+        Retrieve all submissions for a question made by the student's team.
+        """
+        (
+            contest,
+            contest_team,
+            contest_team_member,
+        ) = await self._validate_session_and_get_contest(
+            contest_id=contest_id, user_id=user_id
+        )
+
+        in_contest = await self.contest_repository.is_question_in_contest(
+            contest_id, question_id
+        )
+        if not in_contest:
+            raise QuestionNotInContestError(str(question_id), str(contest_id))
+
+        submissions = await self.repository.get_submissions_by_team_and_question(
+            contest_team.id, question_id
+        )
+
+        return [StudentSubmissionResponse.model_validate(sub) for sub in submissions]
+
+    async def subscribe_submission_events(
+        self, contest_id: UUID, user_id: UUID
+    ) -> AsyncGenerator[ServerSentEvent, None]:
+        """
+        Subscribe to submission progress/status updates via Redis pubsub and yield them.
+        """
+        # Validate student eligibility, contest runtime status, session progress, and remaining time.
+        (
+            contest,
+            contest_team,
+            contest_team_member,
+        ) = await self._validate_session_and_get_contest(
+            contest_id=contest_id, user_id=user_id
+        )
+
+        pubsub = self.redis.pubsub()
+        channel = get_contest_channel_key(
+            contest_id, contest_team.team_id, contest_team_member.id
+        )
+        await pubsub.subscribe(channel)
+        logger.info(f"Subscribed to {channel}")
+
+        yield ServerSentEvent(comment="stream of contest lifecycle updates")
+
+        try:
+            while True:
+                message = await pubsub.get_message(
+                    ignore_subscribe_messages=True, timeout=15.0
+                )
+                if message:
+                    if message["type"] == "message":
+                        data = message["data"]
+                        if isinstance(data, bytes):
+                            data = data.decode("utf-8")
+                        logger.info(
+                            f"SSE event message received on channel {channel}: {data}"
+                        )
+                        try:
+                            event_dict = json.loads(data)
+                            event_type = event_dict.get("type", "message")
+                            yield ServerSentEvent(
+                                data=data,
+                                event=event_type,
+                            )
+                        except Exception as e:
+                            logger.error(
+                                f"Failed to parse SSE event from message data: {e}"
+                            )
+        except asyncio.CancelledError:
+            logger.info("SSE client disconnected")
+            raise
+        finally:
+            await pubsub.unsubscribe(channel)
+            await pubsub.close()
