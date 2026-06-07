@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 from fastapi.sse import ServerSentEvent
 from redis.asyncio import Redis
 
+from app.core.clients.celery import celery_app
 from app.core.logger import logger
 from app.exceptions.contest import (
     QuestionNotInContestError,
@@ -51,7 +52,6 @@ from app.utils.enums import (
 )
 from app.utils.key_builder import build_workspace_key, get_contest_channel_key
 from app.validators.contest_team import ContestTeamValidator
-from worker.evaluation import evaluate_submission
 
 
 class StudentContestQuestionService:
@@ -404,7 +404,10 @@ class StudentContestQuestionService:
         )
 
         # Trigger background evaluation task via Celery
-        evaluate_submission.delay(str(submission.id))
+        celery_app.send_task(
+            "worker.evaluation.evaluate_submission",
+            args=[str(submission.id)],
+        )
 
         return StudentSubmissionResponse.model_validate(submission)
 

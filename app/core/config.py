@@ -1,4 +1,5 @@
 from typing import Optional
+from urllib.parse import quote
 
 from dotenv import load_dotenv
 from pydantic import Field, field_validator
@@ -137,7 +138,9 @@ class Config(BaseSettings):
         if not self.REDIS_HOST:
             return "redis://localhost:6379/0"
 
-        password_part = f":{self.REDIS_PASSWORD}@" if self.REDIS_PASSWORD else ""
+        password_part = (
+            f":{quote(self.REDIS_PASSWORD, safe='')}@" if self.REDIS_PASSWORD else ""
+        )
         port = self.REDIS_PORT or 6379
         db = self.REDIS_DB or 0
         return f"redis://{password_part}{self.REDIS_HOST}:{port}/{db}"

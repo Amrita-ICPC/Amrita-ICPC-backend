@@ -94,7 +94,7 @@ class ContestValidator:
             )
         if registration_end > end_time:
             raise InvalidContestError(
-                "registration_end must be before or equal to contest start_time"
+                "registration_end must be before or equal to contest end_time"
             )
 
     @staticmethod
