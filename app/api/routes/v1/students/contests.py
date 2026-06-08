@@ -438,6 +438,34 @@ async def get_runtime_session(
     )
 
 
+@router.post(
+    "/{contest_id}/finish",
+    response_model=APIResponse[ContestTeamProgressResponse],
+    summary="Finish a contest session for a team",
+)
+async def finish_contest_session(
+    request: Request,
+    contest_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: StudentContestService = Depends(get_student_contest_service),
+):
+    """
+    Finish a contest session for a team.
+    """
+    result = await service.finish_contest_session(
+        contest_id=contest_id,
+        user_id=user_id,
+    )
+    logger.info(
+        f"Successfully finished session in contest {contest_id} by user {user_id}"
+    )
+    return create_api_response(
+        request,
+        data=result,
+        message="Contest session finished successfully",
+    )
+
+
 # @router.get(
 #     "/{contest_id}/events",
 #     summary="Get contest events stream (SSE) for students",

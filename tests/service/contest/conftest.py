@@ -29,7 +29,7 @@ from app.service.contest_service import ContestService
 from app.utils.enums import (
     ContestMode,
     ContestStatus,
-    ContestTeamParticpationType,
+    ContestTeamParticipationType,
     ScoringType,
     TeamApprovalMode,
     UserRole,
@@ -191,7 +191,7 @@ def mock_contest(user_id):
     contest.published_at = None
     contest.published_by = None
     contest.show_leaderboard_during_contest = False
-    contest.participation_type = ContestTeamParticpationType.LEADER_ONLY
+    contest.participation_type = ContestTeamParticipationType.LEADER_ONLY
     contest.is_deleted = False
     contest.deleted_at = None
     contest.deleted_by = None
