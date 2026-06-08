@@ -280,14 +280,17 @@ class StudentContestService:
 
         session_ended = False
         if already_started and active_progress:
-            base_end_time = active_progress.end_time
-            if base_end_time is not None:
-                _, remaining_seconds = calculate_effective_times(
-                    base_end_time=base_end_time,
-                    extra_time_seconds=extra_time,
-                )
-                if remaining_seconds <= 0:
-                    session_ended = True
+            if active_progress.ended_at is not None:
+                session_ended = True
+            else:
+                base_end_time = active_progress.end_time
+                if base_end_time is not None:
+                    _, remaining_seconds = calculate_effective_times(
+                        base_end_time=base_end_time,
+                        extra_time_seconds=extra_time,
+                    )
+                    if remaining_seconds <= 0:
+                        session_ended = True
 
         if is_draft:
             can_start = False
@@ -459,7 +462,7 @@ class StudentContestService:
             extra_time_seconds=contest_team_progress.extra_time_seconds,
         )
 
-        if remaining_seconds <= 0:
+        if remaining_seconds <= 0 or contest_team_progress.ended_at is not None:
             raise ContestSessionEndedError()
 
         contest_team_members = (
@@ -529,6 +532,127 @@ class StudentContestService:
         self, contest_id: UUID, user_id: UUID
     ) -> ContestTeamProgressResponse:
         return await self.get_contest_session(contest_id, user_id, is_start=False)
+
+    async def finish_contest_session(
+        self, contest_id: UUID, user_id: UUID
+    ) -> ContestTeamProgressResponse:
+        # Get the contest
+        contest = await self.contest_repository.get_contest_or_raise(contest_id)
+
+        # Get the contest_team_member by accepted status and contest ID
+        contest_team_member = (
+            await self.contest_team_repository.get_contest_team_member_by_user_id(
+                user_id=user_id,
+                status=ContestTeamMemberStatus.ACCEPTED,
+                team_status=TeamStatus.CONFIRMED,
+                approval_status=TeamApprovalStatus.APPROVED,
+                contest_id=contest_id,
+            )
+        )
+
+        if not contest_team_member:
+            raise NoContestTeamMemberFoundError()
+
+        # Check team status and approval
+        contest_team = contest_team_member.contest_team
+        ContestTeamValidator.validate_student_contest_team(contest_team, contest_id)
+
+        is_individual = (
+            contest.participation_type
+            == ContestTeamParticipationType.INDIVIDUAL_WORKSPACE
+        )
+        member_id_filter = contest_team_member.id if is_individual else None
+
+        # Get team progress record
+        contest_team_progress = (
+            await self.contest_team_progress_repository.get_contest_team_progress_by_id(
+                contest_id=contest_id,
+                contest_team_id=contest_team.id,
+                contest_team_member_id=member_id_filter,
+                for_update=True,
+            )
+        )
+
+        # Check permission constraints based on participation_type
+        if contest.participation_type == ContestTeamParticipationType.LEADER_ONLY:
+            self.contest_student_guard.check_is_contest_team_leader(
+                user_id=user_id, contest_team=contest_team
+            )
+
+        # Must be started to finish
+        if contest_team_progress is None:
+            raise ContestSessionNotStartedError()
+
+        # Check if already ended
+        if contest_team_progress.ended_at is not None:
+            raise ContestSessionEndedError()
+
+        # Set ended_at to now
+        now_utc = datetime.now(timezone.utc)
+        contest_team_progress.ended_at = now_utc
+        contest_team_progress.updated_at = now_utc
+
+        await self.contest_team_progress_repository.update_contest_team_progress(
+            contest_team_progress
+        )
+
+        # Fetch team members for building workspace response
+        contest_team_members = (
+            await self.contest_team_repository.get_contest_team_members(
+                contest_team_id=contest_team.id,
+                contest_team_member_status=[
+                    ContestTeamMemberStatus.ACCEPTED,
+                    ContestTeamMemberStatus.INVITED,
+                ],
+            )
+        )
+
+        session_status = build_session_status(
+            already_started=True,
+            started_at=contest_team_progress.created_at,
+            ended_at=contest_team_progress.ended_at,
+        )
+
+        runtime_state = build_runtime_state(
+            effective_end_time=contest_team_progress.end_time,
+            remaining_seconds=0,
+        )
+
+        if contest_team.leader_id is None:
+            raise AppBaseException(
+                message="Contest team has no leader assigned",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Contest team leader_id is None",
+            )
+
+        workspace = build_workspace(
+            contest_team_members=contest_team_members,
+            progress=contest_team_progress,
+            user_id=user_id,
+            participation_type=contest.participation_type,
+            leader_id=contest_team.leader_id,
+        )
+
+        team_progress = build_team_progress(
+            progress=contest_team_progress,
+        )
+
+        permissions = build_permissions(
+            remaining_seconds=0,
+            progress=contest_team_progress,
+            user_id=user_id,
+            participation_type=contest.participation_type,
+        )
+
+        return build_contest_session_response(
+            contest_id=contest_id,
+            contest_team_id=contest_team.id,
+            session=session_status,
+            runtime=runtime_state,
+            workspace=workspace,
+            team_progress=team_progress,
+            permissions=permissions,
+        )
 
     async def subscribe_contest_events(
         self, contest_id: UUID, user_id: UUID
