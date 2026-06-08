@@ -44,7 +44,7 @@ async def _run_evaluation(
     repo: Judge0Repository,
     final_source_code: str,
 ) -> EvaluationResult:
-    """Run sequential Judge0 evaluations and return the evaluation result."""
+    """Run concurrent Judge0 evaluations and return the evaluation result."""
     request_dto = Judge0ExecutionRequestDTO(
         question_id=str(submission.question_id),
         source_code=final_source_code,
@@ -58,53 +58,82 @@ async def _run_evaluation(
     testcase_results = []
     final_status = SubmissionStatus.AC
 
-    for testcase in testcases:
-        logger.info(f"Submitting testcase {testcase.id} to Judge0")
-        try:
-            # Submit to Judge0
-            submission_dto = await repo.submit_code(
-                request=request_dto,
-                stdin=testcase.input,
-                expected_output=testcase.output,
+    # 1. Submit all test cases to Judge0 in parallel
+    submit_tasks = [
+        repo.submit_code(
+            request=request_dto,
+            stdin=testcase.input,
+            expected_output=testcase.output,
+        )
+        for testcase in testcases
+    ]
+    submission_results = await asyncio.gather(*submit_tasks, return_exceptions=True)
+
+    # 2. Filter out failed submissions and build wait tasks
+    wait_tasks = []
+    for testcase, sub_res in zip(testcases, submission_results):
+        if isinstance(sub_res, Exception):
+            wait_tasks.append(None)
+        else:
+            wait_tasks.append(repo.wait_for_completion(sub_res.token))
+
+    # 3. Poll for completion of successfully submitted tasks in parallel
+    actual_wait_tasks = [t for t in wait_tasks if t is not None]
+    if actual_wait_tasks:
+        completed_results = await asyncio.gather(
+            *actual_wait_tasks, return_exceptions=True
+        )
+    else:
+        completed_results = []
+
+    # 4. Map completed results back to the original list order
+    completed_iter = iter(completed_results)
+    results = []
+    for sub_res, wait_task in zip(submission_results, wait_tasks):
+        if isinstance(sub_res, Exception):
+            results.append(sub_res)
+        elif wait_task is None:
+            results.append(Exception("Submission failed to initialize"))
+        else:
+            results.append(next(completed_iter))
+
+    # 5. Process all results and aggregate stats
+    for testcase, result in zip(testcases, results):
+        if isinstance(result, Exception):
+            logger.error(
+                f"Error evaluating testcase {testcase.id}: {result}", exc_info=True
             )
-
-            # Poll for completion sequentially
-
-            result = await repo.wait_for_completion(submission_dto.token)
-
-            logger.info(f"Code Result: {result}")
-            # Map status
-            status = JUDGE0_TO_SUBMISSION_STATUS.get(
-                result.status, SubmissionStatus.SYSTEM_ERROR
-            )
-
-            # Record stats
-            if result.time is not None:
-                total_time += result.time
-            if result.memory is not None:
-                max_memory = max(max_memory, result.memory)
-
-            # Create testcase record
-            stc = create_submission_testcase(submission.id, testcase, result, status)
-            testcase_results.append(stc)
-
-            if status == SubmissionStatus.AC:
-                passed_cases += 1
-            else:
-                final_status = status
-                break
-
-        except Exception as e:
-            logger.error(f"Error evaluating testcase {testcase.id}: {e}", exc_info=True)
             final_status = SubmissionStatus.SYSTEM_ERROR
             stc = SubmissionTestCase(
                 submission_id=submission.id,
                 testcase_id=testcase.id,
                 status=SubmissionStatus.SYSTEM_ERROR,
-                stderr=str(e),
+                stderr=str(result),
             )
             testcase_results.append(stc)
-            break
+            continue
+
+        logger.info(f"Code Result: {result}")
+        # Map status
+        status = JUDGE0_TO_SUBMISSION_STATUS.get(
+            result.status, SubmissionStatus.SYSTEM_ERROR
+        )
+
+        # Record stats
+        if result.time is not None:
+            total_time += result.time
+        if result.memory is not None:
+            max_memory = max(max_memory, result.memory)
+
+        # Create testcase record
+        stc = create_submission_testcase(submission.id, testcase, result, status)
+        testcase_results.append(stc)
+
+        if status == SubmissionStatus.AC:
+            passed_cases += 1
+        else:
+            if final_status == SubmissionStatus.AC:
+                final_status = status
 
     return EvaluationResult(
         status=final_status,
