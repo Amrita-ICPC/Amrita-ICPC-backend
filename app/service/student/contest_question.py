@@ -4,11 +4,13 @@ from datetime import datetime, timezone
 from typing import AsyncGenerator
 from uuid import UUID, uuid4
 
+from fastapi import status
 from fastapi.sse import ServerSentEvent
 from redis.asyncio import Redis
 
 from app.core.clients.celery import celery_app
 from app.core.logger import logger
+from app.exceptions.base import AppBaseException
 from app.exceptions.contest import (
     QuestionNotInContestError,
 )
@@ -360,7 +362,7 @@ class StudentContestQuestionService:
         """
         # Validate student eligibility, contest runtime status, session progress, and remaining time.
         (
-            _,
+            contest,
             contest_team,
             contest_team_member,
         ) = await self._validate_session_and_get_contest(
@@ -374,8 +376,28 @@ class StudentContestQuestionService:
         if not in_contest:
             raise QuestionNotInContestError(str(question_id), str(contest_id))
 
+        # If evaluate_on_submit is False, enforce only one submission is allowed
+        if not contest.evaluate_on_submit:
+            existing_submissions = (
+                await self.repository.get_submissions_by_team_and_question(
+                    contest_team.id, question_id
+                )
+            )
+            if len(existing_submissions) > 0:
+                raise AppBaseException(
+                    message="Only one submission is allowed for this question in this contest.",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+
         # Retrieve test cases to count total test cases
         testcases = await self.testcase_repository.get_all_by_question(question_id)
+
+        # Set submission status based on evaluate_on_submit
+        submission_status = (
+            SubmissionStatus.QUEUED
+            if contest.evaluate_on_submit
+            else SubmissionStatus.PENDING
+        )
 
         # Create submission record
         submission = Submission(
@@ -383,7 +405,7 @@ class StudentContestQuestionService:
             question_id=question_id,
             source_code=code,
             language_id=language_id,
-            status=SubmissionStatus.QUEUED,
+            status=submission_status,
             score=0,
             passed_testcases=0,
             total_testcases=len(testcases),
@@ -403,11 +425,12 @@ class StudentContestQuestionService:
             submission=submission, contest_submission=contest_submission
         )
 
-        # Trigger background evaluation task via Celery
-        celery_app.send_task(
-            "worker.evaluation.evaluate_submission",
-            args=[str(submission.id)],
-        )
+        # Trigger background evaluation task via Celery only if evaluate_on_submit is True
+        if contest.evaluate_on_submit:
+            celery_app.send_task(
+                "worker.evaluation.evaluate_submission",
+                args=[str(submission.id)],
+            )
 
         return StudentSubmissionResponse.model_validate(submission)
 

@@ -75,6 +75,7 @@ class CreateContestData:
     duration: int | None
     show_leaderboard_during_contest: bool
     participation_type: ContestTeamParticipationType
+    evaluate_on_submit: bool
 
 
 @dataclass
@@ -105,6 +106,7 @@ class UpdateContestData:
     duration: int | None | _UnsetType = UNSET
     show_leaderboard_during_contest: bool | None | _UnsetType = UNSET
     participation_type: ContestTeamParticipationType | None | _UnsetType = UNSET
+    evaluate_on_submit: bool | None | _UnsetType = UNSET
 
 
 @dataclass

@@ -431,6 +431,7 @@ def build_session_status(
 def build_contest_session_response(
     contest_id: UUID,
     contest_team_id: UUID,
+    evaluate_on_submit: bool,
     session: ContestSessionStatus,
     runtime: ContestRuntimeDetails,
     workspace: WorkspaceDetails,
@@ -440,6 +441,7 @@ def build_contest_session_response(
     return ContestTeamProgressResponse(
         contest_id=contest_id,
         contest_team_id=contest_team_id,
+        evaluate_on_submit=evaluate_on_submit,
         session=session,
         runtime=runtime,
         workspace=workspace,

@@ -135,6 +135,8 @@ class Contest(Base):
         Boolean, default=False
     )
 
+    evaluate_on_submit: Mapped[bool] = mapped_column(Boolean, default=True)
+
     participation_type: Mapped[ContestTeamParticipationType] = mapped_column(
         "participation_type",
         Enum(ContestTeamParticipationType, name="contest_team_participation_type"),

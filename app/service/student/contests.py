@@ -516,6 +516,7 @@ class StudentContestService:
         return build_contest_session_response(
             contest_id=contest_id,
             contest_team_id=contest_team.id,
+            evaluate_on_submit=contest.evaluate_on_submit,
             session=session_status,
             runtime=runtime_state,
             workspace=workspace,
@@ -647,6 +648,7 @@ class StudentContestService:
         return build_contest_session_response(
             contest_id=contest_id,
             contest_team_id=contest_team.id,
+            evaluate_on_submit=contest.evaluate_on_submit,
             session=session_status,
             runtime=runtime_state,
             workspace=workspace,
