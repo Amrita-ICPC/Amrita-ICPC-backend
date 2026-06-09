@@ -161,6 +161,9 @@ class ContestTeamProgressResponse(BaseModel):
 
     contest_id: UUID = Field(..., description="The UUID of the contest")
     contest_team_id: UUID = Field(..., description="The UUID of the contest team")
+    evaluate_on_submit: bool = Field(
+        ..., description="Whether to evaluate submissions immediately on submit"
+    )
     session: ContestSessionStatus = Field(..., description="Active session details")
     runtime: ContestRuntimeDetails = Field(
         ..., description="Current runtime and timer state"

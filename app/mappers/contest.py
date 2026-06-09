@@ -39,6 +39,7 @@ def build_create_contest_dto(
         duration=contest.duration,
         show_leaderboard_during_contest=contest.show_leaderboard_during_contest,
         participation_type=contest.participation_type,
+        evaluate_on_submit=contest.evaluate_on_submit,
     )
 
 
@@ -88,6 +89,11 @@ def build_update_contest_dto(contest_data: ContestUpdate) -> UpdateContestData:
         participation_type=(
             contest_data.participation_type
             if "participation_type" in fields_set
+            else UNSET
+        ),
+        evaluate_on_submit=(
+            contest_data.evaluate_on_submit
+            if "evaluate_on_submit" in fields_set
             else UNSET
         ),
     )
@@ -150,6 +156,7 @@ def to_contest_response(
         duration=contest.duration,
         show_leaderboard_during_contest=contest.show_leaderboard_during_contest,
         participation_type=contest.participation_type,
+        evaluate_on_submit=contest.evaluate_on_submit,
     )
 
     return response
@@ -175,6 +182,7 @@ def to_contest_summary_response(
         duration=contest.duration,
         show_leaderboard_during_contest=contest.show_leaderboard_during_contest,
         participation_type=contest.participation_type,
+        evaluate_on_submit=contest.evaluate_on_submit,
         audiences=[
             ContestAudienceResponse.model_validate(link.audience)
             for link in contest.audience_links
@@ -208,6 +216,7 @@ def build_contest_entity(contest_data: CreateContestData) -> Contest:
         duration=contest_data.duration,
         show_leaderboard_during_contest=contest_data.show_leaderboard_during_contest,
         participation_type=contest_data.participation_type,
+        evaluate_on_submit=contest_data.evaluate_on_submit,
     )
 
 

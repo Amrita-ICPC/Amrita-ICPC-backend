@@ -305,6 +305,7 @@ class SubmissionStatus(str, enum.Enum):
     during online judging.
 
     Attributes:
+        PENDING: Submission is just saved in the database later it will be moved to queue
         QUEUED: Submission is accepted by the system and waiting to be judged.
         RUNNING: Submission is currently being compiled or executed.
         AC: Accepted; all test cases passed.
@@ -314,6 +315,7 @@ class SubmissionStatus(str, enum.Enum):
         CE: Compilation Error prevented execution.
     """
 
+    PENDING = "PENDING"
     QUEUED = "QUEUED"
     RUNNING = "RUNNING"
     SYSTEM_ERROR = "SYSTEM_ERROR"

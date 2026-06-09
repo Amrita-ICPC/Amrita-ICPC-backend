@@ -56,6 +56,10 @@ class ContestBase(BaseModel):
         default=ContestTeamParticipationType.LEADER_ONLY,
         description="Participation type for team contests",
     )
+    evaluate_on_submit: bool = Field(
+        default=True,
+        description="Whether to evaluate submissions immediately on submit",
+    )
 
     @model_validator(mode="after")
     def validate_dates(self):
@@ -125,6 +129,9 @@ class ContestUpdate(BaseModel):
     participation_type: Optional[ContestTeamParticipationType] = Field(
         None, description="Participation type for team contests"
     )
+    evaluate_on_submit: Optional[bool] = Field(
+        None, description="Whether to evaluate submissions immediately on submit"
+    )
 
     @model_validator(mode="after")
     def validate_dates(self):
@@ -178,6 +185,9 @@ class ContestSummaryResponse(BaseModel):
     )
     participation_type: ContestTeamParticipationType = Field(
         ..., description="Participation type for team contests"
+    )
+    evaluate_on_submit: bool = Field(
+        ..., description="Whether to evaluate submissions immediately on submit"
     )
     audiences: list[ContestAudienceResponse] = Field(
         default_factory=list, description="List of audiences linked to this contest"
