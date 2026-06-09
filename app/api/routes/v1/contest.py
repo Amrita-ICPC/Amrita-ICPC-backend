@@ -21,6 +21,7 @@ from app.repositories.bank import BankRepository
 from app.repositories.contest import ContestRepository
 from app.repositories.language import LanguageRepository
 from app.repositories.question import QuestionRepository
+from app.repositories.submission import ContestSubmissionRepository
 from app.repositories.team import TeamRepository
 from app.repositories.user import UserRepository
 from app.schema.base import APIResponse
@@ -45,6 +46,8 @@ from app.schema.question import (
     QuestionResponse,
     QuestionUpdate,
 )
+from app.schema.submission import ContestDashboardResponse
+from app.service.contest_dashboard_service import ContestDashboardService
 from app.service.contest_event_publish import ContestEventPublisher
 from app.service.contest_question_service import ContestQuestionService
 from app.service.contest_service import ContestService
@@ -111,6 +114,20 @@ def get_contest_question_service(
         question_repository,
         language_repository,
         bank_repository,
+    )
+
+
+def get_contest_dashboard_service(
+    db: AsyncSession = Depends(get_db),
+) -> ContestDashboardService:
+    """Dependency injector for ContestDashboardService."""
+    contest_repository = ContestRepository(db)
+    submission_repository = ContestSubmissionRepository(db)
+    guard = ContestOperationGuard(db)
+    return ContestDashboardService(
+        contest_repository=contest_repository,
+        submission_repository=submission_repository,
+        guard=guard,
     )
 
 
@@ -307,6 +324,34 @@ async def get_contest(
     contest = await service.get_contest_by_id(contest_id, user_id)
     return create_api_response(
         request, data=contest, message="Contest fetched successfully"
+    )
+
+
+@router.get(
+    "/{contest_id}/dashboard",
+    response_model=APIResponse[ContestDashboardResponse],
+    summary="Get contest submission dashboard analytics",
+    dependencies=[can_read("contests")],
+)
+async def get_contest_dashboard(
+    request: Request,
+    contest_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: ContestDashboardService = Depends(get_contest_dashboard_service),
+):
+    """
+    Get the contest submission dashboard and aggregate analytics.
+
+    Only accessible by the contest creator, assigned instructors, or administrators.
+    """
+    result = await service.get_dashboard_analytics(
+        contest_id=contest_id, user_id=user_id
+    )
+    logger.info(f"Successfully retrieved dashboard analytics for contest: {contest_id}")
+    return create_api_response(
+        request,
+        data=result,
+        message="Contest dashboard analytics retrieved successfully",
     )
 
 

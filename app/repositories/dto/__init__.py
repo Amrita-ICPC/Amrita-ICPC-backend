@@ -34,6 +34,13 @@ from app.repositories.dto.student import (
     StudentTeamRegistrationData,
     StudentTestCaseRunResultDTO,
 )
+from app.repositories.dto.submission import (
+    ContestAnalyticsRaw,
+    ContestDashboardRawData,
+    ProblemHealthRaw,
+    RecentSubmissionRaw,
+    TeamPerformanceRaw,
+)
 from app.repositories.dto.team import CreateTeamData, TeamFilters, UpdateTeamData
 from app.repositories.dto.user import UserListFilters
 
@@ -75,4 +82,10 @@ __all__ = [
     # User DTOs
     "UserListFilters",
     "UNSET",
+    # Submission DTOs
+    "ContestAnalyticsRaw",
+    "ContestDashboardRawData",
+    "ProblemHealthRaw",
+    "RecentSubmissionRaw",
+    "TeamPerformanceRaw",
 ]
