@@ -1,8 +1,13 @@
 """Celery configuration and application setup."""
 
+import asyncio
+
 from celery import Celery  # type: ignore[import-untyped]
 from celery.signals import worker_process_init, worker_process_shutdown
 
+from app.core.clients.database import engine
+from app.core.clients.judge0 import init_judge0
+from app.core.clients.redis import init_redis
 from app.core.config import config
 from app.core.logger import logger
 
@@ -29,11 +34,6 @@ celery_app.conf.update(
 @worker_process_init.connect
 def init_worker_process(**kwargs):
     """Initialize async clients in the worker process."""
-    import asyncio
-
-    from app.core.clients.database import engine
-    from app.core.clients.judge0 import init_judge0
-    from app.core.clients.redis import init_redis
 
     # Dispose of the engine connection pool inherited from the parent process
     # so each worker creates its own pool bound to its own event loop.
