@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from typing import Any, Dict
 from uuid import UUID
 
@@ -7,6 +5,8 @@ from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import (
+    can_create,
+    can_read,
     get_current_user,
     get_current_user_id,
     get_user_groups,
@@ -56,7 +56,7 @@ def get_audience_service(db: AsyncSession = Depends(get_db)) -> AudienceService:
     response_model=APIResponse[AudienceResponse],
     status_code=status.HTTP_201_CREATED,
     summary="Create an audience",
-    dependencies=[Depends(require_admin)],
+    dependencies=[can_create("audiences"), Depends(require_admin)],
 )
 async def create_audience(
     request: Request,
@@ -97,7 +97,7 @@ async def create_audience(
     "/",
     response_model=APIResponse[list[AudienceResponse]],
     summary="List audiences",
-    dependencies=[Depends(require_admin)],
+    dependencies=[can_read("audiences"), Depends(require_admin)],
 )
 async def list_audiences(
     request: Request,

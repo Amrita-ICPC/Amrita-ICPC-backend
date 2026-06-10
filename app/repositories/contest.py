@@ -1054,19 +1054,3 @@ class ContestRepository:
             .order_by(ContestQuestion.order.asc())
         )
         return list(result.unique().scalars().all())
-
-    async def cancel_contest(self, contest: Contest, user_id: UUID) -> Contest:
-        """
-        Cancel a contest.
-
-        Args:
-            contest: Contest ORM object
-            user_id: ID of the user cancelling the contest
-
-        Returns:
-            The cancelled Contest object
-        """
-        contest.status = ContestStatus.CANCELLED
-        contest.updated_by = user_id
-        await self.db.flush()
-        return contest

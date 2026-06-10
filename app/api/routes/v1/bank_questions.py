@@ -3,7 +3,13 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import can_read, can_update, get_current_user_id
+from app.auth.dependencies import (
+    can_create,
+    can_delete,
+    can_read,
+    can_update,
+    get_current_user_id,
+)
 from app.core.clients.database import get_db
 from app.core.logger import logger
 from app.core.response import create_api_response
@@ -54,7 +60,7 @@ def get_bank_question_service(
 @router.post(
     "/{bank_id}/questions",
     status_code=status.HTTP_201_CREATED,
-    dependencies=[can_update("banks")],
+    dependencies=[can_update("banks"), can_create("banks:questions")],
 )
 async def add_questions_to_bank(
     request: Request,
@@ -93,7 +99,7 @@ async def add_questions_to_bank(
 @router.delete(
     "/{bank_id}/questions",
     status_code=status.HTTP_200_OK,
-    dependencies=[can_update("banks")],
+    dependencies=[can_update("banks"), can_delete("banks:questions")],
 )
 async def remove_questions_from_bank(
     request: Request,
@@ -129,7 +135,11 @@ async def remove_questions_from_bank(
 @router.post(
     "/{source_bank_id}/questions/clone",
     status_code=status.HTTP_201_CREATED,
-    dependencies=[can_update("banks"), can_read("banks")],
+    dependencies=[
+        can_update("banks"),
+        can_read("banks"),
+        can_create("banks:questions"),
+    ],
 )
 async def clone_questions_between_banks(
     request: Request,
@@ -247,7 +257,7 @@ async def get_bank_questions(
 @router.get(
     "/{bank_id}/questions/{question_id}",
     status_code=status.HTTP_200_OK,
-    dependencies=[can_read("banks")],
+    dependencies=[can_read("banks"), can_read("banks:questions")],
 )
 async def get_bank_question(
     request: Request,
@@ -286,7 +296,7 @@ async def get_bank_question(
 @router.put(
     "/{bank_id}/questions/{question_id}",
     status_code=status.HTTP_200_OK,
-    dependencies=[can_update("banks")],
+    dependencies=[can_update("banks:questions")],
 )
 async def update_bank_question(
     request: Request,

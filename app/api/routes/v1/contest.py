@@ -9,6 +9,7 @@ from app.auth.dependencies import (
     can_delete,
     can_read,
     can_update,
+    check_permission,
     get_current_user_id,
 )
 from app.core.clients.database import get_db
@@ -359,7 +360,7 @@ async def get_contest_dashboard(
     "/{contest_id}/questions",
     response_model=APIResponse[ContestQuestionsListResponse],
     summary="Get contest questions",
-    dependencies=[can_read("contests")],
+    dependencies=[can_read("contests"), can_read("contests:questions")],
 )
 async def get_contest_questions(
     request: Request,
@@ -432,7 +433,7 @@ async def get_contest_questions(
     "/{contest_id}/questions/{question_id}",
     response_model=APIResponse[QuestionResponse],
     summary="Get contest question by ID",
-    dependencies=[can_read("contests")],
+    dependencies=[can_read("contests"), can_read("contests:questions")],
 )
 async def get_contest_question(
     request: Request,
@@ -514,7 +515,10 @@ async def update_contest(
     response_model=APIResponse,
     status_code=status.HTTP_200_OK,
     summary="Publish contest",
-    dependencies=[can_update("contests")],
+    dependencies=[
+        can_update("contests"),
+        Depends(check_permission("contests", "publish")),
+    ],
 )
 async def publish_contest(
     request: Request,
@@ -679,7 +683,10 @@ async def restore_contest(
     response_model=APIResponse,
     status_code=status.HTTP_200_OK,
     summary="Assign instructors to contest",
-    dependencies=[can_update("contests")],
+    dependencies=[
+        can_update("contests"),
+        Depends(check_permission("contests", "manamge_instructors")),
+    ],
 )
 async def assign_instructors_to_contest(
     request: Request,
@@ -727,7 +734,10 @@ async def assign_instructors_to_contest(
     response_model=APIResponse,
     status_code=status.HTTP_200_OK,
     summary="Remove instructors from contest",
-    dependencies=[can_update("contests")],
+    dependencies=[
+        can_update("contests"),
+        Depends(check_permission("contests", "manage_instructors")),
+    ],
 )
 async def remove_instructors_from_contest(
     request: Request,
@@ -775,7 +785,7 @@ async def remove_instructors_from_contest(
     "/{contest_id}/instructors",
     response_model=APIResponse[list[InstructorResponse]],
     summary="Get contest instructors",
-    dependencies=[can_read("contests")],
+    dependencies=[can_read("contests"), can_read("contests:instructors")],
 )
 async def get_contest_instructors(
     request: Request,
@@ -829,7 +839,7 @@ async def get_contest_instructors(
     response_model=APIResponse[list[ContestQuestionResponse]],
     status_code=status.HTTP_201_CREATED,
     summary="Add questions to contest",
-    dependencies=[can_update("contests")],
+    dependencies=[can_update("contests"), can_create("contests:questions")],
 )
 async def add_question_to_contest(
     request: Request,
@@ -883,7 +893,7 @@ async def add_question_to_contest(
     response_model=APIResponse[None],
     status_code=status.HTTP_200_OK,
     summary="Remove questions from contest",
-    dependencies=[can_update("contests")],
+    dependencies=[can_update("contests"), can_delete("contests:questions")],
 )
 async def remove_question_from_contest(
     request: Request,
@@ -929,7 +939,7 @@ async def remove_question_from_contest(
     "/{contest_id}/questions/reorder",
     response_model=APIResponse[MessageResponse],
     summary="Reorder contest questions",
-    dependencies=[can_update("contests")],
+    dependencies=[can_update("contests:questions")],
 )
 async def reorder_contest_questions(
     request: Request,
@@ -966,7 +976,7 @@ async def reorder_contest_questions(
     response_model=APIResponse[list[ContestQuestionResponse]],
     status_code=status.HTTP_201_CREATED,
     summary="Clone questions from a bank into a contest",
-    dependencies=[can_update("contests")],
+    dependencies=[can_create("contests:questions")],
 )
 async def clone_questions_from_bank(
     request: Request,
@@ -1123,7 +1133,7 @@ async def get_contest_audiences(
     response_model=APIResponse[QuestionResponse],
     status_code=status.HTTP_200_OK,
     summary="Comprehensive update of a contest question",
-    dependencies=[can_update("contests")],
+    dependencies=[can_update("contests:questions")],
 )
 async def update_contest_question(
     request: Request,
@@ -1168,6 +1178,7 @@ async def update_contest_question(
     response_model=APIResponse,
     status_code=status.HTTP_200_OK,
     summary="Cancel a contest",
+    dependencies=[Depends(check_permission("contests", "cancel"))],
 )
 async def cancel_contest(
     request: Request,
