@@ -857,7 +857,8 @@ class ContestService:
         # Remove validator logic checking runtime
         # Set contest status to cancelled
         now = datetime.now(timezone.utc)
-        await self.repository.cancel_contest(contest, user_id)
+        contest.status = ContestStatus.CANCELLED
+        await self.repository.update_contest(contest, user_id)
 
         if self.event_publisher:
             event = ContestEvent(
