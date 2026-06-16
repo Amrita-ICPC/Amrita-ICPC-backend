@@ -185,7 +185,7 @@ async def test_get_contest_question_returns_question_response(
         )
 
     assert result == mapped_response
-    mock_guard.check_manage_contest.assert_called_once_with(
+    mock_guard.check_read_contest.assert_called_once_with(
         user_id=user_id,
         contest=mock_contest,
     )

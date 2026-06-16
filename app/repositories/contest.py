@@ -21,6 +21,7 @@ from app.models.contest import (
     Contest,
     ContestInstructor,
     ContestQuestion,
+    ContestSubmission,
 )
 from app.models.question import Question, QuestionLanguage, Submission
 from app.models.tag import QuestionTag, Tag
@@ -210,6 +211,22 @@ class ContestRepository:
             .filter(ContestQuestion.contest_id == contest_id)
         )
         return int(result.scalar() or 0)
+
+    async def get_submissions_in_contest(self, contest_id: UUID) -> list[Submission]:
+        """Retrieve all submissions linked to a contest.
+
+        Args:
+            contest_id: Contest identifier.
+
+        Returns:
+            list[Submission]: List of submissions for the contest.
+        """
+        result = await self.db.execute(
+            select(Submission)
+            .join(ContestSubmission, ContestSubmission.submission_id == Submission.id)
+            .where(ContestSubmission.contest_id == contest_id)
+        )
+        return list(result.scalars().all())
 
     # TODO: Update the filters with factory and builder design pattern
 

@@ -116,10 +116,16 @@ class TestRestoreContestSuccess:
         user_id,
     ):
         """Test that restore operation restores deleted contest."""
-        mock_contest.is_deleted = True
+        from datetime import datetime, timedelta, timezone
+
+        from app.utils.enums import ContestStatus
+
+        mock_contest.status = ContestStatus.DELETED
         restored_contest = MagicMock()
         restored_contest.id = mock_contest.id
-        restored_contest.is_deleted = False
+        restored_contest.status = ContestStatus.DRAFT
+        restored_contest.start_time = datetime.now(timezone.utc)
+        restored_contest.end_time = datetime.now(timezone.utc) + timedelta(days=1)
         mock_contest_repository.restore_contest.return_value = restored_contest
 
         with patch.object(ContestResponse, "model_validate"):

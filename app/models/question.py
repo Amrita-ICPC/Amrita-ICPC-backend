@@ -174,13 +174,9 @@ class Submission(Base):
     source_code: Mapped[str] = mapped_column(Text, nullable=False)
     language_id: Mapped[int] = mapped_column(ForeignKey("language.id"), nullable=False)
 
-    status: Mapped[SubmissionStatus] = mapped_column(
-        SUBMISSION_STATUS_ENUM, default=SubmissionStatus.QUEUED
-    )
+    is_evaluated: Mapped[bool] = mapped_column(Boolean, default=False)
 
     score: Mapped[int] = mapped_column(Integer, default=0)
-    passed_testcases: Mapped[int] = mapped_column(Integer, default=0)
-    total_testcases: Mapped[int] = mapped_column(Integer, default=0)
 
     total_time: Mapped[int | None] = mapped_column(Integer)
     total_memory: Mapped[int | None] = mapped_column(Integer)
@@ -193,12 +189,51 @@ class Submission(Base):
         "SubmissionTestCase", back_populates="submission", cascade="all, delete-orphan"
     )
     language: Mapped[Language] = relationship("Language", back_populates="submissions")
+    question: Mapped[Question] = relationship("Question")
     contest_submission = relationship(
         "ContestSubmission",
         back_populates="submission",
         uselist=False,
         cascade="all, delete-orphan",
     )
+
+    @property
+    def status(self) -> SubmissionStatus | None:
+        if not self.is_evaluated:
+            return None
+        if not self.testcases:
+            return SubmissionStatus.SYSTEM_ERROR
+        for tc in self.testcases:
+            if tc.status != SubmissionStatus.AC:
+                return tc.status
+        return SubmissionStatus.AC
+
+    @property
+    def passed_testcases(self) -> int:
+        if hasattr(self, "_passed_testcases"):
+            return self._passed_testcases
+        if not self.is_evaluated or not self.testcases:
+            return 0
+        return sum(1 for tc in self.testcases if tc.status == SubmissionStatus.AC)
+
+    @passed_testcases.setter
+    def passed_testcases(self, value: int) -> None:
+        self._passed_testcases = value
+
+    @property
+    def total_testcases(self) -> int:
+        if hasattr(self, "_total_testcases"):
+            return self._total_testcases
+        if self.is_evaluated:
+            return len(self.testcases)
+        try:
+            return len(self.question.testcases)
+        except Exception:
+            return 0
+
+    @total_testcases.setter
+    def total_testcases(self, value: int) -> None:
+        self._total_testcases = value
 
 
 class SubmissionTestCase(Base):
@@ -215,8 +250,8 @@ class SubmissionTestCase(Base):
         ForeignKey("testcase.id"), nullable=False
     )
 
-    status: Mapped[SubmissionStatus] = mapped_column(
-        SUBMISSION_STATUS_ENUM, nullable=False
+    status: Mapped[SubmissionStatus | None] = mapped_column(
+        SUBMISSION_STATUS_ENUM, nullable=True
     )
     stdout: Mapped[str | None] = mapped_column(Text)
     stderr: Mapped[str | None] = mapped_column(Text)

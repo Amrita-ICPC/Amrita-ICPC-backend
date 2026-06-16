@@ -22,7 +22,6 @@ from app.service.student.contest_question import StudentContestQuestionService
 from app.service.student.workspace import WorkspaceService
 from app.utils.enums import (
     ContestTeamParticipationType,
-    SubmissionStatus,
     TeamApprovalStatus,
     TeamStatus,
 )
@@ -162,8 +161,10 @@ async def test_submit_code_success(
 
     from unittest.mock import patch
 
-    # Call submit_code and mock evaluate_submission.delay
-    with patch("worker.evaluation.evaluate_submission.delay") as mock_delay:
+    # Call submit_code and mock celery_app.send_task
+    with patch(
+        "app.service.student.contest_question.celery_app.send_task"
+    ) as mock_send_task:
         response = await contest_question_service.submit_code(
             contest_id=contest_id,
             question_id=question_id,
@@ -176,12 +177,15 @@ async def test_submit_code_success(
         assert isinstance(response, StudentSubmissionResponse)
         assert response.question_id == question_id
         assert response.language_id == language_id
-        assert response.status == SubmissionStatus.QUEUED
+        assert response.status is None
         assert response.total_testcases == 2
         assert mock_submission is not None
         assert mock_submission.source_code == code
         mock_question_repository.create_submission.assert_called_once()
-        mock_delay.assert_called_once_with(str(mock_submission.id))
+        mock_send_task.assert_called_once_with(
+            "worker.evaluation.evaluate_submission",
+            args=[str(mock_submission.id)],
+        )
 
 
 @pytest.mark.asyncio

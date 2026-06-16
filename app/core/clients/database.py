@@ -1,5 +1,9 @@
+import asyncio
+
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+import app.models  # noqa: F401
 from app.core.config import config
 from app.core.logger import logger
 
@@ -31,14 +35,12 @@ async def init_db():
     """
     if config.ENVIRONMENT == "development":
         logger.info("Initializing database...")
-        if config.MIGRATIONS_ENABLED:
-            logger.info("Migrations enabled; creating tables via metadata.")
-            async with engine.begin() as conn:
-                await conn.run_sync(Base.metadata.create_all)
+        logger.info("Migrations enabled; creating tables via metadata.")
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+            # await drop_db()
 
             logger.info("Database tables created successfully.")
-        else:
-            logger.warning("Migrations disabled; skipping metadata schema sync.")
 
 
 async def get_db():
@@ -52,3 +54,29 @@ async def get_db():
         except Exception:
             await db.rollback()
             raise
+
+
+async def drop_db() -> None:
+    """
+    Drop all database tables dynamically with CASCADE.
+    Only allowed in development environment.
+    """
+    if config.ENVIRONMENT != "development":
+        logger.warning("Drop DB operation is only allowed in development environment.")
+        return
+
+    logger.info("Dropping database tables...")
+    async with engine.begin() as conn:
+        for table in reversed(Base.metadata.sorted_tables):
+            await conn.execute(text(f"DROP TABLE IF EXISTS {table.name} CASCADE;"))
+            logger.info(f"Dropped table {table.name} (CASCADE).")
+    logger.info("Database tables dropped successfully.")
+
+
+if __name__ == "__main__":
+
+    async def main() -> None:
+        await drop_db()
+
+    asyncio.run(main())
+    asyncio.run(main())

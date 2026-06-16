@@ -68,6 +68,7 @@ class StudentContestQuestionRepository:
         stmt = (
             select(Submission)
             .join(ContestSubmission, ContestSubmission.submission_id == Submission.id)
+            .options(selectinload(Submission.testcases))
             .where(
                 ContestSubmission.contest_team_id == contest_team_id,
                 Submission.question_id == question_id,
