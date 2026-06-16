@@ -25,8 +25,8 @@ class StudentSubmissionResponse(BaseModel):
     id: UUID = Field(..., description="The unique ID of the submission")
     question_id: UUID = Field(..., description="The ID of the question submitted for")
     language_id: int = Field(..., description="Judge0 language ID used")
-    status: SubmissionStatus = Field(
-        ..., description="The current status of the submission"
+    status: SubmissionStatus | None = Field(
+        None, description="The current status of the submission"
     )
     score: int = Field(..., description="Score achieved on this submission")
     passed_testcases: int = Field(..., description="Number of passed test cases")

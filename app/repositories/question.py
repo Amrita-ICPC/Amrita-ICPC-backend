@@ -18,7 +18,6 @@ from app.models.question import Question, QuestionLanguage, QuestionTemplate, Su
 from app.models.tag import QuestionTag
 from app.models.team import TeamUser
 from app.repositories.dto.evaluation import EvaluationResult
-from app.utils.enums import SubmissionStatus
 
 
 class QuestionRepository:
@@ -286,32 +285,41 @@ class QuestionRepository:
             .options(
                 selectinload(Submission.contest_submission).selectinload(
                     ContestSubmission.contest_team
-                )
+                ),
+                selectinload(Submission.testcases),
             )
             .where(Submission.id == submission_id)
         )
         return result.scalar_one_or_none()
 
-    async def mark_submission_running(self, submission: Submission) -> None:
-        """Mark a submission as running."""
-        submission.status = SubmissionStatus.RUNNING
-        await self.db.flush()
+    async def get_contest_question_score(
+        self, contest_id: UUID, question_id: UUID
+    ) -> int | None:
+        """
+        Get the configured score for a question within a contest.
+
+        Args:
+            contest_id: ID of the contest.
+            question_id: ID of the question.
+
+        Returns:
+            The score of the question in the contest, or None if not found.
+        """
+        result = await self.db.execute(
+            select(ContestQuestion.score).where(
+                ContestQuestion.contest_id == contest_id,
+                ContestQuestion.question_id == question_id,
+            )
+        )
+        return result.scalar_one_or_none()
 
     async def complete_submission(
         self, submission: Submission, result: EvaluationResult
     ) -> None:
         """Complete a submission with the evaluation result."""
-        submission.status = result.status
-        submission.passed_testcases = result.passed_testcases
-        submission.total_testcases = result.total_testcases
+        submission.is_evaluated = True
         submission.total_time = result.total_time
         submission.total_memory = result.total_memory
-
-        if (
-            result.passed_testcases == result.total_testcases
-            and result.total_testcases > 0
-        ):
-            submission.score = 100
 
         self.db.add_all(result.testcase_results)
         await self.db.flush()

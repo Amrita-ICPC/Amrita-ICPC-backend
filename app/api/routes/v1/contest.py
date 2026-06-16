@@ -20,6 +20,7 @@ from app.core.response import create_api_response
 from app.repositories.audience import AudienceRepository
 from app.repositories.bank import BankRepository
 from app.repositories.contest import ContestRepository
+from app.repositories.evaluation import EvaluationRepository
 from app.repositories.language import LanguageRepository
 from app.repositories.question import QuestionRepository
 from app.repositories.submission import ContestSubmissionRepository
@@ -42,6 +43,7 @@ from app.schema.contest import (
     RemoveContestQuestionRequest,
     ReorderContestQuestionsRequest,
 )
+from app.schema.evaluation import EvaluationResponse, EvaluationStatusResponse
 from app.schema.question import (
     ContestQuestionsListResponse,
     QuestionResponse,
@@ -87,6 +89,7 @@ def get_contest_service(
     guard = ContestOperationGuard(db)
     validator = ContestValidator()
     event_publisher = ContestEventPublisher(redis_client)
+    evaluation_repository = EvaluationRepository(db)
     return ContestService(
         repository=contest_repository,
         user_repository=user_repository,
@@ -95,6 +98,8 @@ def get_contest_service(
         audience_repository=audience_repository,
         team_repository=team_repository,
         event_publisher=event_publisher,
+        evaluation_repository=evaluation_repository,
+        redis=redis_client,
     )
 
 
@@ -1195,4 +1200,78 @@ async def cancel_contest(
         request,
         data=None,
         message="Contest cancelled successfully",
+    )
+
+
+@router.post(
+    "/{contest_id}/evaluation",
+    response_model=APIResponse[EvaluationResponse],
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Trigger contest evaluation",
+    dependencies=[can_update("contests")],
+)
+async def evaluate_contest(
+    request: Request,
+    contest_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: ContestService = Depends(get_contest_service),
+) -> APIResponse[EvaluationResponse]:
+    """Trigger re-evaluation of all submissions in a contest.
+
+    Args:
+        request (Request): Framework context.
+        contest_id (UUID): The unique identifier of the contest.
+        user_id (UUID): Authenticated user ID.
+        service (ContestService): Injected domain service.
+
+    Returns:
+        APIResponse[EvaluationResponse]: The created evaluation process state.
+    """
+    evaluation = await service.evaluate_contest(contest_id, user_id)
+    logger.info(f"Contest evaluation triggered for {contest_id} by user {user_id}")
+    return create_api_response(
+        request,
+        data=evaluation,
+        message="Contest evaluation triggered successfully",
+        status_code=status.HTTP_202_ACCEPTED,
+    )
+
+
+@router.get(
+    "/{contest_id}/evaluation/{evaluation_id}",
+    response_model=APIResponse[EvaluationStatusResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Get contest evaluation status",
+    dependencies=[can_update("contests")],
+)
+async def get_evaluation_status(
+    request: Request,
+    contest_id: UUID,
+    evaluation_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: ContestService = Depends(get_contest_service),
+) -> APIResponse[EvaluationStatusResponse]:
+    """Get the status of a contest evaluation process.
+
+    Args:
+        request (Request): Framework context.
+        contest_id (UUID): The unique identifier of the contest.
+        evaluation_id (UUID): The unique identifier of the evaluation record.
+        user_id (UUID): Authenticated user ID.
+        service (ContestService): Injected domain service.
+
+    Returns:
+        APIResponse[EvaluationStatusResponse]: Current evaluation status and metrics.
+    """
+    evaluation_status = await service.get_evaluation_status(
+        contest_id, evaluation_id, user_id
+    )
+    logger.info(
+        f"Contest evaluation status retrieved for {contest_id}, eval_id {evaluation_id} by user {user_id}"
+    )
+    return create_api_response(
+        request,
+        data=evaluation_status,
+        message="Contest evaluation status retrieved successfully",
+        status_code=status.HTTP_200_OK,
     )

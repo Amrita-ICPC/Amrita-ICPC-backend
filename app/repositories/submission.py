@@ -44,50 +44,174 @@ class ContestSubmissionRepository:
             ContestDashboardRawData: Contains raw queries results for analytics,
             problem health, team performance, and recent submissions.
         """
+        from app.models.question import SubmissionTestCase
+
+        # Helper subquery to compute the status of each submission dynamically
+        sub_status_subq = (
+            select(
+                SubmissionTestCase.submission_id,
+                case(
+                    (
+                        func.sum(
+                            case(
+                                (
+                                    SubmissionTestCase.status
+                                    == SubmissionStatus.SYSTEM_ERROR,
+                                    1,
+                                ),
+                                else_=0,
+                            )
+                        )
+                        > 0,
+                        SubmissionStatus.SYSTEM_ERROR,
+                    ),
+                    (
+                        func.sum(
+                            case(
+                                (SubmissionTestCase.status == SubmissionStatus.CE, 1),
+                                else_=0,
+                            )
+                        )
+                        > 0,
+                        SubmissionStatus.CE,
+                    ),
+                    (
+                        func.sum(
+                            case(
+                                (SubmissionTestCase.status == SubmissionStatus.MLE, 1),
+                                else_=0,
+                            )
+                        )
+                        > 0,
+                        SubmissionStatus.MLE,
+                    ),
+                    (
+                        func.sum(
+                            case(
+                                (SubmissionTestCase.status == SubmissionStatus.TLE, 1),
+                                else_=0,
+                            )
+                        )
+                        > 0,
+                        SubmissionStatus.TLE,
+                    ),
+                    (
+                        func.sum(
+                            case(
+                                (SubmissionTestCase.status == SubmissionStatus.RE, 1),
+                                else_=0,
+                            )
+                        )
+                        > 0,
+                        SubmissionStatus.RE,
+                    ),
+                    (
+                        func.sum(
+                            case(
+                                (SubmissionTestCase.status == SubmissionStatus.WA, 1),
+                                else_=0,
+                            )
+                        )
+                        > 0,
+                        SubmissionStatus.WA,
+                    ),
+                    else_=SubmissionStatus.AC,
+                ).label("computed_status"),
+            )
+            .group_by(SubmissionTestCase.submission_id)
+            .subquery()
+        )
+
         # 1. Query Contest Analytics (Verdict breakdown counts)
         analytics_query = (
             select(
                 func.count(Submission.id).label("total_submissions"),
                 func.coalesce(
                     func.sum(
-                        case((Submission.status == SubmissionStatus.AC, 1), else_=0)
+                        case(
+                            (
+                                sub_status_subq.c.computed_status
+                                == SubmissionStatus.AC,
+                                1,
+                            ),
+                            else_=0,
+                        )
                     ),
                     0,
                 ).label("accepted"),
                 func.coalesce(
                     func.sum(
-                        case((Submission.status == SubmissionStatus.WA, 1), else_=0)
+                        case(
+                            (
+                                sub_status_subq.c.computed_status
+                                == SubmissionStatus.WA,
+                                1,
+                            ),
+                            else_=0,
+                        )
                     ),
                     0,
                 ).label("wrong_answer"),
                 func.coalesce(
                     func.sum(
-                        case((Submission.status == SubmissionStatus.TLE, 1), else_=0)
+                        case(
+                            (
+                                sub_status_subq.c.computed_status
+                                == SubmissionStatus.TLE,
+                                1,
+                            ),
+                            else_=0,
+                        )
                     ),
                     0,
                 ).label("time_limit_exceeded"),
                 func.coalesce(
                     func.sum(
-                        case((Submission.status == SubmissionStatus.RE, 1), else_=0)
+                        case(
+                            (
+                                sub_status_subq.c.computed_status
+                                == SubmissionStatus.RE,
+                                1,
+                            ),
+                            else_=0,
+                        )
                     ),
                     0,
                 ).label("runtime_error"),
                 func.coalesce(
                     func.sum(
-                        case((Submission.status == SubmissionStatus.CE, 1), else_=0)
+                        case(
+                            (
+                                sub_status_subq.c.computed_status
+                                == SubmissionStatus.CE,
+                                1,
+                            ),
+                            else_=0,
+                        )
                     ),
                     0,
                 ).label("compilation_error"),
                 func.coalesce(
                     func.sum(
-                        case((Submission.status == SubmissionStatus.MLE, 1), else_=0)
+                        case(
+                            (
+                                sub_status_subq.c.computed_status
+                                == SubmissionStatus.MLE,
+                                1,
+                            ),
+                            else_=0,
+                        )
                     ),
                     0,
                 ).label("memory_limit_exceeded"),
                 func.coalesce(
                     func.sum(
                         case(
-                            (Submission.status == SubmissionStatus.SYSTEM_ERROR, 1),
+                            (
+                                sub_status_subq.c.computed_status
+                                == SubmissionStatus.SYSTEM_ERROR,
+                                1,
+                            ),
                             else_=0,
                         )
                     ),
@@ -96,6 +220,9 @@ class ContestSubmissionRepository:
             )
             .select_from(ContestSubmission)
             .join(Submission, ContestSubmission.submission_id == Submission.id)
+            .outerjoin(
+                sub_status_subq, sub_status_subq.c.submission_id == Submission.id
+            )
             .where(ContestSubmission.contest_id == contest_id)
         )
         analytics_result = await self.db.execute(analytics_query)
@@ -131,14 +258,25 @@ class ContestSubmissionRepository:
                 func.count(Submission.id).label("attempts"),
                 func.coalesce(
                     func.sum(
-                        case((Submission.status == SubmissionStatus.AC, 1), else_=0)
+                        case(
+                            (
+                                sub_status_subq.c.computed_status
+                                == SubmissionStatus.AC,
+                                1,
+                            ),
+                            else_=0,
+                        )
                     ),
                     0,
                 ).label("accepted"),
                 func.coalesce(
                     func.sum(
                         case(
-                            (Submission.status == SubmissionStatus.SYSTEM_ERROR, 1),
+                            (
+                                sub_status_subq.c.computed_status
+                                == SubmissionStatus.SYSTEM_ERROR,
+                                1,
+                            ),
                             else_=0,
                         )
                     ),
@@ -147,6 +285,9 @@ class ContestSubmissionRepository:
             )
             .select_from(ContestSubmission)
             .join(Submission, ContestSubmission.submission_id == Submission.id)
+            .outerjoin(
+                sub_status_subq, sub_status_subq.c.submission_id == Submission.id
+            )
             .where(ContestSubmission.contest_id == contest_id)
             .group_by(Submission.question_id)
             .subquery()
@@ -191,7 +332,14 @@ class ContestSubmissionRepository:
                 func.count(Submission.id).label("total_attempts"),
                 func.coalesce(
                     func.sum(
-                        case((Submission.status == SubmissionStatus.AC, 1), else_=0)
+                        case(
+                            (
+                                sub_status_subq.c.computed_status
+                                == SubmissionStatus.AC,
+                                1,
+                            ),
+                            else_=0,
+                        )
                     ),
                     0,
                 ).label("accepted_attempts"),
@@ -199,7 +347,8 @@ class ContestSubmissionRepository:
                     func.distinct(
                         case(
                             (
-                                Submission.status == SubmissionStatus.AC,
+                                sub_status_subq.c.computed_status
+                                == SubmissionStatus.AC,
                                 Submission.question_id,
                             ),
                             else_=None,
@@ -211,6 +360,9 @@ class ContestSubmissionRepository:
             )
             .select_from(ContestSubmission)
             .join(Submission, ContestSubmission.submission_id == Submission.id)
+            .outerjoin(
+                sub_status_subq, sub_status_subq.c.submission_id == Submission.id
+            )
             .where(ContestSubmission.contest_id == contest_id)
             .group_by(ContestSubmission.contest_team_id)
             .subquery()
@@ -260,11 +412,14 @@ class ContestSubmissionRepository:
                 Question.id.label("question_id"),
                 Question.title.label("question_title"),
                 Language.name.label("language_name"),
-                Submission.status,
+                sub_status_subq.c.computed_status.label("status"),
                 Submission.created_at,
             )
             .select_from(ContestSubmission)
             .join(Submission, ContestSubmission.submission_id == Submission.id)
+            .outerjoin(
+                sub_status_subq, sub_status_subq.c.submission_id == Submission.id
+            )
             .join(Language, Submission.language_id == Language.id)
             .join(Question, Submission.question_id == Question.id)
             .join(

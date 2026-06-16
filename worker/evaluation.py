@@ -1,11 +1,16 @@
 import asyncio
+import json
 from typing import Sequence
 from uuid import UUID
 
+from sqlalchemy import select
+
 from app.core.clients.celery import celery_app
 from app.core.clients.database import SessionLocal
+from app.core.clients.redis import get_redis
 from app.core.logger import logger
 from app.exceptions.question import InvalidQuestionError
+from app.models.evaluation import Evaluation
 from app.models.question import Submission, SubmissionTestCase, TestCase
 from app.repositories.dto.evaluation import EvaluationResult
 from app.repositories.dto.judge0 import Judge0ExecutionRequestDTO, Judge0SubmissionDTO
@@ -17,6 +22,7 @@ from app.schema.student.submission import (
 )
 from app.service.contest_event_service import ContestEventService
 from app.utils.enums import SubmissionStatus
+from app.utils.evaluation import calculate_submission_score
 from app.utils.mapper import JUDGE0_TO_SUBMISSION_STATUS
 from app.validators.question import QuestionValidator
 
@@ -109,6 +115,7 @@ async def _run_evaluation(
                 testcase_id=testcase.id,
                 status=SubmissionStatus.SYSTEM_ERROR,
                 stderr=str(result),
+                submission=submission,
             )
             testcase_results.append(stc)
             continue
@@ -127,6 +134,7 @@ async def _run_evaluation(
 
         # Create testcase record
         stc = create_submission_testcase(submission.id, testcase, result, status)
+        stc.submission = submission
         testcase_results.append(stc)
 
         if status == SubmissionStatus.AC:
@@ -145,6 +153,113 @@ async def _run_evaluation(
     )
 
 
+async def _evaluate_submission_core(db: SessionLocal, submission: Submission) -> None:
+    """Core logic to evaluate a single submission, scoring it, and saving it, without publishing events."""
+    repository = QuestionRepository(db)
+    try:
+        question = await repository.get_question_or_raise(submission.question_id)
+        template = QuestionValidator.validate_submission_language(
+            question, submission.language_id
+        )
+    except InvalidQuestionError as e:
+        logger.error(f"Validation failed for submission: {e}")
+        result = EvaluationResult(
+            status=SubmissionStatus.SYSTEM_ERROR,
+            passed_testcases=0,
+            total_testcases=0,
+            total_time=0,
+            total_memory=0,
+            testcase_results=[],
+        )
+        submission.score = 0
+        await repository.complete_submission(submission, result)
+        return
+    except Exception as e:
+        logger.error(f"Could not retrieve question for submission: {e}")
+        result = EvaluationResult(
+            status=SubmissionStatus.SYSTEM_ERROR,
+            passed_testcases=0,
+            total_testcases=0,
+            total_time=0,
+            total_memory=0,
+            testcase_results=[],
+        )
+        submission.score = 0
+        await repository.complete_submission(submission, result)
+        return
+
+    testcases = question.testcases
+    if not testcases:
+        logger.warning(f"No testcases found for question {question.id}")
+        result = EvaluationResult(
+            status=SubmissionStatus.AC,
+            passed_testcases=0,
+            total_testcases=0,
+            total_time=0,
+            total_memory=0,
+            testcase_results=[],
+        )
+        submission.score = 0
+        await repository.complete_submission(submission, result)
+        return
+
+    final_source_code = submission.source_code
+    if template and template.driver_code:
+        final_source_code = f"{submission.source_code}\n\n{template.driver_code}"
+
+    logger.info(
+        f"Fetched question '{question.title}' with {len(testcases)} testcase(s) for submission {submission.id}."
+    )
+
+    # Evaluate sequentially
+    judge0_repo = Judge0Repository()
+    eval_result = await _run_evaluation(
+        submission, testcases, judge0_repo, final_source_code
+    )
+
+    # Save final results
+    max_score = 100
+    if submission.contest_submission:
+        contest_id = submission.contest_submission.contest_id
+        contest_question_score = await repository.get_contest_question_score(
+            contest_id, submission.question_id
+        )
+        if contest_question_score is not None:
+            max_score = contest_question_score
+
+    submission.score = calculate_submission_score(
+        max_score, testcases, eval_result.testcase_results
+    )
+
+    await repository.complete_submission(submission, eval_result)
+
+
+async def _publish_student_submission_event(
+    event_service: ContestEventService,
+    submission: Submission,
+    status: str,
+) -> None:
+    """Publish submission status update event to the contest event publisher for students."""
+    if not submission.contest_submission:
+        return
+    contest_id = submission.contest_submission.contest_id
+    team_id = submission.contest_submission.contest_team.team_id
+    contest_team_member_id = submission.contest_submission.contest_team_member_id
+
+    if contest_id and team_id and contest_team_member_id:
+        event = StudentSubmissionUpdateEvent(
+            type="submission_update",
+            payload=StudentSubmissionUpdatePayload(
+                submission_id=str(submission.id),
+                question_id=str(submission.question_id),
+                status=status,
+            ),
+        )
+        await event_service.publish_event(
+            contest_id, team_id, contest_team_member_id, event
+        )
+
+
 async def _evaluate_submission_async(submission_id: UUID) -> None:
     """Async helper to evaluate submission."""
     async with SessionLocal() as db:
@@ -157,9 +272,9 @@ async def _evaluate_submission_async(submission_id: UUID) -> None:
             logger.error(f"Submission not found: {submission_id}")
             return
 
-        if submission.status != SubmissionStatus.QUEUED:
+        if submission.is_evaluated:
             logger.warning(
-                f"Submission {submission_id} is not QUEUED, aborting evaluation."
+                f"Submission {submission_id} is already evaluated, aborting evaluation."
             )
             return
 
@@ -167,148 +282,16 @@ async def _evaluate_submission_async(submission_id: UUID) -> None:
             f"Retrieved submission {submission.id} for question {submission.question_id}"
         )
 
-        # Check if it has contest association for event publishing
-        contest_id = None
-        team_id = None
-        contest_team_member_id = None
-        if submission.contest_submission:
-            contest_id = submission.contest_submission.contest_id
-            team_id = submission.contest_submission.contest_team.team_id
-            contest_team_member_id = (
-                submission.contest_submission.contest_team_member_id
-            )
+        # 2. Publish RUNNING event
+        await _publish_student_submission_event(event_service, submission, "RUNNING")
 
-        # 2. Update status to RUNNING
-        await repository.mark_submission_running(submission)
+        # 3. Core evaluation logic
+        await _evaluate_submission_core(db, submission)
         await db.commit()
 
-        # 3. Publish RUNNING event
-        if contest_id and team_id and contest_team_member_id:
-            event = StudentSubmissionUpdateEvent(
-                type="submission_update",
-                payload=StudentSubmissionUpdatePayload(
-                    submission_id=str(submission.id),
-                    question_id=str(submission.question_id),
-                    status=SubmissionStatus.RUNNING.value,
-                ),
-            )
-            await event_service.publish_event(
-                contest_id, team_id, contest_team_member_id, event
-            )
-
-        # 4. Get the question and test cases using QuestionRepository
-        try:
-            question = await repository.get_question_or_raise(submission.question_id)
-            template = QuestionValidator.validate_submission_language(
-                question, submission.language_id
-            )
-        except InvalidQuestionError as e:
-            logger.error(f"Validation failed for submission: {e}")
-            result = EvaluationResult(
-                status=SubmissionStatus.SYSTEM_ERROR,
-                passed_testcases=0,
-                total_testcases=0,
-                total_time=0,
-                total_memory=0,
-                testcase_results=[],
-            )
-            await repository.complete_submission(submission, result)
-            await db.commit()
-            if contest_id and team_id and contest_team_member_id:
-                event = StudentSubmissionUpdateEvent(
-                    type="submission_update",
-                    payload=StudentSubmissionUpdatePayload(
-                        submission_id=str(submission.id),
-                        question_id=str(submission.question_id),
-                        status=SubmissionStatus.SYSTEM_ERROR.value,
-                    ),
-                )
-                await event_service.publish_event(
-                    contest_id, team_id, contest_team_member_id, event
-                )
-            return
-        except Exception as e:
-            logger.error(f"Could not retrieve question for submission: {e}")
-            result = EvaluationResult(
-                status=SubmissionStatus.SYSTEM_ERROR,
-                passed_testcases=0,
-                total_testcases=0,
-                total_time=0,
-                total_memory=0,
-                testcase_results=[],
-            )
-            await repository.complete_submission(submission, result)
-            await db.commit()
-            if contest_id and team_id and contest_team_member_id:
-                event = StudentSubmissionUpdateEvent(
-                    type="submission_update",
-                    payload=StudentSubmissionUpdatePayload(
-                        submission_id=str(submission.id),
-                        question_id=str(submission.question_id),
-                        status=SubmissionStatus.SYSTEM_ERROR.value,
-                    ),
-                )
-                await event_service.publish_event(
-                    contest_id, team_id, contest_team_member_id, event
-                )
-            return
-
-        testcases = question.testcases
-        if not testcases:
-            logger.warning(f"No testcases found for question {question.id}")
-            result = EvaluationResult(
-                status=SubmissionStatus.AC,
-                passed_testcases=0,
-                total_testcases=0,
-                total_time=0,
-                total_memory=0,
-                testcase_results=[],
-            )
-            await repository.complete_submission(submission, result)
-            await db.commit()
-            if contest_id and team_id and contest_team_member_id:
-                event = StudentSubmissionUpdateEvent(
-                    type="submission_update",
-                    payload=StudentSubmissionUpdatePayload(
-                        submission_id=str(submission.id),
-                        question_id=str(submission.question_id),
-                        status=SubmissionStatus.AC.value,
-                    ),
-                )
-                await event_service.publish_event(
-                    contest_id, team_id, contest_team_member_id, event
-                )
-            return
-
-        final_source_code = submission.source_code
-        if template and template.driver_code:
-            final_source_code = f"{submission.source_code}\n\n{template.driver_code}"
-
-        logger.info(
-            f"Fetched question '{question.title}' with {len(testcases)} testcase(s) for submission {submission_id}."
-        )
-
-        # 5. Evaluate sequentially
-        judge0_repo = Judge0Repository()
-        eval_result = await _run_evaluation(
-            submission, testcases, judge0_repo, final_source_code
-        )
-
-        # 6. Save final results and publish
-        await repository.complete_submission(submission, eval_result)
-        await db.commit()
-        if contest_id and team_id and contest_team_member_id:
-            event = StudentSubmissionUpdateEvent(
-                type="submission_update",
-                payload=StudentSubmissionUpdatePayload(
-                    submission_id=str(submission.id),
-                    question_id=str(submission.question_id),
-                    status=submission.status.value,
-                ),
-            )
-            await event_service.publish_event(
-                contest_id, team_id, contest_team_member_id, event
-            )
+        # 4. Publish completed event
+        status_str = submission.status.value if submission.status else "SYSTEM_ERROR"
+        await _publish_student_submission_event(event_service, submission, status_str)
 
         logger.info(
             f"Finished evaluation for submission {submission.id} with status {submission.status}"
@@ -329,3 +312,104 @@ def evaluate_submission(submission_id: UUID | str) -> None:
         asyncio.set_event_loop(loop)
 
     loop.run_until_complete(_evaluate_submission_async(submission_id))
+
+
+@celery_app.task
+def evaluate_contest_submission(
+    evaluation_id: UUID | str, submission_id: UUID | str
+) -> None:
+    """Evaluate a contest submission and update the evaluation progress."""
+    print(
+        f"Evaluating contest submission: {submission_id} for evaluation: {evaluation_id}"
+    )
+    if isinstance(evaluation_id, str):
+        evaluation_id = UUID(evaluation_id)
+    if isinstance(submission_id, str):
+        submission_id = UUID(submission_id)
+
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    loop.run_until_complete(
+        _evaluate_contest_submission_async(evaluation_id, submission_id)
+    )
+
+
+async def _evaluate_contest_submission_async(
+    evaluation_id: UUID, submission_id: UUID
+) -> None:
+    """Evaluate a contest submission without student event publish and update progress."""
+    async with SessionLocal() as db:
+        # Check if the evaluation was already completed or marked as evaluated
+        result = await db.execute(
+            select(Evaluation.is_evaluated).filter(Evaluation.id == evaluation_id)
+        )
+        is_evaluated = result.scalar_one_or_none()
+        if is_evaluated is None or is_evaluated:
+            logger.info(
+                f"Evaluation {evaluation_id} is already completed/superseded. "
+                f"Skipping submission {submission_id}."
+            )
+            return
+
+        repository = QuestionRepository(db)
+        submission = await repository.get_submission(submission_id)
+        if submission is None:
+            logger.error(f"Submission not found: {submission_id}")
+            return
+
+        submission.is_evaluated = False
+        await db.commit()
+
+        await _evaluate_submission_core(db, submission)
+        await db.commit()
+
+        await _update_progress_db_and_redis(evaluation_id)
+
+
+async def _update_progress_db_and_redis(
+    evaluation_id: UUID,
+) -> None:
+    """Atomically update DB progress and Redis progress in parallel."""
+
+    async def update_db():
+        async with SessionLocal() as db_session:
+            result = await db_session.execute(
+                select(Evaluation)
+                .filter(Evaluation.id == evaluation_id)
+                .with_for_update()
+            )
+            evaluation = result.scalar_one_or_none()
+            if not evaluation:
+                logger.error(f"Evaluation not found in DB: {evaluation_id}")
+                return 0, 0, False
+
+            evaluation.processed_submissions += 1
+            if evaluation.processed_submissions >= evaluation.total_submissions:
+                evaluation.is_evaluated = True
+
+            processed = evaluation.processed_submissions
+            total = evaluation.total_submissions
+            is_done = evaluation.is_evaluated
+
+            await db_session.commit()
+            return processed, total, is_done
+
+    async def update_redis():
+        redis_client = get_redis()
+        key = f"evaluation:{evaluation_id}"
+        async with redis_client.lock(f"lock:{key}", timeout=5):
+            data = await redis_client.get(key)
+            if data:
+                eval_data = json.loads(data)
+                eval_data["processed"] = eval_data.get("processed", 0) + 1
+                if eval_data["processed"] >= eval_data.get("total", 0):
+                    eval_data["status"] = "COMPLETED"
+                else:
+                    eval_data["status"] = "RUNNING"
+                await redis_client.set(key, json.dumps(eval_data))
+
+    await asyncio.gather(update_db(), update_redis())

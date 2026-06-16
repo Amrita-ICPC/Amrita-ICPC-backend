@@ -146,7 +146,9 @@ class RecentSubmissionSchema(BaseModel):
         ..., description="Details of the question submitted for"
     )
     language: str = Field(..., description="Programming language name")
-    status: SubmissionStatus = Field(..., description="Status of the submission")
+    status: SubmissionStatus | None = Field(
+        None, description="Status of the submission"
+    )
     created_at: datetime = Field(
         ..., description="Timestamp when the submission was created"
     )

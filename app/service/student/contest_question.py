@@ -48,7 +48,6 @@ from app.utils.contest import calculate_effective_times
 from app.utils.enums import (
     ContestTeamMemberStatus,
     ContestTeamParticipationType,
-    SubmissionStatus,
     TeamApprovalStatus,
     TeamStatus,
 )
@@ -392,25 +391,18 @@ class StudentContestQuestionService:
         # Retrieve test cases to count total test cases
         testcases = await self.testcase_repository.get_all_by_question(question_id)
 
-        # Set submission status based on evaluate_on_submit
-        submission_status = (
-            SubmissionStatus.QUEUED
-            if contest.evaluate_on_submit
-            else SubmissionStatus.PENDING
-        )
-
         # Create submission record
         submission = Submission(
             id=uuid4(),
             question_id=question_id,
             source_code=code,
             language_id=language_id,
-            status=submission_status,
+            is_evaluated=False,
             score=0,
-            passed_testcases=0,
-            total_testcases=len(testcases),
             created_at=datetime.now(timezone.utc),
         )
+        submission.passed_testcases = 0
+        submission.total_testcases = len(testcases)
 
         # Create contest submission mapping
         contest_submission = ContestSubmission(

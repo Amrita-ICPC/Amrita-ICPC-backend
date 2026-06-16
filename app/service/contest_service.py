@@ -1,8 +1,12 @@
+import json
 from datetime import datetime, timezone
 from typing import AsyncGenerator, List, cast
 from uuid import UUID
 
+from redis.asyncio import Redis
+
 from app.core.cache.decorators import cache_delete, cache_get
+from app.core.clients.celery import celery_app
 from app.core.guards.contest import ContestOperationGuard
 from app.core.logger import logger
 from app.core.permissions import AudiencePermission
@@ -11,6 +15,7 @@ from app.exceptions.contest import (
     ContestNotFoundError,
     InvalidContestError,
 )
+from app.exceptions.evaluation import EvaluationNotFoundError
 from app.mappers.contest import (
     apply_contest_updates,
     build_contest_entity,
@@ -19,6 +24,7 @@ from app.mappers.contest import (
     to_contest_response,
     to_contest_summary_response,
 )
+from app.models.evaluation import Evaluation
 from app.repositories.audience import AudienceRepository
 from app.repositories.contest import ContestRepository
 from app.repositories.dto import (
@@ -26,6 +32,7 @@ from app.repositories.dto import (
     ContestFilters,
     PaginationParams,
 )
+from app.repositories.evaluation import EvaluationRepository
 from app.repositories.team import TeamRepository
 from app.repositories.user import UserRepository
 from app.schema.contest import (
@@ -38,6 +45,7 @@ from app.schema.contest import (
     InstructorManageRequest,
     InstructorResponse,
 )
+from app.schema.evaluation import EvaluationResponse, EvaluationStatusResponse
 from app.service.contest_event_publish import ContestEventPublisher
 from app.utils.contest import compute_run_status
 from app.utils.enums import (
@@ -92,6 +100,8 @@ class ContestService:
         audience_repository: AudienceRepository,
         team_repository: TeamRepository | None = None,
         event_publisher: ContestEventPublisher | None = None,
+        evaluation_repository: EvaluationRepository | None = None,
+        redis: Redis | None = None,
     ):
         self.repository = repository
         self.user_repository = user_repository
@@ -100,6 +110,8 @@ class ContestService:
         self.audience_repository = audience_repository
         self.team_repository = team_repository
         self.event_publisher = event_publisher
+        self.evaluation_repository = evaluation_repository
+        self.redis = redis
 
     async def _validate_contest_not_deleted_and_has_permission(
         self, contest_id: UUID, user_id: UUID
@@ -887,3 +899,133 @@ class ContestService:
             raise RuntimeError("Event publisher is not initialized")
         async for msg in self.event_publisher.subscribe(contest_id):
             yield msg
+
+    async def evaluate_contest(
+        self, contest_id: UUID, user_id: UUID
+    ) -> EvaluationResponse:
+        """Trigger evaluation for a contest.
+
+        Args:
+            contest_id: UUID of the contest to evaluate.
+            user_id: UUID of the user triggering the evaluation.
+
+        Returns:
+            EvaluationResponse: Details of the created evaluation record.
+
+        Raises:
+            ContestNotFoundError: If the contest does not exist or is deleted.
+            PermissionDeniedError: If the user lacks permission to manage the contest.
+        """
+        contest = await self.repository.get_contest_or_raise(contest_id)
+        if contest.status == ContestStatus.DELETED:
+            raise ContestNotFoundError(str(contest_id))
+
+        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
+
+        if self.evaluation_repository is None:
+            raise ValueError("EvaluationRepository is not initialized")
+
+        submissions = await self.repository.get_submissions_in_contest(contest_id)
+        total_subs = len(submissions)
+
+        # Cancel any existing active evaluation for this contest
+        active_eval = await self.evaluation_repository.get_active_evaluation(contest_id)
+        if active_eval:
+            active_eval.is_evaluated = True
+            if self.redis is not None:
+                old_key = f"evaluation:{active_eval.id}"
+                data = await self.redis.get(old_key)
+                if data:
+                    eval_data = json.loads(data)
+                    eval_data["status"] = "COMPLETED"
+                    await self.redis.set(old_key, json.dumps(eval_data))
+
+        evaluation = Evaluation(
+            contest_id=contest_id,
+            is_evaluated=(total_subs == 0),
+            total_submissions=total_subs,
+            processed_submissions=0,
+            created_by=user_id,
+        )
+
+        db_evaluation = await self.evaluation_repository.create_evaluation(evaluation)
+
+        # Store initial state in Redis
+        if self.redis is not None:
+            evaluation_data = {
+                "processed": 0,
+                "total": total_subs,
+                "status": "COMPLETED" if total_subs == 0 else "PENDING",
+            }
+            await self.redis.set(
+                f"evaluation:{db_evaluation.id}",
+                json.dumps(evaluation_data),
+            )
+
+        if total_subs > 0:
+            for sub in submissions:
+                celery_app.send_task(
+                    "worker.evaluation.evaluate_contest_submission",
+                    args=[str(db_evaluation.id), str(sub.id)],
+                )
+
+        return EvaluationResponse.model_validate(db_evaluation)
+
+    async def get_evaluation_status(
+        self, contest_id: UUID, evaluation_id: UUID, user_id: UUID
+    ) -> EvaluationStatusResponse:
+        """Get the status of a contest evaluation process.
+
+        Args:
+            contest_id: UUID of the contest.
+            evaluation_id: UUID of the evaluation record.
+            user_id: UUID of the user requesting the status.
+
+        Returns:
+            EvaluationStatusResponse: Status and progress metrics.
+
+        Raises:
+            ContestNotFoundError: If the contest is not found or is deleted.
+            EvaluationNotFoundError: If the evaluation record is not found.
+            PermissionDeniedError: If the user lacks permission to manage the contest.
+        """
+        contest = await self.repository.get_contest_or_raise(contest_id)
+        if contest.status == ContestStatus.DELETED:
+            raise ContestNotFoundError(str(contest_id))
+
+        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
+
+        # 1. Try to fetch from Redis
+        if self.redis is not None:
+            data = await self.redis.get(f"evaluation:{evaluation_id}")
+            if data:
+                eval_data = json.loads(data)
+                return EvaluationStatusResponse(
+                    id=evaluation_id,
+                    contest_id=contest_id,
+                    status=eval_data.get("status", "PENDING"),
+                    total_submissions=eval_data.get("total", 0),
+                    processed_submissions=eval_data.get("processed", 0),
+                )
+
+        # 2. Fallback to PostgreSQL
+        if self.evaluation_repository is None:
+            raise ValueError("EvaluationRepository is not initialized")
+
+        evaluation = await self.evaluation_repository.get_evaluation(evaluation_id)
+        if not evaluation or evaluation.contest_id != contest_id:
+            raise EvaluationNotFoundError(str(evaluation_id))
+
+        status_str = (
+            "COMPLETED"
+            if evaluation.is_evaluated
+            else ("PENDING" if evaluation.processed_submissions == 0 else "RUNNING")
+        )
+
+        return EvaluationStatusResponse(
+            id=evaluation.id,
+            contest_id=evaluation.contest_id,
+            status=status_str,
+            total_submissions=evaluation.total_submissions,
+            processed_submissions=evaluation.processed_submissions,
+        )
