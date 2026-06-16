@@ -42,7 +42,10 @@ from app.schema.student.run import (
 )
 from app.schema.student.submission import (
     StudentSubmissionResponse,
+    StudentSubmissionUpdateEvent,
+    StudentSubmissionUpdatePayload,
 )
+from app.service.contest_event_service import ContestEventService
 from app.service.student.workspace import WorkspaceService
 from app.utils.contest import calculate_effective_times
 from app.utils.enums import (
@@ -423,6 +426,25 @@ class StudentContestQuestionService:
                 "worker.evaluation.evaluate_submission",
                 args=[str(submission.id)],
             )
+            try:
+                if contest_team.team_id is not None:
+                    event_service = ContestEventService()
+                    event = StudentSubmissionUpdateEvent(
+                        type="submission_update",
+                        payload=StudentSubmissionUpdatePayload(
+                            submission_id=str(submission.id),
+                            question_id=str(submission.question_id),
+                            status="RUNNING",
+                        ),
+                    )
+                    await event_service.publish_event(
+                        contest_id=contest_id,
+                        team_id=contest_team.team_id,
+                        contest_team_member_id=contest_team_member.id,
+                        event=event,
+                    )
+            except Exception as e:
+                logger.error(f"Failed to publish initial RUNNING event: {e}")
 
         return StudentSubmissionResponse.model_validate(submission)
 

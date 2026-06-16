@@ -10,7 +10,6 @@ from app.models.contest import (
     ContestTeamProgress,
     ContestTeamViolation,
 )
-from app.models.evaluation import Evaluation
 from app.models.language import Language
 from app.models.question import Question
 from app.models.tag import QuestionTag, Tag
@@ -38,5 +37,4 @@ __all__ = [
     "Team",
     "TeamUser",
     "User",
-    "Evaluation",
 ]
