@@ -161,10 +161,18 @@ async def test_submit_code_success(
 
     from unittest.mock import patch
 
-    # Call submit_code and mock celery_app.send_task
-    with patch(
-        "app.service.student.contest_question.celery_app.send_task"
-    ) as mock_send_task:
+    # Call submit_code and mock celery_app.send_task & ContestEventService
+    with (
+        patch(
+            "app.service.student.contest_question.celery_app.send_task"
+        ) as mock_send_task,
+        patch(
+            "app.service.student.contest_question.ContestEventService"
+        ) as mock_event_service_class,
+    ):
+        mock_event_service = AsyncMock()
+        mock_event_service_class.return_value = mock_event_service
+
         response = await contest_question_service.submit_code(
             contest_id=contest_id,
             question_id=question_id,
@@ -186,6 +194,7 @@ async def test_submit_code_success(
             "worker.evaluation.evaluate_submission",
             args=[str(mock_submission.id)],
         )
+        mock_event_service.publish_event.assert_called_once()
 
 
 @pytest.mark.asyncio

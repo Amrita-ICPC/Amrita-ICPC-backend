@@ -1,7 +1,7 @@
 from typing import cast
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -14,7 +14,13 @@ from app.models.contest import (
     ContestSubmission,
     ContestTeam,
 )
-from app.models.question import Question, QuestionLanguage, QuestionTemplate, Submission
+from app.models.question import (
+    Question,
+    QuestionLanguage,
+    QuestionTemplate,
+    Submission,
+    SubmissionTestCase,
+)
 from app.models.tag import QuestionTag
 from app.models.team import TeamUser
 from app.repositories.dto.evaluation import EvaluationResult
@@ -312,6 +318,20 @@ class QuestionRepository:
             )
         )
         return result.scalar_one_or_none()
+
+    async def delete_submission_testcases_batch(self, submission_id: UUID) -> None:
+        """
+        Delete all SubmissionTestCase records associated with a submission ID in batch.
+
+        Args:
+            submission_id: The ID of the submission whose testcases to delete.
+        """
+        await self.db.execute(
+            delete(SubmissionTestCase).where(
+                SubmissionTestCase.submission_id == submission_id
+            )
+        )
+        await self.db.flush()
 
     async def complete_submission(
         self, submission: Submission, result: EvaluationResult
