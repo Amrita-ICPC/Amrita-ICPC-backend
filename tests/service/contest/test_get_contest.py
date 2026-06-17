@@ -66,6 +66,7 @@ class TestGetContestByIdSuccess:
         """Test that soft-deleted contests are not retrievable."""
         mock_contest_repository.get_contest_or_raise.return_value = mock_contest
         mock_contest.is_deleted = True
+        mock_contest.status = ContestStatus.DELETED
 
         with pytest.raises(ContestNotFoundError):
             await contest_service.get_contest_by_id(mock_contest.id, user_id)

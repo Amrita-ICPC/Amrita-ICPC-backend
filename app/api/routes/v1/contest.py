@@ -43,6 +43,7 @@ from app.schema.contest import (
     ReorderContestQuestionsRequest,
 )
 from app.schema.evaluation import EvaluationResponse, EvaluationStatusResponse
+from app.schema.leaderboard import LeaderboardResponse
 from app.schema.question import (
     ContestQuestionsListResponse,
     QuestionResponse,
@@ -1266,5 +1267,46 @@ async def get_evaluation_status(
         request,
         data=evaluation_status,
         message="Contest evaluation status retrieved successfully",
+        status_code=status.HTTP_200_OK,
+    )
+
+
+@router.get(
+    "/{contest_id}/leaderboard",
+    response_model=APIResponse[LeaderboardResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Get contest leaderboard standings",
+    dependencies=[can_read("contests")],
+)
+async def get_contest_leaderboard(
+    request: Request,
+    contest_id: UUID,
+    service: ContestService = Depends(get_contest_service),
+    user_id: UUID = Depends(get_current_user_id),
+) -> APIResponse[LeaderboardResponse]:
+    """
+    Get the contest leaderboard standings.
+
+    Only accessible by authorized users with read permissions.
+
+    Args:
+        request: Framework context.
+        contest_id: The unique identifier of the contest.
+        service: Injected domain service.
+        user_id: Authenticated user ID.
+
+    Returns:
+        The sorted standings.
+
+    Raises:
+        ContestNotFoundError: If the contest is not found.
+        PermissionDeniedError: If the user lacks permission to access the contest.
+    """
+    leaderboard = await service.get_contest_leaderboard(contest_id, user_id)
+    logger.info(f"Contest leaderboard retrieved for {contest_id} by user {user_id}")
+    return create_api_response(
+        request,
+        data=leaderboard,
+        message="Leaderboard fetched successfully",
         status_code=status.HTTP_200_OK,
     )
