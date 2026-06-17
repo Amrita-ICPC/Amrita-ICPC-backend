@@ -60,6 +60,9 @@ class ContestBase(BaseModel):
         default=True,
         description="Whether to evaluate submissions immediately on submit",
     )
+    max_submission_per_question: Optional[int] = Field(
+        None, description="Maximum submissions allowed per question"
+    )
 
     @model_validator(mode="after")
     def validate_dates(self):
@@ -132,6 +135,9 @@ class ContestUpdate(BaseModel):
     evaluate_on_submit: Optional[bool] = Field(
         None, description="Whether to evaluate submissions immediately on submit"
     )
+    max_submission_per_question: Optional[int] = Field(
+        None, description="Maximum submissions allowed per question"
+    )
 
     @model_validator(mode="after")
     def validate_dates(self):
@@ -188,6 +194,9 @@ class ContestSummaryResponse(BaseModel):
     )
     evaluate_on_submit: bool = Field(
         ..., description="Whether to evaluate submissions immediately on submit"
+    )
+    max_submission_per_question: Optional[int] = Field(
+        None, description="Maximum submissions allowed per question"
     )
     audiences: list[ContestAudienceResponse] = Field(
         default_factory=list, description="List of audiences linked to this contest"
@@ -293,6 +302,9 @@ class AddContestQuestionRequest(BaseModel):
         gt=0,
         description="Points awarded for solving this question (optional, defaults to 100)",
     )
+    max_submission: Optional[int] = Field(
+        None, description="Maximum submissions allowed for this question (optional)"
+    )
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -331,6 +343,9 @@ class ContestQuestionResponse(BaseModel):
         description="Time allocated for this question in seconds",
     )
     score: int = Field(..., description="Points awarded for solving this question")
+    max_submission: int | None = Field(
+        ..., description="Maximum submissions allowed for this question"
+    )
     created_at: datetime = Field(..., description="When question was added to contest")
     created_by: UUID = Field(..., description="User ID who added the question")
 
@@ -366,6 +381,9 @@ class CloneQuestionConfig(BaseModel):
     question_id: UUID
     score: Optional[int] = Field(None, gt=0)
     duration: Optional[int] = Field(None, gt=0)
+    max_submission: Optional[int] = Field(
+        None, description="Maximum submissions allowed for this question"
+    )
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -384,6 +402,9 @@ class ContestBankCloneRequest(BaseModel):
     score: int = Field(100, gt=0, description="Default score for cloned questions")
     duration: Optional[int] = Field(
         None, gt=0, description="Default duration for cloned questions in seconds"
+    )
+    max_submission: Optional[int] = Field(
+        None, description="Default maximum submissions allowed for cloned questions"
     )
 
     model_config = ConfigDict(from_attributes=True)

@@ -1061,6 +1061,7 @@ class ContestService:
                 if sub.is_evaluated:
                     team_member_question_subs[t_id][m_id][q_id].append(sub)
 
+        member_total_scores: dict[UUID, int] = defaultdict(int)
         rows: list[tuple[int, UUID, str, list[LeaderboardQuestionDetail]]] = []
         for team in teams:
             accepted_members = [
@@ -1082,6 +1083,7 @@ class ContestService:
                     else:
                         best_score = 0
                     best_scores.append(best_score)
+                    member_total_scores[member.id] += best_score
 
                 # Step 2: Average Per Question
                 if accepted_members:
@@ -1133,6 +1135,11 @@ class ContestService:
 
         # Sort by total_score descending
         rows.sort(key=lambda x: x[0], reverse=True)
+
+        if member_total_scores:
+            await self.repository.update_team_member_progress_scores(
+                contest_id, dict(member_total_scores)
+            )
 
         standings = []
         for rank, (total_score, team_id, team_name, q_details) in enumerate(

@@ -40,6 +40,7 @@ def build_create_contest_dto(
         show_leaderboard_during_contest=contest.show_leaderboard_during_contest,
         participation_type=contest.participation_type,
         evaluate_on_submit=contest.evaluate_on_submit,
+        max_submission_per_question=contest.max_submission_per_question,
     )
 
 
@@ -94,6 +95,11 @@ def build_update_contest_dto(contest_data: ContestUpdate) -> UpdateContestData:
         evaluate_on_submit=(
             contest_data.evaluate_on_submit
             if "evaluate_on_submit" in fields_set
+            else UNSET
+        ),
+        max_submission_per_question=(
+            contest_data.max_submission_per_question
+            if "max_submission_per_question" in fields_set
             else UNSET
         ),
     )
@@ -157,6 +163,7 @@ def to_contest_response(
         show_leaderboard_during_contest=contest.show_leaderboard_during_contest,
         participation_type=contest.participation_type,
         evaluate_on_submit=contest.evaluate_on_submit,
+        max_submission_per_question=contest.max_submission_per_question,
     )
 
     return response
@@ -183,6 +190,7 @@ def to_contest_summary_response(
         show_leaderboard_during_contest=contest.show_leaderboard_during_contest,
         participation_type=contest.participation_type,
         evaluate_on_submit=contest.evaluate_on_submit,
+        max_submission_per_question=contest.max_submission_per_question,
         audiences=[
             ContestAudienceResponse.model_validate(link.audience)
             for link in contest.audience_links
@@ -217,6 +225,7 @@ def build_contest_entity(contest_data: CreateContestData) -> Contest:
         show_leaderboard_during_contest=contest_data.show_leaderboard_during_contest,
         participation_type=contest_data.participation_type,
         evaluate_on_submit=contest_data.evaluate_on_submit,
+        max_submission_per_question=contest_data.max_submission_per_question,
     )
 
 

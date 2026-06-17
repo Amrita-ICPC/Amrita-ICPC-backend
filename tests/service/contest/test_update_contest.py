@@ -327,6 +327,7 @@ class TestUpdateContestRepositoryContract:
         updated_contest = mock_contest
         mock_contest_repository.update_contest.return_value = updated_contest
 
+        contest_update_data.max_submission_per_question = 10
         with patch.object(ContestResponse, "model_validate"):
             await contest_service.update_contest(
                 mock_contest.id, contest_update_data, user_id
@@ -338,6 +339,7 @@ class TestUpdateContestRepositoryContract:
         contest_arg = call_args[0][0]
         user_id_arg = call_args[0][1]
         assert contest_arg.name == contest_update_data.name
+        assert contest_arg.max_submission_per_question == 10
         assert user_id_arg == user_id
 
     @pytest.mark.asyncio

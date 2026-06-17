@@ -450,6 +450,14 @@ class QuestionService:
             )
             apply_question_updates(question, update_dto)
 
+            if testcase_dtos is not None:
+                await self.repository.update_question_testcases(
+                    question, testcase_dtos, created_by=question.created_by
+                )
+
+            if template_dtos is not None:
+                await self.repository.update_question_templates(question, template_dtos)
+
             updated_question = await self.repository.update_question(question)
 
             for key in old_template_keys_to_delete:

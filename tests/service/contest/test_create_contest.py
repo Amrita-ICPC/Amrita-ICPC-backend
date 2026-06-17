@@ -175,6 +175,7 @@ class TestCreateContestRepositoryContract:
         """Test that repository receives correctly mapped Contest ORM entity."""
         mock_contest_repository.create_contest.return_value = mock_contest
 
+        contest_create_data.max_submission_per_question = 10
         with patch.object(ContestResponse, "model_validate"):
             await contest_service.create_contest(contest_create_data, user_id)
 
@@ -190,6 +191,7 @@ class TestCreateContestRepositoryContract:
             contest_entity.team_approval_mode == contest_create_data.team_approval_mode
         )
         assert contest_entity.created_by == user_id
+        assert contest_entity.max_submission_per_question == 10
 
 
 class TestCreateContestExecutionOrder:

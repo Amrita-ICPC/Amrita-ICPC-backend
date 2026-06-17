@@ -20,10 +20,15 @@ from app.models.question import (
     QuestionTemplate,
     Submission,
     SubmissionTestCase,
+    TestCase,
 )
 from app.models.tag import QuestionTag
 from app.models.team import TeamUser
 from app.repositories.dto.evaluation import EvaluationResult
+from app.repositories.dto.question import (
+    CreateQuestionTemplateData,
+    CreateQuestionTestCaseData,
+)
 
 
 class QuestionRepository:
@@ -151,6 +156,26 @@ class QuestionRepository:
         Raises:
             QuestionNotFoundError: If question does not exist.
         """
+        # Clean up related submission testcases first to avoid foreign key violation
+        await self.db.execute(
+            delete(SubmissionTestCase).where(
+                SubmissionTestCase.testcase_id.in_(
+                    select(TestCase.id).where(TestCase.question_id == question_id)
+                )
+            )
+        )
+        # Clean up related contest submissions next
+        await self.db.execute(
+            delete(ContestSubmission).where(
+                ContestSubmission.submission_id.in_(
+                    select(Submission.id).where(Submission.question_id == question_id)
+                )
+            )
+        )
+        # Clean up related submissions
+        await self.db.execute(
+            delete(Submission).where(Submission.question_id == question_id)
+        )
         question = await self._fetch_question_or_raise(question_id)
         await self.db.delete(question)
         await self.db.flush()
@@ -342,4 +367,56 @@ class QuestionRepository:
         submission.total_memory = result.total_memory
 
         self.db.add_all(result.testcase_results)
+        await self.db.flush()
+
+    async def update_question_templates(
+        self, question: Question, template_dtos: list[CreateQuestionTemplateData]
+    ) -> None:
+        """Replace all templates for a question."""
+        await self.db.execute(
+            delete(QuestionTemplate).where(QuestionTemplate.question_id == question.id)
+        )
+        for template in template_dtos:
+            entity = QuestionTemplate(
+                id=template.id,
+                language_id=template.language_id,
+                starter_code=template.starter_code,
+                driver_code=template.driver_code,
+                solution_code=template.solution_code,
+            )
+            entity.question_id = question.id
+            self.db.add(entity)
+        self.db.expire(question, ["templates"])
+        await self.db.flush()
+
+    async def update_question_testcases(
+        self,
+        question: Question,
+        testcase_dtos: list[CreateQuestionTestCaseData],
+        created_by: UUID,
+    ) -> None:
+        """Replace all test cases for a question."""
+        # Clean up related submission testcases first to avoid foreign key violation
+        await self.db.execute(
+            delete(SubmissionTestCase).where(
+                SubmissionTestCase.testcase_id.in_(
+                    select(TestCase.id).where(TestCase.question_id == question.id)
+                )
+            )
+        )
+        await self.db.execute(
+            delete(TestCase).where(TestCase.question_id == question.id)
+        )
+        for testcase in testcase_dtos:
+            entity = TestCase(
+                input=testcase.input,
+                output=testcase.output,
+                is_hidden=testcase.is_hidden,
+                weight=testcase.weight,
+                order=testcase.order,
+                created_by=created_by,
+            )
+            entity.question_id = question.id
+            self.db.add(entity)
+        self.db.expire(question, ["testcases"])
         await self.db.flush()

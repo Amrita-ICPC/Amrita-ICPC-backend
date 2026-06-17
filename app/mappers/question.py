@@ -236,28 +236,7 @@ def apply_question_updates(question: Question, update_data: UpdateQuestionData) 
             question.tags = [QuestionTag(tag_id=tag_id) for tag_id in value]
             continue
         if field == "testcases":
-            question.testcases = [
-                TestCase(
-                    input=testcase.input,
-                    output=testcase.output,
-                    is_hidden=testcase.is_hidden,
-                    weight=testcase.weight,
-                    order=testcase.order,
-                    created_by=question.created_by,
-                )
-                for testcase in value
-            ]
             continue
         if field == "templates":
-            question.templates = [
-                QuestionTemplate(
-                    id=template.id,
-                    language_id=template.language_id,
-                    starter_code=template.starter_code,
-                    driver_code=template.driver_code,
-                    solution_code=template.solution_code,
-                )
-                for template in value
-            ]
             continue
         setattr(question, field, value)

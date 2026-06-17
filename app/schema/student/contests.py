@@ -130,6 +130,9 @@ class StudentContestQuestionResponse(BaseModel):
         ..., description="Whether the student has attempted the question"
     )
     solved: bool = Field(..., description="Whether the student has solved the question")
+    max_submission: int | None = Field(
+        None, description="Maximum submissions allowed for this question"
+    )
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -260,9 +263,14 @@ class StudentQuestionDetailResponse(BaseModel):
     allowed_languages: list[str] = Field(default_factory=list)
     tags: list[TagResponse] = Field(default_factory=list)
     templates: list[StudentTemplateResponse] = Field(default_factory=list)
+    max_submission: int | None = Field(
+        None, description="Maximum submissions allowed for this question"
+    )
 
     @classmethod
-    def from_question(cls, question: "Question") -> "StudentQuestionDetailResponse":
+    def from_question(
+        cls, question: "Question", max_submission: int | None = None
+    ) -> "StudentQuestionDetailResponse":
         language_names: list[str] = []
         for mapping in getattr(question, "languages", []) or []:
             language = getattr(mapping, "language", None)
@@ -294,4 +302,5 @@ class StudentQuestionDetailResponse(BaseModel):
             allowed_languages=list(dict.fromkeys(language_names)),
             tags=tag_items,
             templates=template_items,
+            max_submission=max_submission,
         )

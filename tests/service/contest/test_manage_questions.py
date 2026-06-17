@@ -233,8 +233,11 @@ async def test_update_single_testcase_supports_partial_payload(
             user_id=user_id,
         )
 
-    assert mock_question.testcases[0].is_hidden is True
-    assert mock_question.testcases[0].input == original_input
+    mock_question_repository.update_question_testcases.assert_called_once()
+    args, kwargs = mock_question_repository.update_question_testcases.call_args
+    assert args[0] == mock_question
+    assert args[1][0].is_hidden is True
+    assert args[1][0].input == original_input
     mock_question_repository.update_question.assert_called_once_with(mock_question)
 
 
@@ -308,8 +311,11 @@ async def test_update_single_template_supports_partial_payload(
             user_id=user_id,
         )
 
-    assert mock_question.templates[0].starter_code == "updated-starter"
-    assert mock_question.templates[0].language_id == old_language_id
+    mock_question_repository.update_question_templates.assert_called_once()
+    args, kwargs = mock_question_repository.update_question_templates.call_args
+    assert args[0] == mock_question
+    assert args[1][0].starter_code == "updated-starter"
+    assert args[1][0].language_id == old_language_id
     mock_question_repository.update_question.assert_called_once_with(mock_question)
 
 

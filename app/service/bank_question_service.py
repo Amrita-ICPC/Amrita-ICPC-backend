@@ -450,6 +450,15 @@ class BankQuestionService:
 
         # Apply and persist
         apply_question_updates(question, update_dto)
+
+        if testcase_dtos is not None:
+            await self.question_repo.update_question_testcases(
+                question, testcase_dtos, created_by=question.created_by
+            )
+
+        if template_dtos is not None:
+            await self.question_repo.update_question_templates(question, template_dtos)
+
         updated_question = await self.question_repo.update_question(question)
 
         response = to_bank_question_response(updated_question)

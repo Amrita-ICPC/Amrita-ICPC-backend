@@ -35,10 +35,10 @@ async def init_db():
         logger.info("Initializing database...")
         logger.info("Migrations enabled; creating tables via metadata.")
         async with engine.begin() as conn:
+            await sync_db_schemas(conn)
             await conn.run_sync(Base.metadata.create_all)
-            # await drop_db()
 
-            logger.info("Database tables created successfully.")
+            logger.info("Database tables synced and created successfully.")
 
 
 async def get_db():
@@ -54,18 +54,66 @@ async def get_db():
             raise
 
 
-async def drop_db() -> None:
+async def sync_db_schemas(conn) -> None:
     """
-    Drop all database tables dynamically with CASCADE.
+    Detect changed schemas (tables with modified columns) and drop them
+    along with any dependent tables, so they can be recreated by create_all.
     Only allowed in development environment.
     """
     if config.ENVIRONMENT != "development":
-        logger.warning("Drop DB operation is only allowed in development environment.")
         return
 
-    logger.info("Dropping database tables...")
-    async with engine.begin() as conn:
+    logger.info("Checking for changed database schemas...")
+
+    def _get_tables_to_drop(connection) -> list[str]:
+        from sqlalchemy import inspect
+
+        inspector = inspect(connection)
+        existing_tables = set(inspector.get_table_names())
+
+        changed_tables = set()
+
+        # 1. Detect tables with column changes
+        for table_name, table in Base.metadata.tables.items():
+            if table_name not in existing_tables:
+                continue
+
+            existing_cols = {col["name"] for col in inspector.get_columns(table_name)}
+            model_cols = {col.name for col in table.columns}
+
+            # If there's a mismatch in column names, mark as changed
+            if existing_cols != model_cols:
+                changed_tables.add(table_name)
+
+        if not changed_tables:
+            return []
+
+        # 2. Add dependent tables (tables that have FKs to changed tables)
+        tables_to_drop = set(changed_tables)
+        for table in Base.metadata.sorted_tables:
+            if table.name in tables_to_drop:
+                continue
+            for fk in table.foreign_keys:
+                if fk.column.table.name in tables_to_drop:
+                    tables_to_drop.add(table.name)
+                    break
+
+        # 3. Return tables to drop in reverse topological order (children first)
+        ordered_drop = []
         for table in reversed(Base.metadata.sorted_tables):
-            await conn.execute(text(f"DROP TABLE IF EXISTS {table.name} CASCADE;"))
-            logger.info(f"Dropped table {table.name} (CASCADE).")
-    logger.info("Database tables dropped successfully.")
+            if table.name in tables_to_drop and table.name in existing_tables:
+                ordered_drop.append(table.name)
+
+        return ordered_drop
+
+    tables_to_drop = await conn.run_sync(_get_tables_to_drop)
+
+    if tables_to_drop:
+        logger.info(
+            f"Detected schema changes. Dropping tables: {', '.join(tables_to_drop)}"
+        )
+        for table_name in tables_to_drop:
+            await conn.execute(text(f"DROP TABLE IF EXISTS {table_name} CASCADE;"))
+        logger.info("Changed tables dropped successfully.")
+    else:
+        logger.info("No schema changes detected.")

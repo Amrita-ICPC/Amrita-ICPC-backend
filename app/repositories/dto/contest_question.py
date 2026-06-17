@@ -40,6 +40,8 @@ class AddContestQuestionData:
     duration: Optional[int]
     score: Optional[int]
     created_by: UUID
+    max_submission: Optional[int] = None
+    bank_question_id: Optional[UUID] = None
 
 
 @dataclass
