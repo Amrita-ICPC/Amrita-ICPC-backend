@@ -179,6 +179,10 @@ class Contest(Base):
         "ContestSubmission", back_populates="contest"
     )
 
+    # Transient count attributes for lists/summaries
+    question_count: int = 0
+    team_count: int = 0
+
 
 class ContestInstructor(Base):
     __tablename__ = "contest_instructor"

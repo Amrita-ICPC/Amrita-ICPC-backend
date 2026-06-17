@@ -173,6 +173,9 @@ def to_contest_summary_response(
     contest: Contest, *, run_status: ContestRunStatus
 ) -> ContestSummaryResponse:
     """Map contest ORM object to summary response schema."""
+    q_count = getattr(contest, "question_count", 0)
+    t_count = getattr(contest, "team_count", 0)
+
     response = ContestSummaryResponse(
         id=contest.id,
         name=contest.name,
@@ -197,6 +200,8 @@ def to_contest_summary_response(
         ]
         if hasattr(contest, "audience_links")
         else [],
+        question_count=q_count if isinstance(q_count, int) else 0,
+        team_count=t_count if isinstance(t_count, int) else 0,
     )
 
     return response

@@ -201,6 +201,12 @@ class ContestSummaryResponse(BaseModel):
     audiences: list[ContestAudienceResponse] = Field(
         default_factory=list, description="List of audiences linked to this contest"
     )
+    question_count: int = Field(
+        0, ge=0, description="Number of questions in the contest"
+    )
+    team_count: int = Field(
+        0, ge=0, description="Number of teams in the contest (confirmed and approved)"
+    )
 
     model_config = ConfigDict(from_attributes=True)
 
