@@ -309,7 +309,27 @@ class ContestRepository:
         Returns:
             PaginatedResult containing total count and list of Contest objects
         """
-        base_query = select(Contest)
+        # Subqueries for counts
+        question_count_sub = (
+            select(func.count(ContestQuestion.question_id))
+            .where(ContestQuestion.contest_id == Contest.id)
+            .scalar_subquery()
+        )
+        team_count_sub = (
+            select(func.count(ContestTeam.id))
+            .where(
+                ContestTeam.contest_id == Contest.id,
+                ContestTeam.team_status == TeamStatus.CONFIRMED,
+                ContestTeam.approval_status == TeamApprovalStatus.APPROVED,
+            )
+            .scalar_subquery()
+        )
+
+        base_query = select(
+            Contest,
+            question_count_sub.label("question_count"),
+            team_count_sub.label("team_count"),
+        )
 
         # Apply permission filter
         base_query = self._apply_permission_filter(base_query, user_id, is_admin)
@@ -358,7 +378,13 @@ class ContestRepository:
         result = await self.db.execute(
             base_query.offset(pagination.skip).limit(pagination.limit)
         )
-        contests = list(result.unique().scalars().all())
+        rows = result.unique().all()
+        contests = []
+        for row in rows:
+            contest = row[0]
+            contest.question_count = row[1] or 0
+            contest.team_count = row[2] or 0
+            contests.append(contest)
 
         return PaginatedResult(total=total, items=contests)
 
@@ -383,7 +409,27 @@ class ContestRepository:
         Returns:
             PaginatedResult containing total count and list of soft-deleted Contest objects
         """
-        base_query = select(Contest)
+        # Subqueries for counts
+        question_count_sub = (
+            select(func.count(ContestQuestion.question_id))
+            .where(ContestQuestion.contest_id == Contest.id)
+            .scalar_subquery()
+        )
+        team_count_sub = (
+            select(func.count(ContestTeam.id))
+            .where(
+                ContestTeam.contest_id == Contest.id,
+                ContestTeam.team_status == TeamStatus.CONFIRMED,
+                ContestTeam.approval_status == TeamApprovalStatus.APPROVED,
+            )
+            .scalar_subquery()
+        )
+
+        base_query = select(
+            Contest,
+            question_count_sub.label("question_count"),
+            team_count_sub.label("team_count"),
+        )
 
         # Apply permission filter
         base_query = self._apply_permission_filter(base_query, user_id, is_admin)
@@ -407,7 +453,13 @@ class ContestRepository:
         result = await self.db.execute(
             base_query.offset(pagination.skip).limit(pagination.limit)
         )
-        contests = list(result.unique().scalars().all())
+        rows = result.unique().all()
+        contests = []
+        for row in rows:
+            contest = row[0]
+            contest.question_count = row[1] or 0
+            contest.team_count = row[2] or 0
+            contests.append(contest)
 
         return PaginatedResult(total=total, items=contests)
 

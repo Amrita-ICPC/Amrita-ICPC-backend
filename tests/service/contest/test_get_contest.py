@@ -327,3 +327,36 @@ class TestGetAllContestsRepositoryContract:
         call_args = mock_contest_repository.get_contests_with_filters.call_args
         assert call_args[0][0] == user_id
         assert call_args[0][1] is False  # not admin
+
+
+class TestContestSummaryCountsMapping:
+    """Test that transient count fields are mapped correctly in ContestSummaryResponse."""
+
+    @pytest.mark.asyncio
+    async def test_summary_response_contains_counts(
+        self,
+        contest_service,
+        mock_contest_repository,
+        mock_user_repository,
+        mock_contest,
+        mock_user,
+        user_id,
+    ):
+        """Test that get_all_contests maps question and team counts to the response schema."""
+        # Setup transient count attributes on mock contest
+        mock_contest.question_count = 5
+        mock_contest.team_count = 12
+
+        mock_result = PaginatedResult(total=1, items=[mock_contest])
+        mock_contest_repository.get_contests_with_filters.return_value = mock_result
+        mock_user_repository.get_user_or_raise.return_value = mock_user
+        mock_user.role = UserRole.student
+
+        total, contests = await contest_service.get_all_contests(user_id)
+
+        assert total == 1
+        assert len(contests) == 1
+        summary = contests[0]
+        # Assert schema model contains mapped count values
+        assert summary.question_count == 5
+        assert summary.team_count == 12

@@ -214,9 +214,4 @@ class ContestService:
   - Validate contest management permissions for team creation and updates.
   - Ensure guards are invoked before any repository or service calls.
 
-## Testing
-- Write unit tests for service layer
-- Mock database interactions in service tests.
-- Use fixtures to set up test data and dependencies.
-- Test both success and failure paths for all operations.
-- Ensure tests are isolated and do not rely on external systems.
+- Use pyrefly for type checking

@@ -827,7 +827,11 @@ class ContestService:
         )
 
         return result.total, [
-            ContestSummaryResponse.model_validate(contest) for contest in result.items
+            to_contest_summary_response(
+                contest,
+                run_status=compute_run_status(contest.start_time, contest.end_time),
+            )
+            for contest in result.items
         ]
 
     async def get_contest_audiences(
