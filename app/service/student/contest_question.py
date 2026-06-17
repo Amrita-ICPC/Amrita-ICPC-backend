@@ -8,6 +8,7 @@ from fastapi import status
 from fastapi.sse import ServerSentEvent
 from redis.asyncio import Redis
 
+from app.core.cache.decorators import cache_get
 from app.core.clients.celery import celery_app
 from app.core.logger import logger
 from app.exceptions.base import AppBaseException
@@ -169,6 +170,12 @@ class StudentContestQuestionService:
 
         return StudentContestQuestionsListResponse(questions=question_responses)
 
+    @cache_get(
+        key_builder=lambda self, contest_id, question_id, user_id: (
+            f"contests:{contest_id}:questions:{question_id}"
+        ),
+        use_lock=True,
+    )
     async def get_contest_question_details(
         self, contest_id: UUID, question_id: UUID, user_id: UUID
     ) -> StudentQuestionDetailResponse:
