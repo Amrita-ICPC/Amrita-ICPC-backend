@@ -3,6 +3,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.utils.enums import EvaluationStatus
+
 
 class EvaluationResponse(BaseModel):
     """Schema for evaluation response."""
@@ -23,7 +25,7 @@ class EvaluationStatusResponse(BaseModel):
 
     id: UUID = Field(..., description="Evaluation ID")
     contest_id: UUID = Field(..., description="Contest ID")
-    status: str = Field(
+    status: EvaluationStatus = Field(
         ..., description="Evaluation status (PENDING, RUNNING, COMPLETED)"
     )
     total_submissions: int = Field(..., description="Total submissions to evaluate")
