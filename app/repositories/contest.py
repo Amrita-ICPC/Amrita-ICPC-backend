@@ -22,6 +22,7 @@ from app.models.contest import (
     ContestInstructor,
     ContestQuestion,
     ContestSubmission,
+    ContestTeam,
 )
 from app.models.question import Question, QuestionLanguage, Submission
 from app.models.tag import QuestionTag, Tag
@@ -38,6 +39,8 @@ from app.utils.enums import (
     ContestRunStatus,
     ContestStatus,
     QuestionDifficulty,
+    TeamApprovalStatus,
+    TeamStatus,
 )
 
 
@@ -1071,3 +1074,53 @@ class ContestRepository:
             .order_by(ContestQuestion.order.asc())
         )
         return list(result.unique().scalars().all())
+
+    async def get_contest_leaderboard_raw_data(
+        self, contest_id: UUID
+    ) -> tuple[list[ContestTeam], list[Question], list[Submission]]:
+        """
+        Retrieve all raw data needed to calculate the contest leaderboard:
+        - Confirmed and approved teams with their accepted members.
+        - Questions assigned to the contest ordered by their position.
+        - Submissions made under the contest, eager loading testcases and contest submission details.
+
+        Args:
+            contest_id: ID of the contest.
+
+        Returns:
+            tuple: (teams, questions, submissions)
+        """
+        # 1. Fetch confirmed/approved teams and their accepted members
+        teams_result = await self.db.execute(
+            select(ContestTeam)
+            .options(selectinload(ContestTeam.contest_team_member))
+            .where(
+                ContestTeam.contest_id == contest_id,
+                ContestTeam.team_status == TeamStatus.CONFIRMED,
+                ContestTeam.approval_status == TeamApprovalStatus.APPROVED,
+            )
+        )
+        teams = list(teams_result.scalars().all())
+
+        # 2. Fetch all questions in the contest
+        questions_result = await self.db.execute(
+            select(Question)
+            .join(ContestQuestion, ContestQuestion.question_id == Question.id)
+            .where(ContestQuestion.contest_id == contest_id)
+            .order_by(ContestQuestion.order.asc())
+        )
+        questions = list(questions_result.scalars().all())
+
+        # 3. Fetch all submissions in the contest
+        submissions_result = await self.db.execute(
+            select(Submission)
+            .options(
+                selectinload(Submission.testcases),
+                joinedload(Submission.contest_submission),
+            )
+            .join(ContestSubmission, ContestSubmission.submission_id == Submission.id)
+            .where(ContestSubmission.contest_id == contest_id)
+        )
+        submissions = list(submissions_result.scalars().all())
+
+        return teams, questions, submissions

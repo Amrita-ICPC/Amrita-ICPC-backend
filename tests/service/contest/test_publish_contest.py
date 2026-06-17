@@ -209,6 +209,7 @@ class TestPublishContestSoftDelete:
     ):
         """Test that soft-deleted contests raise ContestNotFoundError."""
         mock_contest.is_deleted = True
+        mock_contest.status = ContestStatus.DELETED
         mock_contest_repository.get_contest_or_raise.return_value = mock_contest
 
         with pytest.raises(ContestNotFoundError):

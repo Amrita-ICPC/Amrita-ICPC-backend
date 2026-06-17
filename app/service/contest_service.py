@@ -44,11 +44,18 @@ from app.schema.contest import (
     InstructorResponse,
 )
 from app.schema.evaluation import EvaluationResponse, EvaluationStatusResponse
+from app.schema.leaderboard import (
+    LeaderboardQuestionDetail,
+    LeaderboardResponse,
+    LeaderboardRow,
+)
 from app.service.contest_event_publish import ContestEventPublisher
 from app.utils.contest import compute_run_status
 from app.utils.enums import (
     ContestRunStatus,
     ContestStatus,
+    ContestTeamMemberStatus,
+    SubmissionStatus,
     UserRole,
 )
 from app.validators.contest import ContestValidator
@@ -896,6 +903,11 @@ class ContestService:
         async for msg in self.event_publisher.subscribe(contest_id):
             yield msg
 
+    @cache_delete(
+        key_builder=lambda self, contest_id, user_id: [
+            f"contest:{contest_id}:leaderboard",
+        ],
+    )
     async def evaluate_contest(
         self, contest_id: UUID, user_id: UUID
     ) -> EvaluationResponse:
@@ -986,4 +998,153 @@ class ContestService:
             status=eval_data.get("status", "PENDING"),
             total_submissions=eval_data.get("total_submissions", 0),
             processed_submissions=eval_data.get("processed_submissions", 0),
+        )
+
+    @cache_get(
+        key_builder=lambda self, contest_id, user_id: (
+            f"contest:{contest_id}:leaderboard"
+        ),
+        ttl=300,
+    )
+    async def get_contest_leaderboard(
+        self, contest_id: UUID, user_id: UUID
+    ) -> LeaderboardResponse:
+        """Get the contest leaderboard calculated based on team standings.
+
+        Calculation Workflow:
+        1. For each accepted team member and question, find the maximum score (best score) among their evaluated submissions.
+        2. For each question, average the best scores of all accepted team members to get the question score.
+        3. Sum the question scores to get the team's total score.
+        4. Sort teams by total score descending.
+
+        Args:
+            contest_id: UUID of the contest.
+            user_id: UUID of the user requesting the leaderboard.
+
+        Returns:
+            LeaderboardResponse: The sorted standings.
+        """
+        contest = await self.repository.get_contest_or_raise(contest_id)
+        if contest.status == ContestStatus.DELETED:
+            raise ContestNotFoundError(str(contest_id))
+
+        await self.guard.check_read_contest(user_id=user_id, contest=contest)
+
+        (
+            teams,
+            questions,
+            submissions,
+        ) = await self.repository.get_contest_leaderboard_raw_data(contest_id)
+
+        from collections import defaultdict
+
+        # Structure: team_id -> member_id -> question_id -> list of submissions
+        team_member_question_subs = defaultdict(
+            lambda: defaultdict(lambda: defaultdict(list))
+        )
+        # Structure: team_id -> question_id -> list of all submissions
+        team_question_subs = defaultdict(lambda: defaultdict(list))
+
+        for sub in submissions:
+            if sub.contest_submission:
+                t_id = sub.contest_submission.contest_team_id
+                m_id = sub.contest_submission.contest_team_member_id
+                q_id = sub.question_id
+
+                team_question_subs[t_id][q_id].append(sub)
+                if sub.is_evaluated:
+                    team_member_question_subs[t_id][m_id][q_id].append(sub)
+
+        rows: list[tuple[int, UUID, str, list[LeaderboardQuestionDetail]]] = []
+        for team in teams:
+            accepted_members = [
+                m
+                for m in team.contest_team_member
+                if m.status == ContestTeamMemberStatus.ACCEPTED
+            ]
+
+            total_score_sum = 0.0
+            question_details = []
+
+            for question in questions:
+                # Step 1: Find best score for each member for this question
+                best_scores = []
+                for member in accepted_members:
+                    subs = team_member_question_subs[team.id][member.id][question.id]
+                    if subs:
+                        best_score = max(s.score for s in subs)
+                    else:
+                        best_score = 0
+                    best_scores.append(best_score)
+
+                # Step 2: Average Per Question
+                if accepted_members:
+                    avg_score = sum(best_scores) / len(accepted_members)
+                else:
+                    avg_score = 0.0
+
+                rounded_question_score = int(round(avg_score))
+                total_score_sum += avg_score
+
+                # Determine attempts and solved status
+                all_subs = team_question_subs[team.id][question.id]
+                attempts = len(all_subs)
+                is_solved = any(
+                    s.is_evaluated and s.status == SubmissionStatus.AC for s in all_subs
+                )
+
+                time_taken = None
+                if is_solved:
+                    solved_subs = [
+                        s
+                        for s in all_subs
+                        if s.is_evaluated and s.status == SubmissionStatus.AC
+                    ]
+                    if solved_subs and contest.start_time:
+                        first_solved = min(s.created_at for s in solved_subs)
+                        start_time = contest.start_time
+                        if start_time.tzinfo is None:
+                            start_time = start_time.replace(tzinfo=timezone.utc)
+                        if first_solved.tzinfo is None:
+                            first_solved = first_solved.replace(tzinfo=timezone.utc)
+                        time_taken = int((first_solved - start_time).total_seconds())
+
+                question_details.append(
+                    LeaderboardQuestionDetail(
+                        question_id=question.id,
+                        question_title=question.title,
+                        is_solved=is_solved,
+                        score=rounded_question_score,
+                        attempts=attempts,
+                        time_taken_seconds=time_taken,
+                    )
+                )
+
+            # Step 3: Sum Question Scores
+            rounded_total_score = int(round(total_score_sum))
+
+            rows.append((rounded_total_score, team.id, team.name, question_details))
+
+        # Sort by total_score descending
+        rows.sort(key=lambda x: x[0], reverse=True)
+
+        standings = []
+        for rank, (total_score, team_id, team_name, q_details) in enumerate(
+            rows, start=1
+        ):
+            standings.append(
+                LeaderboardRow(
+                    rank=rank,
+                    team_id=team_id,
+                    team_name=team_name,
+                    total_score=total_score,
+                    total_penalty=0,
+                    question_details=q_details,
+                )
+            )
+
+        return LeaderboardResponse(
+            contest_id=contest_id,
+            last_updated_at=datetime.now(timezone.utc),
+            standings=standings,
         )
