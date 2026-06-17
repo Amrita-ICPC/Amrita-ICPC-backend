@@ -32,7 +32,10 @@ def get_type_adapter(func: Callable[..., Any]) -> Optional[TypeAdapter[Any]]:
         hints = get_type_hints(func, globalns=getattr(func, "__globals__", {}))
         return_type = hints.get("return")
     except Exception:
-        return_type = func.__annotations__.get("return")
+        annotations = getattr(func, "__annotations__", None)
+        return_type = (
+            annotations.get("return") if isinstance(annotations, dict) else None
+        )
 
     if return_type and return_type is not type(None):
         try:
@@ -53,10 +56,16 @@ def cache_get(
     *,
     key_builder: Callable[P, str],
     ttl: int = 300,
+    use_lock: bool = False,
+    lock_timeout: float = 30.0,
+    lock_blocking: bool = True,
+    lock_blocking_timeout: Optional[float] = 5.0,
+    lock_sleep: float = 0.1,
 ) -> Callable[[Callable[P, Awaitable[R]]], Callable[P, Awaitable[R]]]:
     """
     Decorator to cache the result of a function.
     Automatically handles serialization/deserialization based on return type hints.
+    Supports distributed cache locking to prevent cache stampedes.
     """
 
     def decorator(func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
@@ -64,21 +73,17 @@ def cache_get(
 
         @wraps(func)
         async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-            if not config.CACHE_ENABLED:
-                logger.debug("Cache disabled, bypassing cache get")
+            if not config.CACHE_ENABLED or not redis.redis_client:
+                logger.debug("Cache disabled or redis unavailable, bypassing cache get")
                 return await func(*args, **kwargs)
 
             key = key_builder(*args, **kwargs)
 
-            if not redis.redis_client:
-                logger.warning("Redis client not initialized, skipping cache get")
-                return await func(*args, **kwargs)
-
-            try:
-                cached = await redis.redis_client.get(key)
-                if cached is not None:
-                    logger.info(f"Cache hit for key: {key}")
-                    try:
+            async def get_from_cache() -> Optional[R]:
+                try:
+                    cached = await redis.redis_client.get(key)
+                    if cached is not None:
+                        logger.info(f"Cache hit for key: {key}")
                         if adapter:
                             try:
                                 return cast(R, adapter.validate_json(cached))
@@ -92,32 +97,61 @@ def cache_get(
                             else cached
                         )
                         return cast(R, deserialize(cached_text))
-                    except Exception as e:
-                        logger.error(f"Error deserializing cache for key {key}: {e}")
-            except Exception as e:
-                logger.error(f"Redis get failed for key {key}: {e}")
+                except Exception as e:
+                    logger.error(f"Redis get failed for key {key}: {e}")
+                return None
 
-            logger.info(f"Cache miss for key: {key}")
-            result = await func(*args, **kwargs)
-
-            if redis.redis_client:
+            async def set_in_cache(value: R) -> None:
                 try:
                     if adapter:
-                        # dump_json returns bytes
                         try:
-                            serialized_data: bytes = adapter.dump_json(result)
+                            serialized_data = adapter.dump_json(value)
                         except Exception as e:
                             logger.error(
                                 f"TypeAdapter dump_json failed for key {key}: {e}"
                             )
-                            serialized_data = serialize(result).encode("utf-8")
+                            serialized_data = serialize(value).encode("utf-8")
                     else:
-                        serialized_data = serialize(result).encode("utf-8")
+                        serialized_data = serialize(value).encode("utf-8")
 
                     await redis.redis_client.set(key, serialized_data, ex=ttl)
                 except Exception as e:
                     logger.error(f"Redis set failed for key {key}: {e}")
-            return result
+
+            cached_val = await get_from_cache()
+            if cached_val is not None:
+                return cached_val
+
+            if use_lock:
+                lock_key = f"lock:{key}"
+                lock = redis.redis_client.lock(
+                    name=lock_key,
+                    timeout=lock_timeout,
+                    sleep=lock_sleep,
+                    blocking=lock_blocking,
+                    blocking_timeout=lock_blocking_timeout,
+                )
+                try:
+                    async with lock:
+                        cached_val = await get_from_cache()
+                        if cached_val is not None:
+                            return cached_val
+
+                        logger.info(f"Cache miss for key: {key}")
+                        result = await func(*args, **kwargs)
+                        await set_in_cache(result)
+                        return result
+                except Exception as e:
+                    logger.error(f"Redis lock failed for key {lock_key}: {e}")
+                    logger.info(f"Cache miss for key (lock fallback): {key}")
+                    result = await func(*args, **kwargs)
+                    await set_in_cache(result)
+                    return result
+            else:
+                logger.info(f"Cache miss for key: {key}")
+                result = await func(*args, **kwargs)
+                await set_in_cache(result)
+                return result
 
         return wrapper
 
