@@ -145,7 +145,11 @@ class StudentContestQuestionService:
         Validates eligibility (user is accepted member of confirmed team)
         and if the session is started and live.
         """
-        await self._validate_session_and_get_contest(contest_id, user_id)
+        (
+            contest,
+            _,
+            _,
+        ) = await self._validate_session_and_get_contest(contest_id, user_id)
 
         # Retrieve contest questions from repository
         questions = await self.repository.get_contest_questions(contest_id)
@@ -156,6 +160,9 @@ class StudentContestQuestionService:
                 id=q.question_id,
                 attempted=False,
                 solved=False,
+                max_submission=q.max_submission
+                if q.max_submission is not None
+                else contest.max_submission_per_question,
             )
             for q in questions
         ]
@@ -170,7 +177,11 @@ class StudentContestQuestionService:
         Validates student eligibility (session started, runtime active)
         and fetches question preview info (title, statement, limits, languages, tags, public testcases, starter templates).
         """
-        await self._validate_session_and_get_contest(contest_id, user_id)
+        (
+            contest,
+            _,
+            _,
+        ) = await self._validate_session_and_get_contest(contest_id, user_id)
 
         # Retrieve contest question details from repository
         question = await self.repository.get_contest_question_details(
@@ -179,8 +190,17 @@ class StudentContestQuestionService:
         if not question:
             raise QuestionNotInContestError(str(question_id), str(contest_id))
 
+        contest_question = await self.contest_repository.get_contest_question(
+            contest_id, question_id
+        )
+        max_sub = contest_question.max_submission if contest_question else None
+        if max_sub is None:
+            max_sub = contest.max_submission_per_question
+
         # Map to response schema
-        return StudentQuestionDetailResponse.from_question(question)
+        return StudentQuestionDetailResponse.from_question(
+            question, max_submission=max_sub
+        )
 
     async def _get_workspace_key_and_validate(
         self, contest_id: UUID, question_id: UUID, user_id: UUID
@@ -371,23 +391,28 @@ class StudentContestQuestionService:
             contest_id=contest_id, user_id=user_id
         )
 
-        # Verify that the question exists in the contest
-        in_contest = await self.contest_repository.is_question_in_contest(
+        # Verify that the question exists in the contest and retrieve it
+        contest_question = await self.contest_repository.get_contest_question(
             contest_id, question_id
         )
-        if not in_contest:
+        if not contest_question:
             raise QuestionNotInContestError(str(question_id), str(contest_id))
 
-        # If evaluate_on_submit is False, enforce only one submission is allowed
-        if not contest.evaluate_on_submit:
-            existing_submissions = (
-                await self.repository.get_submissions_by_team_and_question(
-                    contest_team.id, question_id
-                )
+        existing_submissions = (
+            await self.repository.get_submissions_by_team_and_question(
+                contest_team.id, question_id
             )
-            if len(existing_submissions) > 0:
+        )
+
+        # Check max_submission limits
+        max_sub = contest_question.max_submission
+        if max_sub is None:
+            max_sub = contest.max_submission_per_question
+
+        if max_sub is not None:
+            if len(existing_submissions) >= max_sub:
                 raise AppBaseException(
-                    message="Only one submission is allowed for this question in this contest.",
+                    message=f"Maximum submissions ({max_sub}) reached for this question.",
                     status_code=status.HTTP_400_BAD_REQUEST,
                 )
 

@@ -143,6 +143,10 @@ class Contest(Base):
         default=ContestTeamParticipationType.LEADER_ONLY,
     )
 
+    max_submission_per_question: Mapped[int | None] = mapped_column(
+        Integer, default=None, nullable=True
+    )
+
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
@@ -202,6 +206,10 @@ class ContestQuestion(Base):
         ForeignKey("question.id", ondelete="CASCADE"), primary_key=True
     )
     bank_question_id = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+
+    max_submission: Mapped[int | None] = mapped_column(
+        Integer, default=None, nullable=True
+    )
 
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(
@@ -266,6 +274,8 @@ class ContestTeamProgress(Base):
     contest_team_member_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("contest_team_member.id", ondelete="CASCADE"), nullable=False
     )
+
+    score: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     # Flagging related fields
     flagged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -487,7 +497,7 @@ class ContestSubmission(Base):
     __tablename__ = "contest_submission"
 
     submission_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("submission.id"), primary_key=True
+        ForeignKey("submission.id", ondelete="CASCADE"), primary_key=True
     )
     contest_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("contest.id"))
     contest_team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("contest_team.id"))

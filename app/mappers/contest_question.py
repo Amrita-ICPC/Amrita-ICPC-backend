@@ -12,6 +12,7 @@ Mapper functions handle:
     - ORM entity to API response schema conversions
 """
 
+from typing import Optional
 from uuid import UUID
 
 from app.models.contest import ContestQuestion
@@ -27,6 +28,7 @@ def build_add_contest_question_dto(
     contest_id: UUID,
     created_by: UUID,
     order: int,
+    bank_question_id: Optional[UUID] = None,
 ) -> AddContestQuestionData:
     """
     Map add question request schema to repository DTO.
@@ -57,6 +59,8 @@ def build_add_contest_question_dto(
         duration=request.duration,
         score=request.score,
         created_by=created_by,
+        max_submission=request.max_submission,
+        bank_question_id=bank_question_id,
     )
 
 
@@ -112,4 +116,6 @@ def build_contest_question_entity(
         duration=data.duration,
         score=100 if data.score is None else data.score,
         created_by=data.created_by,
+        max_submission=data.max_submission,
+        bank_question_id=data.bank_question_id,
     )

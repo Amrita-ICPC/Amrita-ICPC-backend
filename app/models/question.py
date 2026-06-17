@@ -88,7 +88,7 @@ class QuestionTemplate(Base):
     )
 
     question_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("question.id"), nullable=False
+        ForeignKey("question.id", ondelete="CASCADE"), nullable=False
     )
 
     language_id: Mapped[int] = mapped_column(ForeignKey("language.id"), nullable=False)
@@ -117,7 +117,7 @@ class TestCase(Base):
     )
 
     question_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("question.id"), nullable=False
+        ForeignKey("question.id", ondelete="CASCADE"), nullable=False
     )
 
     input: Mapped[str] = mapped_column(Text, nullable=False)
@@ -148,7 +148,7 @@ class QuestionLanguage(Base):
     __tablename__ = "question_language"
 
     question_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("question.id"), primary_key=True
+        ForeignKey("question.id", ondelete="CASCADE"), primary_key=True
     )
     language_id: Mapped[int] = mapped_column(
         ForeignKey("language.id"), primary_key=True
@@ -168,7 +168,7 @@ class Submission(Base):
     )
 
     question_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("question.id"), nullable=False
+        ForeignKey("question.id", ondelete="CASCADE"), nullable=False
     )
 
     source_code: Mapped[str] = mapped_column(Text, nullable=False)
@@ -244,10 +244,10 @@ class SubmissionTestCase(Base):
     )
 
     submission_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("submission.id"), nullable=False
+        ForeignKey("submission.id", ondelete="CASCADE"), nullable=False
     )
     testcase_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("testcase.id"), nullable=False
+        ForeignKey("testcase.id", ondelete="CASCADE"), nullable=False
     )
 
     status: Mapped[SubmissionStatus | None] = mapped_column(

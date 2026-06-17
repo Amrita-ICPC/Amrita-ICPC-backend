@@ -23,6 +23,7 @@ from app.models.contest import (
     ContestQuestion,
     ContestSubmission,
     ContestTeam,
+    ContestTeamProgress,
 )
 from app.models.question import Question, QuestionLanguage, Submission
 from app.models.tag import QuestionTag, Tag
@@ -926,6 +927,62 @@ class ContestRepository:
         )
         return result.scalars().first() is not None
 
+    async def get_contest_question(
+        self, contest_id: UUID, question_id: UUID
+    ) -> ContestQuestion | None:
+        """
+        Retrieve a specific contest question link.
+
+        Args:
+            contest_id: Contest ID
+            question_id: Question ID
+
+        Returns:
+            ContestQuestion object if found, otherwise None
+        """
+        result = await self.db.execute(
+            select(ContestQuestion).filter(
+                ContestQuestion.contest_id == contest_id,
+                ContestQuestion.question_id == question_id,
+            )
+        )
+        return result.scalars().first()
+
+    async def update_team_member_progress_scores(
+        self, contest_id: UUID, member_scores: dict[UUID, int]
+    ) -> None:
+        """
+        Update the scores for multiple team members in the contest.
+
+        Args:
+            contest_id: Contest ID
+            member_scores: Dictionary mapping contest_team_member_id to total score
+        """
+        if not member_scores:
+            return
+
+        # Use CASE statement for bulk update
+        score_cases = case(
+            {member_id: score for member_id, score in member_scores.items()},
+            value=ContestTeamProgress.contest_team_member_id,
+        )
+
+        stmt = (
+            update(ContestTeamProgress)
+            .where(
+                and_(
+                    ContestTeamProgress.contest_id == contest_id,
+                    ContestTeamProgress.contest_team_member_id.in_(
+                        member_scores.keys()
+                    ),
+                )
+            )
+            .values(score=score_cases)
+        )
+
+        await self.db.execute(stmt)
+        await self.db.flush()
+
     async def add_questions_to_contest(
         self,
         questions: list[AddContestQuestionData],
@@ -953,6 +1010,8 @@ class ContestRepository:
                 duration=item.duration,
                 score=item.score,
                 created_by=item.created_by,
+                max_submission=item.max_submission,
+                bank_question_id=item.bank_question_id,
             )
             for item in questions
         ]

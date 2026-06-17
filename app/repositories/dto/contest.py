@@ -76,6 +76,7 @@ class CreateContestData:
     show_leaderboard_during_contest: bool
     participation_type: ContestTeamParticipationType
     evaluate_on_submit: bool
+    max_submission_per_question: int | None
 
 
 @dataclass
@@ -107,6 +108,7 @@ class UpdateContestData:
     show_leaderboard_during_contest: bool | None | _UnsetType = UNSET
     participation_type: ContestTeamParticipationType | None | _UnsetType = UNSET
     evaluate_on_submit: bool | None | _UnsetType = UNSET
+    max_submission_per_question: int | None | _UnsetType = UNSET
 
 
 @dataclass

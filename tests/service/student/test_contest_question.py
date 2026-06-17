@@ -117,6 +117,7 @@ async def test_submit_code_success(
     contest = MagicMock(spec=Contest)
     contest.id = contest_id
     contest.participation_type = ContestTeamParticipationType.INDIVIDUAL_WORKSPACE
+    contest.max_submission_per_question = None
     mock_contest_repository.get_contest_or_raise.return_value = contest
 
     # Mock team member
@@ -139,7 +140,9 @@ async def test_submit_code_success(
     mock_contest_team_progress_repository.get_contest_team_progress_by_id.return_value = progress
 
     # Mock question existence in contest
-    mock_contest_repository.is_question_in_contest.return_value = True
+    contest_question = MagicMock()
+    contest_question.max_submission = None
+    mock_contest_repository.get_contest_question.return_value = contest_question
 
     # Mock testcases count
     mock_testcase_repository.get_all_by_question.return_value = [
@@ -212,6 +215,7 @@ async def test_submit_code_question_not_in_contest(
     contest = MagicMock(spec=Contest)
     contest.id = contest_id
     contest.participation_type = ContestTeamParticipationType.INDIVIDUAL_WORKSPACE
+    contest.max_submission_per_question = None
     mock_contest_repository.get_contest_or_raise.return_value = contest
 
     team_member = MagicMock(spec=ContestTeamMember)
@@ -232,7 +236,7 @@ async def test_submit_code_question_not_in_contest(
     mock_contest_team_progress_repository.get_contest_team_progress_by_id.return_value = progress
 
     # Question is NOT in contest
-    mock_contest_repository.is_question_in_contest.return_value = False
+    mock_contest_repository.get_contest_question.return_value = None
 
     with pytest.raises(QuestionNotInContestError):
         await contest_question_service.submit_code(
@@ -329,3 +333,127 @@ async def test_submit_code_session_ended(
             code="print(1)",
             language_id=54,
         )
+
+
+@pytest.mark.asyncio
+async def test_get_contest_questions_max_submission_fallback(
+    contest_question_service,
+    mock_contest_repository,
+    mock_repository,
+    mock_contest_team_repository,
+    mock_contest_team_progress_repository,
+):
+    contest_id = uuid4()
+    user_id = uuid4()
+
+    # Mock contest
+    contest = MagicMock(spec=Contest)
+    contest.id = contest_id
+    contest.participation_type = ContestTeamParticipationType.INDIVIDUAL_WORKSPACE
+    contest.max_submission_per_question = 5
+    mock_contest_repository.get_contest_or_raise.return_value = contest
+
+    # Mock team member and progress to pass validation
+    team_member = MagicMock(spec=ContestTeamMember)
+    contest_team = MagicMock(spec=ContestTeam)
+    contest_team.id = uuid4()
+    contest_team.contest_id = contest_id
+    contest_team.team_status = TeamStatus.CONFIRMED
+    contest_team.approval_status = TeamApprovalStatus.APPROVED
+    team_member.contest_team = contest_team
+    mock_contest_team_repository.get_contest_team_member_by_user_id.return_value = (
+        team_member
+    )
+
+    progress = MagicMock(spec=ContestTeamProgress)
+    progress.end_time = datetime.now(timezone.utc).replace(year=2030)
+    progress.extra_time_seconds = 0
+    mock_contest_team_progress_repository.get_contest_team_progress_by_id.return_value = progress
+
+    # Mock contest questions
+    cq1 = MagicMock()
+    cq1.question_id = uuid4()
+    cq1.max_submission = None  # should fallback
+
+    cq2 = MagicMock()
+    cq2.question_id = uuid4()
+    cq2.max_submission = 3  # should not fallback
+
+    mock_repository.get_contest_questions.return_value = [cq1, cq2]
+
+    response = await contest_question_service.get_contest_questions(contest_id, user_id)
+
+    assert len(response.questions) == 2
+    assert response.questions[0].id == cq1.question_id
+    assert response.questions[0].max_submission == 5
+    assert response.questions[1].id == cq2.question_id
+    assert response.questions[1].max_submission == 3
+
+
+@pytest.mark.asyncio
+async def test_get_contest_question_details_max_submission_fallback(
+    contest_question_service,
+    mock_contest_repository,
+    mock_repository,
+    mock_contest_team_repository,
+    mock_contest_team_progress_repository,
+):
+    contest_id = uuid4()
+    question_id = uuid4()
+    user_id = uuid4()
+
+    # Mock contest
+    contest = MagicMock(spec=Contest)
+    contest.id = contest_id
+    contest.participation_type = ContestTeamParticipationType.INDIVIDUAL_WORKSPACE
+    contest.max_submission_per_question = 5
+    mock_contest_repository.get_contest_or_raise.return_value = contest
+
+    # Mock team member and progress to pass validation
+    team_member = MagicMock(spec=ContestTeamMember)
+    contest_team = MagicMock(spec=ContestTeam)
+    contest_team.id = uuid4()
+    contest_team.contest_id = contest_id
+    contest_team.team_status = TeamStatus.CONFIRMED
+    contest_team.approval_status = TeamApprovalStatus.APPROVED
+    team_member.contest_team = contest_team
+    mock_contest_team_repository.get_contest_team_member_by_user_id.return_value = (
+        team_member
+    )
+
+    progress = MagicMock(spec=ContestTeamProgress)
+    progress.end_time = datetime.now(timezone.utc).replace(year=2030)
+    progress.extra_time_seconds = 0
+    mock_contest_team_progress_repository.get_contest_team_progress_by_id.return_value = progress
+
+    # Mock question details
+    question = MagicMock()
+    question.id = question_id
+    question.title = "Test Question"
+    question.question_text = "Statement"
+    question.difficulty = "EASY"
+    question.time_limit_ms = 1000
+    question.memory_limit_mb = 256
+    question.languages = []
+    question.templates = []
+    question.tags = []
+
+    mock_repository.get_contest_question_details.return_value = question
+
+    # Mock get_contest_question
+    cq = MagicMock()
+    cq.max_submission = None  # should fallback
+    mock_contest_repository.get_contest_question.return_value = cq
+
+    response = await contest_question_service.get_contest_question_details(
+        contest_id, question_id, user_id
+    )
+    assert response.id == question_id
+    assert response.max_submission == 5
+
+    # Now test without fallback
+    cq.max_submission = 3
+    response = await contest_question_service.get_contest_question_details(
+        contest_id, question_id, user_id
+    )
+    assert response.max_submission == 3

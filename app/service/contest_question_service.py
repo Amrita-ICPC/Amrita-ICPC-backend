@@ -30,7 +30,9 @@ from app.repositories.dto import (
     PaginationParams,
 )
 from app.repositories.dto.contest_question import AddContestQuestionData
-from app.repositories.dto.question import CreateQuestionTemplateData
+from app.repositories.dto.question import (
+    CreateQuestionTemplateData,
+)
 from app.repositories.language import LanguageRepository
 from app.repositories.question import QuestionRepository
 from app.schema.contest import (
@@ -484,6 +486,24 @@ class ContestQuestionService:
 
         # Apply and persist
         apply_question_updates(question, update_dto)
+
+        if "max_submission" in update_data.model_fields_set:
+            contest_question = await self.repository.get_contest_question(
+                contest_id, question_id
+            )
+            if contest_question:
+                contest_question.max_submission = update_data.max_submission
+
+        if testcase_dtos is not None:
+            await self.question_repository.update_question_testcases(
+                question, testcase_dtos, created_by=question.created_by
+            )
+
+        if template_dtos is not None:
+            await self.question_repository.update_question_templates(
+                question, template_dtos
+            )
+
         updated_question = await self.question_repository.update_question(question)
 
         return QuestionResponse.from_question(updated_question)
@@ -642,15 +662,25 @@ class ContestQuestionService:
                 if config and config.duration is not None
                 else request.duration
             )
+            max_sub = (
+                config.max_submission
+                if config and config.max_submission is not None
+                else request.max_submission
+            )
 
             q_req = AddContestQuestionRequest(
                 question_id=created_q.id,
                 order=next_order,
                 score=score,
                 duration=duration,
+                max_submission=max_sub,
             )
             dto = build_add_contest_question_dto(
-                q_req, contest_id=contest_id, created_by=user_id, order=next_order
+                q_req,
+                contest_id=contest_id,
+                created_by=user_id,
+                order=next_order,
+                bank_question_id=request.bank_id,
             )
             dtos.append(dto)
             next_order += 1

@@ -79,6 +79,9 @@ class QuestionUpdate(BaseModel):
     templates: Optional[List[QuestionTemplateCreate]] = None
     time_limit_ms: Optional[int] = Field(None, gt=0)
     memory_limit_mb: Optional[int] = Field(None, gt=0)
+    max_submission: Optional[int] = Field(
+        None, description="Maximum submissions allowed for this question"
+    )
 
 
 class AddQuestionTemplatesRequest(BaseModel):
