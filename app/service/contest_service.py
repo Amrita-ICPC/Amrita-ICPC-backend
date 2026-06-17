@@ -15,7 +15,10 @@ from app.exceptions.contest import (
     ContestNotFoundError,
     InvalidContestError,
 )
-from app.exceptions.evaluation import EvaluationNotFoundError
+from app.exceptions.evaluation import (
+    EvaluationBackendUnavailableError,
+    EvaluationNotFoundError,
+)
 from app.mappers.contest import (
     apply_contest_updates,
     build_contest_entity,
@@ -924,6 +927,9 @@ class ContestService:
             ContestNotFoundError: If the contest does not exist or is deleted.
             PermissionDeniedError: If the user lacks permission to manage the contest.
         """
+        if self.redis is None:
+            raise EvaluationBackendUnavailableError("Redis client is not initialized")
+
         contest = await self.repository.get_contest_or_raise(contest_id)
         if contest.status == ContestStatus.DELETED:
             raise ContestNotFoundError(str(contest_id))
@@ -985,7 +991,7 @@ class ContestService:
         await self.guard.check_manage_contest(user_id=user_id, contest=contest)
 
         if self.redis is None:
-            raise ValueError("Redis client is not initialized")
+            raise EvaluationBackendUnavailableError("Redis client is not initialized")
 
         data = await self.redis.get(f"contests:{contest_id}:evaluation")
         if not data:

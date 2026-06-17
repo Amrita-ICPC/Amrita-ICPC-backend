@@ -436,3 +436,13 @@ class ContestTeamParticipationType(str, enum.Enum):
 
     LEADER_ONLY = "LEADER_ONLY"
     INDIVIDUAL_WORKSPACE = "INDIVIDUAL_WORKSPACE"
+
+
+class EvaluationStatus(str, enum.Enum):
+    """
+    Enumeration of contest evaluation statuses.
+    """
+
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"

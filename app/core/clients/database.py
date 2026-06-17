@@ -1,5 +1,3 @@
-import asyncio
-
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -71,12 +69,3 @@ async def drop_db() -> None:
             await conn.execute(text(f"DROP TABLE IF EXISTS {table.name} CASCADE;"))
             logger.info(f"Dropped table {table.name} (CASCADE).")
     logger.info("Database tables dropped successfully.")
-
-
-if __name__ == "__main__":
-
-    async def main() -> None:
-        await drop_db()
-
-    asyncio.run(main())
-    asyncio.run(main())

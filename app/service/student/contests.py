@@ -614,8 +614,13 @@ class StudentContestService:
             ended_at=contest_team_progress.ended_at,
         )
 
+        effective_end_time, _ = calculate_effective_times(
+            base_end_time=contest_team_progress.end_time,
+            extra_time_seconds=contest_team_progress.extra_time_seconds,
+        )
+
         runtime_state = build_runtime_state(
-            effective_end_time=contest_team_progress.end_time,
+            effective_end_time=effective_end_time,
             remaining_seconds=0,
         )
 

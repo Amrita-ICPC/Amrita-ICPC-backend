@@ -411,6 +411,7 @@ async def _evaluate_contest_submission_async(
         submission = await repository.get_submission(submission_id)
         if submission is None:
             logger.error(f"Submission not found: {submission_id}")
+            await _update_progress_redis(contest_id, evaluation_id)
             return
 
         submission.is_evaluated = False
@@ -496,22 +497,29 @@ async def _evaluate_contest_submission_async(
         redis_client = get_redis()
         redis_key = f"contests:{contest_id}:evaluation"
         data = await redis_client.get(redis_key)
-        if data:
-            eval_data = json.loads(data)
-            if (
-                eval_data.get("id") != str(evaluation_id)
-                or eval_data.get("status") == "COMPLETED"
-            ):
-                logger.info(
-                    f"Evaluation {evaluation_id} was completed/superseded during evaluation. "
-                    f"Discarding results for submission {submission_id}."
-                )
-                return
+        if not data:
+            logger.info(
+                f"Evaluation state missing for {evaluation_id}. "
+                f"Discarding results for submission {submission_id}."
+            )
+            return
+
+        eval_data = json.loads(data)
+        if (
+            eval_data.get("id") != str(evaluation_id)
+            or eval_data.get("status") == "COMPLETED"
+        ):
+            logger.info(
+                f"Evaluation {evaluation_id} was completed/superseded during evaluation. "
+                f"Discarding results for submission {submission_id}."
+            )
+            return
 
         repository = QuestionRepository(db)
         submission = await repository.get_submission(submission_id)
         if submission is None:
             logger.error(f"Submission not found during save phase: {submission_id}")
+            await _update_progress_redis(contest_id, evaluation_id)
             return
 
         # Re-associate the testcase result objects with the fresh session's submission

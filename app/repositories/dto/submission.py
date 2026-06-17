@@ -56,7 +56,7 @@ class RecentSubmissionRaw:
     question_id: UUID
     question_title: str
     language_name: str
-    status: SubmissionStatus
+    status: SubmissionStatus | None
     created_at: datetime
 
 

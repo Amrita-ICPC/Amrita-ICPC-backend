@@ -688,7 +688,7 @@ async def restore_contest(
     summary="Assign instructors to contest",
     dependencies=[
         can_update("contests"),
-        Depends(check_permission("contests", "manamge_instructors")),
+        Depends(check_permission("contests", "manage_instructors")),
     ],
 )
 async def assign_instructors_to_contest(
@@ -1226,7 +1226,7 @@ async def evaluate_contest(
         APIResponse[EvaluationResponse]: The created evaluation process state.
     """
     evaluation = await service.evaluate_contest(contest_id, user_id)
-    logger.info(f"Contest evaluation triggered for {contest_id} by user {user_id}")
+    logger.info(f"Contest evaluation triggered for {contest_id} (actor=REDACTED)")
     return create_api_response(
         request,
         data=evaluation,
@@ -1261,7 +1261,7 @@ async def get_evaluation_status(
     """
     evaluation_status = await service.get_evaluation_status(contest_id, user_id)
     logger.info(
-        f"Contest evaluation status retrieved for {contest_id} by user {user_id}"
+        f"Contest evaluation status retrieved for {contest_id} (actor=REDACTED)"
     )
     return create_api_response(
         request,
@@ -1303,7 +1303,7 @@ async def get_contest_leaderboard(
         PermissionDeniedError: If the user lacks permission to access the contest.
     """
     leaderboard = await service.get_contest_leaderboard(contest_id, user_id)
-    logger.info(f"Contest leaderboard retrieved for {contest_id} by user {user_id}")
+    logger.info(f"Contest leaderboard retrieved for {contest_id} (actor=REDACTED)")
     return create_api_response(
         request,
         data=leaderboard,
