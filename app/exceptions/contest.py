@@ -184,6 +184,16 @@ class StudentAlreadyInContestError(AppBaseException):
         )
 
 
+class StudentContestSessionAlreadyStartedError(AppBaseException):
+    """Raised when a student tries to re-register after starting a contest session."""
+
+    def __init__(self, user_id: str, contest_id: str):
+        super().__init__(
+            message=f"Student {user_id} has already started a session in contest {contest_id}",
+            status_code=status.HTTP_409_CONFLICT,
+        )
+
+
 class TeamAlreadyInContestError(AppBaseException):
     """Raised when team is already registered or enrolled in the contest."""
 

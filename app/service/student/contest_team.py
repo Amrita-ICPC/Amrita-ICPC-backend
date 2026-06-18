@@ -7,6 +7,7 @@ from app.core.guards.team_student import TeamStudentGuard
 from app.exceptions.contest import (
     ContestTeamNotFoundException,
     StudentAlreadyInContestError,
+    StudentContestSessionAlreadyStartedError,
 )
 from app.exceptions.student.teams import (
     TeamStatusNotAllowedForUpdatingContestTeamMemberStatusException,
@@ -62,6 +63,15 @@ class ContestTeamService:
         self.team_student_guard = team_student_guard
         self.contest_repository = contest_repository
         self.contest_student_guard = contest_student_guard
+
+    async def _ensure_students_have_not_started_session(
+        self, contest_id: UUID, user_ids: list[UUID]
+    ) -> None:
+        for user_id in user_ids:
+            if await self.repository.has_started_contest_session(contest_id, user_id):
+                raise StudentContestSessionAlreadyStartedError(
+                    str(user_id), str(contest_id)
+                )
 
     @cache_delete(
         key_builder=lambda self, contest_id, contest_team_import, user_id: (
@@ -126,6 +136,10 @@ class ContestTeamService:
         # Check if the student is already in the contest
         await self.contest_student_guard.check_student_already_in_contest(
             contest_id=contest_id, user_ids=contest_team_import.member_ids
+        )
+        await self._ensure_students_have_not_started_session(
+            contest_id=contest_id,
+            user_ids=contest_team_import.member_ids,
         )
 
         # Check the audiences of the members
@@ -195,6 +209,10 @@ class ContestTeamService:
 
         # Check if user is already in the contest
         await self.contest_student_guard.check_student_already_in_contest(
+            contest_id=contest_id,
+            user_ids=[user_id],
+        )
+        await self._ensure_students_have_not_started_session(
             contest_id=contest_id,
             user_ids=[user_id],
         )
@@ -541,6 +559,10 @@ class ContestTeamService:
 
         # Check if the user is already in the contest
         await self.contest_student_guard.check_student_already_in_contest(
+            contest_id=contest.id,
+            user_ids=[user_id],
+        )
+        await self._ensure_students_have_not_started_session(
             contest_id=contest.id,
             user_ids=[user_id],
         )
