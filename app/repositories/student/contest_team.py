@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import Select, and_, case, func, select
+from sqlalchemy import Select, and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -9,6 +9,7 @@ from app.exceptions.contest import (
     ContestTeamNotFoundException,
 )
 from app.models import ContestTeam, ContestTeamMember, Team, User
+from app.models.contest import ContestTeamProgress
 from app.repositories.dto import PaginatedResult, PaginationParams, TeamFilters
 from app.utils.enums import ContestTeamMemberStatus, TeamApprovalStatus, TeamStatus
 
@@ -244,6 +245,32 @@ class ContestTeamRepository:
         )
         result = await self.db.execute(stmt)
         return int(result.scalar_one())
+
+    async def has_started_contest_session(
+        self, contest_id: UUID, user_id: UUID
+    ) -> bool:
+        """Return True if the user has any progress row in the contest."""
+        stmt = (
+            select(ContestTeamProgress.id)
+            .join(
+                ContestTeamMember,
+                or_(
+                    ContestTeamProgress.contest_team_member_id == ContestTeamMember.id,
+                    and_(
+                        ContestTeamProgress.contest_team_member_id.is_(None),
+                        ContestTeamProgress.contest_team_id
+                        == ContestTeamMember.contest_team_id,
+                    ),
+                ),
+            )
+            .where(
+                ContestTeamProgress.contest_id == contest_id,
+                ContestTeamMember.user_id == user_id,
+            )
+            .limit(1)
+        )
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none() is not None
 
     async def count_teams_by_status(self, contest_id: UUID) -> dict[str, int]:
         """Count the number of approved, waiting, disqualified, and rejected teams in a contest.

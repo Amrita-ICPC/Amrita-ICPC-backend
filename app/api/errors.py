@@ -38,6 +38,7 @@ from app.exceptions.contest import (
     QuestionAlreadyInContestError,
     QuestionNotInContestError,
     StudentAlreadyInContestError,
+    StudentContestSessionAlreadyStartedError,
     StudentNotEligibleForContestError,
     TeamAlreadyInContestError,
     TeamDisqualifiedError,
@@ -272,6 +273,19 @@ def setup_exception_handlers(app: FastAPI) -> None:
             status_code=exc.status_code,
             message=exc.message,
             error_code="STUDENT_ALREADY_IN_CONTEST",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(StudentContestSessionAlreadyStartedError)
+    async def student_contest_session_already_started_handler(
+        request: Request, exc: StudentContestSessionAlreadyStartedError
+    ):
+        logger.warning(f"Student contest session already started: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="STUDENT_CONTEST_SESSION_ALREADY_STARTED",
             details=[exc.detail] if exc.detail else None,
         )
 
