@@ -1010,35 +1010,36 @@ class ContestService:
             processed_submissions=eval_data.get("processed_submissions", 0),
         )
 
-    @cache_get(
-        key_builder=lambda self, contest_id, user_id: (
-            f"contest:{contest_id}:leaderboard"
-        ),
-        ttl=300,
+    @cache_delete(
+        key_builder=lambda self, contest_id, user_id: [
+            f"contest:{contest_id}:leaderboard",
+        ],
     )
-    async def get_contest_leaderboard(
-        self, contest_id: UUID, user_id: UUID
-    ) -> LeaderboardResponse:
-        """Get the contest leaderboard calculated based on team standings.
+    async def compute_team_scores(self, contest_id: UUID, user_id: UUID) -> None:
+        """Compute and persist team member scores for a contest.
 
-        Calculation Workflow:
-        1. For each accepted team member and question, find the maximum score (best score) among their evaluated submissions.
-        2. For each question, average the best scores of all accepted team members to get the question score.
-        3. Sum the question scores to get the team's total score.
-        4. Sort teams by total score descending.
+        Algorithm:
+        1. For each accepted team member and question, find the best (max) score
+           among their evaluated submissions.
+        2. Accumulate each member's best scores across all questions.
+        3. Persist member-level totals to ContestTeamProgress.
+
+        The team-level aggregate (AVG of member scores) is derived at query time
+        via ``get_teams_ranked_by_score``.
 
         Args:
             contest_id: UUID of the contest.
-            user_id: UUID of the user requesting the leaderboard.
+            user_id: UUID of the user triggering the computation.
 
-        Returns:
-            LeaderboardResponse: The sorted standings.
+        Raises:
+            ContestNotFoundError: If the contest does not exist or is deleted.
+            PermissionDeniedError: If the user lacks permission to manage the contest.
         """
         contest = await self.repository.get_contest_or_raise(contest_id)
         if contest.status == ContestStatus.DELETED:
             raise ContestNotFoundError(str(contest_id))
 
-        await self.guard.check_read_contest(user_id=user_id, contest=contest)
+        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
 
         (
             teams,
@@ -1048,12 +1049,95 @@ class ContestService:
 
         from collections import defaultdict
 
-        # Structure: team_id -> member_id -> question_id -> list of submissions
+        # Structure: team_id -> member_id -> question_id -> list of evaluated subs
         team_member_question_subs = defaultdict(
             lambda: defaultdict(lambda: defaultdict(list))
         )
+
+        for sub in submissions:
+            if sub.contest_submission and sub.is_evaluated:
+                t_id = sub.contest_submission.contest_team_id
+                m_id = sub.contest_submission.contest_team_member_id
+                q_id = sub.question_id
+                team_member_question_subs[t_id][m_id][q_id].append(sub)
+
+        member_total_scores: dict[UUID, int] = defaultdict(int)
+
+        for team in teams:
+            accepted_members = [
+                m
+                for m in team.contest_team_member
+                if m.status == ContestTeamMemberStatus.ACCEPTED
+            ]
+
+            for question in questions:
+                for member in accepted_members:
+                    subs = team_member_question_subs[team.id][member.id][question.id]
+                    best_score = max((s.score for s in subs), default=0)
+                    member_total_scores[member.id] += best_score
+
+        if member_total_scores:
+            await self.repository.update_team_member_progress_scores(
+                contest_id, dict(member_total_scores)
+            )
+
+        logger.info(
+            f"Computed scores for {len(member_total_scores)} members in contest {contest_id}"
+        )
+
+    @cache_get(
+        key_builder=lambda self, contest_id, user_id: (
+            f"contest:{contest_id}:leaderboard"
+        ),
+        ttl=300,
+    )
+    async def get_contest_leaderboard(
+        self, contest_id: UUID, user_id: UUID
+    ) -> LeaderboardResponse:
+        """Get the contest leaderboard using pre-computed team scores.
+
+        Team ranking is resolved by an efficient SQL aggregation query
+        (``get_teams_ranked_by_score``) that AVGs member scores from
+        ``ContestTeamProgress`` and sorts descending.
+
+        Question-level detail (is_solved, attempts, time_taken) is still
+        derived from submissions.
+
+        Args:
+            contest_id: UUID of the contest.
+            user_id: UUID of the user requesting the leaderboard.
+
+        Returns:
+            LeaderboardResponse: The sorted standings.
+
+        Raises:
+            ContestNotFoundError: If the contest does not exist or is deleted.
+            PermissionDeniedError: If the user lacks read permission.
+        """
+        contest = await self.repository.get_contest_or_raise(contest_id)
+        if contest.status == ContestStatus.DELETED:
+            raise ContestNotFoundError(str(contest_id))
+
+        await self.guard.check_read_contest(user_id=user_id, contest=contest)
+
+        # 1. Get teams ranked by aggregated score (single SQL query)
+        ranked_teams = await self.repository.get_teams_ranked_by_score(contest_id)
+
+        # 2. Fetch questions and submissions for question-level detail
+        (
+            _,
+            questions,
+            submissions,
+        ) = await self.repository.get_contest_leaderboard_raw_data(contest_id)
+
+        from collections import defaultdict
+
         # Structure: team_id -> question_id -> list of all submissions
         team_question_subs = defaultdict(lambda: defaultdict(list))
+        # Structure: team_id -> member_id -> question_id -> list of evaluated subs
+        team_member_question_subs = defaultdict(
+            lambda: defaultdict(lambda: defaultdict(list))
+        )
 
         for sub in submissions:
             if sub.contest_submission:
@@ -1065,38 +1149,27 @@ class ContestService:
                 if sub.is_evaluated:
                     team_member_question_subs[t_id][m_id][q_id].append(sub)
 
-        member_total_scores: dict[UUID, int] = defaultdict(int)
-        rows: list[tuple[int, UUID, str, list[LeaderboardQuestionDetail]]] = []
-        for team in teams:
+        standings: list[LeaderboardRow] = []
+        for rank, (team, total_score) in enumerate(ranked_teams, start=1):
             accepted_members = [
                 m
                 for m in team.contest_team_member
                 if m.status == ContestTeamMemberStatus.ACCEPTED
             ]
 
-            total_score_sum = 0.0
-            question_details = []
-
+            question_details: list[LeaderboardQuestionDetail] = []
             for question in questions:
-                # Step 1: Find best score for each member for this question
+                # Compute per-question average score from member best scores
                 best_scores = []
                 for member in accepted_members:
                     subs = team_member_question_subs[team.id][member.id][question.id]
-                    if subs:
-                        best_score = max(s.score for s in subs)
-                    else:
-                        best_score = 0
+                    best_score = max((s.score for s in subs), default=0)
                     best_scores.append(best_score)
-                    member_total_scores[member.id] += best_score
 
-                # Step 2: Average Per Question
                 if accepted_members:
                     avg_score = sum(best_scores) / len(accepted_members)
                 else:
                     avg_score = 0.0
-
-                rounded_question_score = int(round(avg_score))
-                total_score_sum += avg_score
 
                 # Determine attempts and solved status
                 all_subs = team_question_subs[team.id][question.id]
@@ -1126,37 +1199,20 @@ class ContestService:
                         question_id=question.id,
                         question_title=question.title,
                         is_solved=is_solved,
-                        score=rounded_question_score,
+                        score=int(round(avg_score)),
                         attempts=attempts,
                         time_taken_seconds=time_taken,
                     )
                 )
 
-            # Step 3: Sum Question Scores
-            rounded_total_score = int(round(total_score_sum))
-
-            rows.append((rounded_total_score, team.id, team.name, question_details))
-
-        # Sort by total_score descending
-        rows.sort(key=lambda x: x[0], reverse=True)
-
-        if member_total_scores:
-            await self.repository.update_team_member_progress_scores(
-                contest_id, dict(member_total_scores)
-            )
-
-        standings = []
-        for rank, (total_score, team_id, team_name, q_details) in enumerate(
-            rows, start=1
-        ):
             standings.append(
                 LeaderboardRow(
                     rank=rank,
-                    team_id=team_id,
-                    team_name=team_name,
+                    team_id=team.id,
+                    team_name=team.name,
                     total_score=total_score,
                     total_penalty=0,
-                    question_details=q_details,
+                    question_details=question_details,
                 )
             )
 

@@ -10,7 +10,7 @@ from app.utils.enums import QuestionDifficulty
 PositiveLanguageId = Annotated[int, Field(gt=0)]
 
 if TYPE_CHECKING:
-    from app.models.question import Question
+    from app.models.question import Question, TestCase
 
 
 class QuestionBase(BaseModel):
@@ -377,3 +377,26 @@ class BankQuestionMetadataResponse(BaseModel):
     title: str = Field(..., description="The title of the question")
     difficulty: QuestionDifficulty = Field(..., description="The difficulty level")
     tags: List[TagResponse] = Field(default_factory=list, description="Associated tags")
+
+
+class QuestionAndTestcasesResponse(BaseModel):
+    """Response model representing a question along with its testcases and templates for evaluation."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    templates: List[QuestionTemplateResponse] = Field(default_factory=list)
+    testcases: List[QuestionTestCaseResponse] = Field(default_factory=list)
+
+    @classmethod
+    def from_question_and_testcases(
+        cls, question: "Question", testcases: List["TestCase"]
+    ) -> "QuestionAndTestcasesResponse":
+        return cls(
+            id=question.id,
+            templates=[
+                QuestionTemplateResponse.model_validate(t)
+                for t in getattr(question, "templates", []) or []
+            ],
+            testcases=[QuestionTestCaseResponse.model_validate(tc) for tc in testcases],
+        )

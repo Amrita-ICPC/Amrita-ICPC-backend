@@ -4,6 +4,10 @@ from uuid import UUID
 
 if TYPE_CHECKING:
     from app.models.question import Question, QuestionTemplate
+    from app.schema.question import (
+        QuestionAndTestcasesResponse,
+        QuestionTemplateResponse,
+    )
 
 from app.exceptions.question import InvalidQuestionError
 from app.repositories.language import LanguageRepository
@@ -198,8 +202,8 @@ class QuestionValidator:
 
     @staticmethod
     def validate_submission_language(
-        question: "Question", language_id: int
-    ) -> "QuestionTemplate":
+        question: "Question | QuestionAndTestcasesResponse", language_id: int
+    ) -> "QuestionTemplate | QuestionTemplateResponse":
         """Validate that the question supports the given language.
 
         Args:
@@ -207,7 +211,7 @@ class QuestionValidator:
             language_id: The language ID from the submission.
 
         Returns:
-            The QuestionTemplate for the specified language.
+            The QuestionTemplate or QuestionTemplateResponse for the specified language.
 
         Raises:
             InvalidQuestionError: If the template for the language does not exist.

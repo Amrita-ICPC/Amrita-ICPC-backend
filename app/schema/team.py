@@ -10,7 +10,7 @@ from pydantic import (
 )
 from sqlalchemy import inspect
 
-from app.utils.enums import TeamApprovalStatus, TeamStatus
+from app.utils.enums import SubmissionStatus, TeamApprovalStatus, TeamStatus
 
 
 class TeamCreate(BaseModel):
@@ -396,5 +396,74 @@ class ContestTeamImport(BaseModel):
         default_factory=list,
         description="List of user IDs representing the members of the team.",
     )
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TeamMemberPerformance(BaseModel):
+    id: UUID
+    name: str
+    score: int
+    is_leader: bool
+    is_pariticpated: bool
+    started_at: Optional[datetime] = None
+    ended_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TeamPerformanceResponse(BaseModel):
+    id: UUID
+    name: str
+    score: int
+    total_submissions: int
+    accepted_submission: int
+    rejected_submission: int
+    members: List[TeamMemberPerformance]
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TeamMemberQuestionStatus(BaseModel):
+    id: UUID
+    is_submitted: bool
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TeamMemberAnalytics(BaseModel):
+    id: UUID
+    total_submission: int
+    accepted_submission: int
+    rejected_submission: int
+    started_at: Optional[datetime] = None
+    ended_at: Optional[datetime] = None
+    active_time: Optional[float] = None
+    score: int
+    questions: List[TeamMemberQuestionStatus]
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+TeamMemberAnalystics = TeamMemberAnalytics
+
+
+class QuestionSubmissionSummary(BaseModel):
+    id: UUID
+    status: Optional[SubmissionStatus] = None
+    score: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SubmissionDetailResponse(BaseModel):
+    id: UUID
+    source_code: str
+    status: Optional[SubmissionStatus] = None
+    score: int
+    total_time: Optional[int] = None
+    total_memory: Optional[int] = None
+    language: str
+    created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

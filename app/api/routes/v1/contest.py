@@ -1271,6 +1271,48 @@ async def get_evaluation_status(
     )
 
 
+@router.post(
+    "/{contest_id}/scores",
+    response_model=APIResponse[MessageResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Compute and persist team scores",
+    dependencies=[can_update("contests")],
+)
+async def compute_team_scores(
+    request: Request,
+    contest_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: ContestService = Depends(get_contest_service),
+) -> APIResponse[MessageResponse]:
+    """Compute and persist team member scores for a contest.
+
+    Calculates each member's best score per question, aggregates totals,
+    and persists to ContestTeamProgress. Subsequent leaderboard calls
+    use these stored scores for efficient ranking.
+
+    Args:
+        request: Framework context.
+        contest_id: The unique identifier of the contest.
+        user_id: Authenticated user ID.
+        service: Injected domain service.
+
+    Returns:
+        APIResponse[MessageResponse]: Confirmation message.
+
+    Raises:
+        ContestNotFoundError: If the contest is not found.
+        PermissionDeniedError: If the user lacks permission to manage the contest.
+    """
+    await service.compute_team_scores(contest_id, user_id)
+    logger.info(f"Team scores computed for contest {contest_id} (actor=REDACTED)")
+    return create_api_response(
+        request,
+        data=MessageResponse(message="Team scores computed successfully"),
+        message="Team scores computed successfully",
+        status_code=status.HTTP_200_OK,
+    )
+
+
 @router.get(
     "/{contest_id}/leaderboard",
     response_model=APIResponse[LeaderboardResponse],
