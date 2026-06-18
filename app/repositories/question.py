@@ -395,15 +395,12 @@ class QuestionRepository:
         testcase_dtos: list[CreateQuestionTestCaseData],
         created_by: UUID,
     ) -> None:
-        """Replace all test cases for a question."""
-        # Clean up related submission testcases first to avoid foreign key violation
-        await self.db.execute(
-            delete(SubmissionTestCase).where(
-                SubmissionTestCase.testcase_id.in_(
-                    select(TestCase.id).where(TestCase.question_id == question.id)
-                )
-            )
-        )
+        """
+        Replace all test cases for a question.
+
+        Historical SubmissionTestCase rows for replaced test cases are intentionally
+        removed by the testcase foreign-key cascade.
+        """
         await self.db.execute(
             delete(TestCase).where(TestCase.question_id == question.id)
         )

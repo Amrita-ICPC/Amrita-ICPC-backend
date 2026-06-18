@@ -1062,6 +1062,7 @@ class ContestService:
                 team_member_question_subs[t_id][m_id][q_id].append(sub)
 
         member_total_scores: dict[UUID, int] = defaultdict(int)
+        member_team_ids: dict[UUID, UUID] = {}
 
         for team in teams:
             accepted_members = [
@@ -1070,6 +1071,9 @@ class ContestService:
                 if m.status == ContestTeamMemberStatus.ACCEPTED
             ]
 
+            for member in accepted_members:
+                member_team_ids[member.id] = team.id
+
             for question in questions:
                 for member in accepted_members:
                     subs = team_member_question_subs[team.id][member.id][question.id]
@@ -1077,6 +1081,9 @@ class ContestService:
                     member_total_scores[member.id] += best_score
 
         if member_total_scores:
+            await self.repository.ensure_team_member_progress_rows(
+                contest_id, member_team_ids
+            )
             await self.repository.update_team_member_progress_scores(
                 contest_id, dict(member_total_scores)
             )

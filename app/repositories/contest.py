@@ -1036,6 +1036,45 @@ class ContestRepository:
         await self.db.execute(stmt)
         await self.db.flush()
 
+    async def ensure_team_member_progress_rows(
+        self, contest_id: UUID, member_team_ids: dict[UUID, UUID]
+    ) -> None:
+        """
+        Create missing progress rows for contest team members before score updates.
+
+        Args:
+            contest_id: Contest ID
+            member_team_ids: Mapping from contest_team_member_id to contest_team_id
+        """
+        if not member_team_ids:
+            return
+
+        existing_result = await self.db.execute(
+            select(ContestTeamProgress.contest_team_member_id).where(
+                and_(
+                    ContestTeamProgress.contest_id == contest_id,
+                    ContestTeamProgress.contest_team_member_id.in_(
+                        member_team_ids.keys()
+                    ),
+                )
+            )
+        )
+        existing_member_ids = set(existing_result.scalars().all())
+
+        for member_id, team_id in member_team_ids.items():
+            if member_id in existing_member_ids:
+                continue
+            self.db.add(
+                ContestTeamProgress(
+                    contest_id=contest_id,
+                    contest_team_id=team_id,
+                    contest_team_member_id=member_id,
+                    score=0,
+                )
+            )
+
+        await self.db.flush()
+
     async def add_questions_to_contest(
         self,
         questions: list[AddContestQuestionData],
@@ -1263,6 +1302,7 @@ class ContestRepository:
 
         stmt = (
             select(ContestTeam, avg_score)
+            .options(selectinload(ContestTeam.contest_team_member))
             .outerjoin(
                 ContestTeamMember,
                 and_(

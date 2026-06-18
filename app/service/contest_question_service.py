@@ -408,6 +408,7 @@ class ContestQuestionService:
         key_builder=lambda self, contest_id, question_id, update_data, user_id: [
             f"contest:{contest_id}*",
             "contests:*",
+            f"student:contest:{contest_id}*student:contests:*",
         ]
     )
     async def update_contest_question(
@@ -680,7 +681,7 @@ class ContestQuestionService:
                 contest_id=contest_id,
                 created_by=user_id,
                 order=next_order,
-                bank_question_id=request.bank_id,
+                bank_question_id=source_id,
             )
             dtos.append(dto)
             next_order += 1

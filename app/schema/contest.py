@@ -61,7 +61,7 @@ class ContestBase(BaseModel):
         description="Whether to evaluate submissions immediately on submit",
     )
     max_submission_per_question: Optional[int] = Field(
-        None, description="Maximum submissions allowed per question"
+        None, gt=0, description="Maximum submissions allowed per question"
     )
 
     @model_validator(mode="after")
@@ -196,7 +196,7 @@ class ContestSummaryResponse(BaseModel):
         ..., description="Whether to evaluate submissions immediately on submit"
     )
     max_submission_per_question: Optional[int] = Field(
-        None, description="Maximum submissions allowed per question"
+        None, gt=0, description="Maximum submissions allowed per question"
     )
     audiences: list[ContestAudienceResponse] = Field(
         default_factory=list, description="List of audiences linked to this contest"
@@ -430,3 +430,13 @@ class ContestBankCloneRequest(BaseModel):
 class ContestEvent(BaseModel):
     type: str
     payload: dict[str, object]
+
+
+class ContestSessionValidationData(BaseModel):
+    contest_team_id: UUID
+    team_id: UUID | None
+    contest_team_member_id: UUID
+    max_submission_per_question: int | None
+    evaluate_on_submit: bool
+    base_end_time: datetime | None
+    extra_time_seconds: int | None
