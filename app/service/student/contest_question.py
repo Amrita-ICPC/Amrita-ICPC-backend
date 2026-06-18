@@ -21,7 +21,7 @@ from app.exceptions.student.contests import (
     ContestSessionNotStartedError,
     NoContestTeamMemberFoundError,
 )
-from app.models import Contest, ContestSubmission, ContestTeam, ContestTeamMember
+from app.models import ContestSubmission
 from app.models.question import Submission
 from app.repositories.contest import ContestRepository
 from app.repositories.contest_team_progress import ContestTeamProgressRepository
@@ -31,6 +31,7 @@ from app.repositories.question import QuestionRepository
 from app.repositories.student.contest_question import StudentContestQuestionRepository
 from app.repositories.student.contest_team import ContestTeamRepository
 from app.repositories.testcase import TestCaseRepository
+from app.schema.contest import ContestSessionValidationData
 from app.schema.student import (
     StudentContestQuestionResponse,
     StudentContestQuestionsListResponse,
@@ -84,10 +85,35 @@ class StudentContestQuestionService:
 
     async def _validate_session_and_get_contest(
         self, contest_id: UUID, user_id: UUID
-    ) -> tuple[Contest, ContestTeam, ContestTeamMember]:
+    ) -> ContestSessionValidationData:
         """
         Validate student eligibility, contest runtime status, session progress, and remaining time.
         """
+        session_data = await self._get_cached_session_validation_data(
+            contest_id=contest_id,
+            user_id=user_id,
+        )
+
+        # Only the remaining time is intentionally recalculated on every validation.
+        _, remaining_seconds = calculate_effective_times(
+            base_end_time=session_data.base_end_time,
+            extra_time_seconds=session_data.extra_time_seconds,
+        )
+
+        if remaining_seconds <= 0:
+            raise ContestSessionEndedError()
+
+        return session_data
+
+    @cache_get(
+        key_builder=lambda self, contest_id, user_id: (
+            f"contests:{contest_id}:users:{user_id}:session-validation"
+        ),
+        ttl=60,
+    )
+    async def _get_cached_session_validation_data(
+        self, contest_id: UUID, user_id: UUID
+    ) -> ContestSessionValidationData:
         # 1. Get the contest or raise
         contest = await self.contest_repository.get_contest_or_raise(contest_id)
 
@@ -125,18 +151,15 @@ class StudentContestQuestionService:
         if team_progress is None:
             raise ContestSessionNotStartedError()
 
-        # 6. Validate session expiration (remaining seconds > 0)
-        base_end_time = team_progress.end_time
-
-        _, remaining_seconds = calculate_effective_times(
-            base_end_time=base_end_time,
+        return ContestSessionValidationData(
+            contest_team_id=contest_team.id,
+            team_id=contest_team.team_id,
+            contest_team_member_id=contest_team_member.id,
+            max_submission_per_question=contest.max_submission_per_question,
+            evaluate_on_submit=contest.evaluate_on_submit,
+            base_end_time=team_progress.end_time,
             extra_time_seconds=team_progress.extra_time_seconds,
         )
-
-        if remaining_seconds <= 0:
-            raise ContestSessionEndedError()
-
-        return contest, contest_team, contest_team_member
 
     async def get_contest_questions(
         self, contest_id: UUID, user_id: UUID
@@ -146,11 +169,7 @@ class StudentContestQuestionService:
         Validates eligibility (user is accepted member of confirmed team)
         and if the session is started and live.
         """
-        (
-            contest,
-            _,
-            _,
-        ) = await self._validate_session_and_get_contest(contest_id, user_id)
+        session_data = await self._validate_session_and_get_contest(contest_id, user_id)
 
         # Retrieve contest questions from repository
         questions = await self.repository.get_contest_questions(contest_id)
@@ -163,19 +182,13 @@ class StudentContestQuestionService:
                 solved=False,
                 max_submission=q.max_submission
                 if q.max_submission is not None
-                else contest.max_submission_per_question,
+                else session_data.max_submission_per_question,
             )
             for q in questions
         ]
 
         return StudentContestQuestionsListResponse(questions=question_responses)
 
-    @cache_get(
-        key_builder=lambda self, contest_id, question_id, user_id: (
-            f"contests:{contest_id}:questions:{question_id}"
-        ),
-        use_lock=True,
-    )
     async def get_contest_question_details(
         self, contest_id: UUID, question_id: UUID, user_id: UUID
     ) -> StudentQuestionDetailResponse:
@@ -184,12 +197,26 @@ class StudentContestQuestionService:
         Validates student eligibility (session started, runtime active)
         and fetches question preview info (title, statement, limits, languages, tags, public testcases, starter templates).
         """
-        (
-            contest,
-            _,
-            _,
-        ) = await self._validate_session_and_get_contest(contest_id, user_id)
+        session_data = await self._validate_session_and_get_contest(contest_id, user_id)
 
+        return await self._get_cached_contest_question_details(
+            contest_id=contest_id,
+            question_id=question_id,
+            default_max_submission=session_data.max_submission_per_question,
+        )
+
+    @cache_get(
+        key_builder=lambda self, contest_id, question_id, default_max_submission: (
+            f"contests:{contest_id}:questions:{question_id}"
+        ),
+        use_lock=True,
+    )
+    async def _get_cached_contest_question_details(
+        self,
+        contest_id: UUID,
+        question_id: UUID,
+        default_max_submission: int | None,
+    ) -> StudentQuestionDetailResponse:
         # Retrieve contest question details from repository
         question = await self.repository.get_contest_question_details(
             contest_id, question_id
@@ -202,7 +229,7 @@ class StudentContestQuestionService:
         )
         max_sub = contest_question.max_submission if contest_question else None
         if max_sub is None:
-            max_sub = contest.max_submission_per_question
+            max_sub = default_max_submission
 
         # Map to response schema
         return StudentQuestionDetailResponse.from_question(
@@ -215,11 +242,7 @@ class StudentContestQuestionService:
         """
         Validate student eligibility and contest runtime status, then build the redis workspace key.
         """
-        (
-            contest,
-            contest_team,
-            contest_team_member,
-        ) = await self._validate_session_and_get_contest(contest_id, user_id)
+        session_data = await self._validate_session_and_get_contest(contest_id, user_id)
 
         # Verify that the question exists in the contest
         in_contest = await self.contest_repository.is_question_in_contest(
@@ -231,7 +254,7 @@ class StudentContestQuestionService:
         return build_workspace_key(
             contest_id=contest_id,
             question_id=question_id,
-            contest_team_member_id=contest_team_member.id,
+            contest_team_member_id=session_data.contest_team_member_id,
         )
 
     async def get_workspace(
@@ -390,11 +413,7 @@ class StudentContestQuestionService:
             StudentSubmissionResponse: The created submission details.
         """
         # Validate student eligibility, contest runtime status, session progress, and remaining time.
-        (
-            contest,
-            contest_team,
-            contest_team_member,
-        ) = await self._validate_session_and_get_contest(
+        session_data = await self._validate_session_and_get_contest(
             contest_id=contest_id, user_id=user_id
         )
 
@@ -407,14 +426,14 @@ class StudentContestQuestionService:
 
         existing_submissions = (
             await self.repository.get_submissions_by_team_and_question(
-                contest_team.id, question_id
+                session_data.contest_team_id, question_id
             )
         )
 
         # Check max_submission limits
         max_sub = contest_question.max_submission
         if max_sub is None:
-            max_sub = contest.max_submission_per_question
+            max_sub = session_data.max_submission_per_question
 
         if max_sub is not None:
             if len(existing_submissions) >= max_sub:
@@ -443,8 +462,8 @@ class StudentContestQuestionService:
         contest_submission = ContestSubmission(
             submission=submission,
             contest_id=contest_id,
-            contest_team_id=contest_team.id,
-            contest_team_member_id=contest_team_member.id,
+            contest_team_id=session_data.contest_team_id,
+            contest_team_member_id=session_data.contest_team_member_id,
         )
 
         # Save to postgres
@@ -453,13 +472,16 @@ class StudentContestQuestionService:
         )
 
         # Trigger background evaluation task via Celery only if evaluate_on_submit is True
-        if contest.evaluate_on_submit:
+        if session_data.evaluate_on_submit:
             celery_app.send_task(
                 "worker.evaluation.evaluate_submission",
                 args=[str(submission.id)],
             )
             try:
-                if contest_team.team_id is not None:
+                team_id = session_data.team_id
+                contest_team_member_id = session_data.contest_team_member_id
+
+                if team_id is not None:
                     event_service = ContestEventService()
                     event = StudentSubmissionUpdateEvent(
                         type="submission_update",
@@ -471,8 +493,8 @@ class StudentContestQuestionService:
                     )
                     await event_service.publish_event(
                         contest_id=contest_id,
-                        team_id=contest_team.team_id,
-                        contest_team_member_id=contest_team_member.id,
+                        team_id=team_id,
+                        contest_team_member_id=contest_team_member_id,
                         event=event,
                     )
             except Exception as e:
@@ -486,11 +508,7 @@ class StudentContestQuestionService:
         """
         Retrieve all submissions for a question made by the student's team.
         """
-        (
-            contest,
-            contest_team,
-            contest_team_member,
-        ) = await self._validate_session_and_get_contest(
+        session_data = await self._validate_session_and_get_contest(
             contest_id=contest_id, user_id=user_id
         )
 
@@ -501,7 +519,7 @@ class StudentContestQuestionService:
             raise QuestionNotInContestError(str(question_id), str(contest_id))
 
         submissions = await self.repository.get_submissions_by_team_and_question(
-            contest_team.id, question_id
+            session_data.contest_team_id, question_id
         )
 
         return [StudentSubmissionResponse.model_validate(sub) for sub in submissions]
@@ -513,17 +531,15 @@ class StudentContestQuestionService:
         Subscribe to submission progress/status updates via Redis pubsub and yield them.
         """
         # Validate student eligibility, contest runtime status, session progress, and remaining time.
-        (
-            contest,
-            contest_team,
-            contest_team_member,
-        ) = await self._validate_session_and_get_contest(
+        session_data = await self._validate_session_and_get_contest(
             contest_id=contest_id, user_id=user_id
         )
 
         pubsub = self.redis.pubsub()
         channel = get_contest_channel_key(
-            contest_id, contest_team.team_id, contest_team_member.id
+            contest_id,
+            session_data.team_id,
+            session_data.contest_team_member_id,
         )
         await pubsub.subscribe(channel)
         logger.info(f"Subscribed to {channel}")

@@ -1,4 +1,4 @@
-from typing import Any
+from typing import TypedDict
 from uuid import UUID
 
 from sqlalchemy import select
@@ -9,7 +9,7 @@ from app.core.logger import logger
 from app.models.question import Submission, SubmissionTestCase
 from app.repositories.dto.evaluation import EvaluationResult
 from app.repositories.question import QuestionRepository
-from app.schema.evaluation import EvaluationPreparationDetails
+from app.schema.evaluation import ContestSubmissionContext, EvaluationPreparationDetails
 from app.schema.question import (
     QuestionAndTestcasesResponse,
     QuestionTestCaseResponse,
@@ -20,6 +20,11 @@ from app.utils.evaluation import calculate_submission_score
 from app.validators.question import QuestionValidator
 from worker.judge0_service import Judge0EvaluationService
 from worker.redis_helper import is_evaluation_valid, update_evaluation_progress
+
+
+class EvaluationContext(TypedDict):
+    contest_id: UUID
+    evaluation_id: UUID
 
 
 class EvaluationService:
@@ -194,7 +199,7 @@ class EvaluationService:
         event_service: ContestEventService,
         submission_id: UUID,
         question_id: UUID,
-        contest_submission_context: dict[str, Any] | None,
+        contest_submission_context: ContestSubmissionContext | None,
         status: str,
     ) -> None:
         """Publish submission status update event to the contest event publisher for students."""
@@ -229,7 +234,7 @@ class EvaluationService:
         submission_id: UUID,
         reevaluation: bool = False,
         publish_events: bool = True,
-        evaluation_context: dict[str, Any] | None = None,
+        evaluation_context: EvaluationContext | None = None,
     ) -> None:
         """Unifies evaluation and re-evaluation paths for student and instructor submissions."""
         event_service = ContestEventService()
@@ -281,7 +286,7 @@ class EvaluationService:
                     await db.commit()
 
                     if publish_events:
-                        contest_sub_ctx = None
+                        contest_sub_ctx: ContestSubmissionContext | None = None
                         if sub.contest_submission:
                             contest_sub_ctx = {
                                 "contest_id": sub.contest_submission.contest_id,

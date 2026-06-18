@@ -426,8 +426,18 @@ class BankQuestionService:
         # Build DTOs
         testcase_dtos = build_update_testcase_dtos(update_data.testcases)
 
+        old_template_keys_to_delete: set[str] = set()
         template_dtos: list[CreateQuestionTemplateData] | None = None
         if update_data.templates is not None:
+            for existing_template in question.templates:
+                for key in (
+                    existing_template.starter_code,
+                    existing_template.driver_code,
+                    existing_template.solution_code,
+                ):
+                    if key is not None and self._is_storage_object_key(key):
+                        old_template_keys_to_delete.add(key)
+
             template_dtos = []
             for template in update_data.templates:
                 template_id = (
@@ -460,6 +470,9 @@ class BankQuestionService:
             await self.question_repo.update_question_templates(question, template_dtos)
 
         updated_question = await self.question_repo.update_question(question)
+
+        for key in old_template_keys_to_delete:
+            await self.code_storage_service.delete_code(key)
 
         response = to_bank_question_response(updated_question)
         return await self._hydrate_question_template_codes(response)

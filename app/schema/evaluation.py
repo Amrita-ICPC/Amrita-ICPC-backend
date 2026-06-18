@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import TypedDict
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -39,6 +39,12 @@ class EvaluationStatusResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ContestSubmissionContext(TypedDict):
+    contest_id: UUID
+    team_id: UUID | None
+    contest_team_member_id: UUID | None
+
+
 class EvaluationPreparationDetails(BaseModel):
     """Details prepared for executing a submission evaluation."""
 
@@ -46,6 +52,6 @@ class EvaluationPreparationDetails(BaseModel):
     testcases: list[QuestionTestCaseResponse]
     final_source_code: str
     max_score: int
-    contest_submission_context: dict[str, Any] | None = None
+    contest_submission_context: ContestSubmissionContext | None = None
 
     model_config = ConfigDict(arbitrary_types_allowed=True)

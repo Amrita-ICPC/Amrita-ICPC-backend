@@ -12,6 +12,7 @@ from typing import (
 )
 
 from pydantic import TypeAdapter
+from redis.exceptions import LockError
 
 from app.core.cache.serialize import deserialize, serialize
 from app.core.clients import redis
@@ -141,7 +142,7 @@ def cache_get(
                         result = await func(*args, **kwargs)
                         await set_in_cache(result)
                         return result
-                except Exception as e:
+                except LockError as e:
                     logger.error(f"Redis lock failed for key {lock_key}: {e}")
                     logger.info(f"Cache miss for key (lock fallback): {key}")
                     result = await func(*args, **kwargs)

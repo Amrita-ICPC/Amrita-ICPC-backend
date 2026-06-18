@@ -51,6 +51,10 @@ class Contest(Base):
             "duration IS NULL OR duration <= EXTRACT(EPOCH FROM (end_time - start_time))",
             name="check_duration_less_than_contest_length",
         ),
+        CheckConstraint(
+            "max_submission_per_question IS NULL OR max_submission_per_question >= 0",
+            name="check_max_submission_per_question_non_negative",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -201,7 +205,13 @@ class ContestInstructor(Base):
 # TODO: Add a next_question_order field, to behave that field as counter
 class ContestQuestion(Base):
     __tablename__ = "contest_question"
-    __table_args__ = (UniqueConstraint("contest_id", "order"),)
+    __table_args__ = (
+        UniqueConstraint("contest_id", "order"),
+        CheckConstraint(
+            "max_submission IS NULL OR max_submission >= 0",
+            name="check_contest_question_max_submission_non_negative",
+        ),
+    )
 
     contest_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("contest.id", ondelete="CASCADE"), primary_key=True
