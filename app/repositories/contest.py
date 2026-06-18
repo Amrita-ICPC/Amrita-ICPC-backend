@@ -39,6 +39,7 @@ from app.repositories.dto.contest_question import AddContestQuestionData
 from app.utils.enums import (
     ContestRunStatus,
     ContestStatus,
+    ContestTeamMemberStatus,
     QuestionDifficulty,
     TeamApprovalStatus,
     TeamStatus,
@@ -1235,3 +1236,56 @@ class ContestRepository:
         submissions = list(submissions_result.scalars().all())
 
         return teams, questions, submissions
+
+    async def get_teams_ranked_by_score(
+        self, contest_id: UUID
+    ) -> list[tuple[ContestTeam, int]]:
+        """Aggregate team scores from ContestTeamProgress and return teams sorted descending.
+
+        Efficient single query:
+          JOIN ContestTeam → ContestTeamMember (ACCEPTED) → ContestTeamProgress,
+          compute ROUND(AVG(score)) per team, ORDER BY total DESC.
+
+        The AVG mirrors the leaderboard algorithm:
+          team_total = mean of per-member total scores.
+
+        Args:
+            contest_id: ID of the contest.
+
+        Returns:
+            List of (ContestTeam, rounded_avg_score) tuples, highest first.
+        """
+        from app.models.contest import ContestTeamMember
+
+        avg_score = func.coalesce(
+            func.round(func.avg(ContestTeamProgress.score)), 0
+        ).label("team_score")
+
+        stmt = (
+            select(ContestTeam, avg_score)
+            .outerjoin(
+                ContestTeamMember,
+                and_(
+                    ContestTeamMember.contest_team_id == ContestTeam.id,
+                    ContestTeamMember.status == ContestTeamMemberStatus.ACCEPTED,
+                ),
+            )
+            .outerjoin(
+                ContestTeamProgress,
+                and_(
+                    ContestTeamProgress.contest_team_id == ContestTeam.id,
+                    ContestTeamProgress.contest_team_member_id == ContestTeamMember.id,
+                    ContestTeamProgress.contest_id == contest_id,
+                ),
+            )
+            .where(
+                ContestTeam.contest_id == contest_id,
+                ContestTeam.team_status == TeamStatus.CONFIRMED,
+                ContestTeam.approval_status == TeamApprovalStatus.APPROVED,
+            )
+            .group_by(ContestTeam.id)
+            .order_by(desc("team_score"))
+        )
+
+        result = await self.db.execute(stmt)
+        return [(row[0], int(row[1])) for row in result.all()]

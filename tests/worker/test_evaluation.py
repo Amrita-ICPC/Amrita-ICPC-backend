@@ -16,10 +16,10 @@ from worker.evaluation import (
 
 
 @pytest.mark.asyncio
-@patch("worker.evaluation.SessionLocal")
-@patch("worker.evaluation.QuestionRepository")
-@patch("worker.evaluation._run_evaluation")
-@patch("worker.evaluation.QuestionValidator")
+@patch("worker.evaluation_service.SessionLocal")
+@patch("worker.evaluation_service.QuestionRepository")
+@patch("worker.judge0_service.Judge0EvaluationService.run_evaluation")
+@patch("worker.evaluation_service.QuestionValidator")
 async def test_evaluate_submission_async_success(
     mock_validator: MagicMock,
     mock_run_evaluation: MagicMock,
@@ -50,6 +50,8 @@ async def test_evaluate_submission_async_success(
 
     # Mock question and testcases
     mock_question = MagicMock(spec=Question)
+    mock_question.id = question_id
+    mock_question.templates = []
     mock_question.title = "Test Question"
     mock_testcase1 = MagicMock()
     mock_testcase1.id = uuid4()
@@ -57,6 +59,7 @@ async def test_evaluate_submission_async_success(
     mock_testcase1.output = "output1"
     mock_testcase1.is_hidden = False
     mock_testcase1.weight = 1
+    mock_testcase1.order = None
 
     mock_question.testcases = [mock_testcase1]
     mock_repo.get_question_or_raise.return_value = mock_question
@@ -81,8 +84,8 @@ async def test_evaluate_submission_async_success(
 
 
 @pytest.mark.asyncio
-@patch("worker.evaluation.SessionLocal")
-@patch("worker.evaluation.QuestionRepository")
+@patch("worker.evaluation_service.SessionLocal")
+@patch("worker.evaluation_service.QuestionRepository")
 async def test_evaluate_submission_async_not_found(
     mock_question_repo_cls: MagicMock,
     mock_session_local: MagicMock,
@@ -135,7 +138,7 @@ def test_evaluate_submission_task_string_id(
 
 
 @pytest.mark.asyncio
-@patch("worker.evaluation.get_redis")
+@patch("worker.redis_helper.get_redis")
 async def test_update_progress_redis_success(
     mock_get_redis: MagicMock,
 ) -> None:
@@ -209,10 +212,10 @@ def test_evaluate_contest_submission_task_calls(
 
 
 @pytest.mark.asyncio
-@patch("worker.evaluation.SessionLocal")
-@patch("worker.evaluation.QuestionRepository")
-@patch("worker.evaluation._run_evaluation")
-@patch("worker.evaluation.get_redis")
+@patch("worker.evaluation_service.SessionLocal")
+@patch("worker.evaluation_service.QuestionRepository")
+@patch("worker.judge0_service.Judge0EvaluationService.run_evaluation")
+@patch("worker.redis_helper.get_redis")
 async def test_evaluate_contest_submission_async_superseded(
     mock_get_redis: MagicMock,
     mock_run_evaluation: MagicMock,
@@ -248,12 +251,12 @@ async def test_evaluate_contest_submission_async_superseded(
 
 
 @pytest.mark.asyncio
-@patch("worker.evaluation.SessionLocal")
-@patch("worker.evaluation.QuestionRepository")
-@patch("worker.evaluation._run_evaluation")
-@patch("worker.evaluation.QuestionValidator")
-@patch("worker.evaluation._update_progress_redis")
-@patch("worker.evaluation.get_redis")
+@patch("worker.evaluation_service.SessionLocal")
+@patch("worker.evaluation_service.QuestionRepository")
+@patch("worker.judge0_service.Judge0EvaluationService.run_evaluation")
+@patch("worker.evaluation_service.QuestionValidator")
+@patch("worker.evaluation_service.update_evaluation_progress")
+@patch("worker.redis_helper.get_redis")
 async def test_evaluate_contest_submission_async_with_existing_testcases(
     mock_get_redis: MagicMock,
     mock_update_progress: MagicMock,
@@ -298,6 +301,8 @@ async def test_evaluate_contest_submission_async_with_existing_testcases(
 
     # Mock Question
     mock_question = MagicMock(spec=Question)
+    mock_question.id = uuid4()
+    mock_question.templates = []
     mock_question.title = "Test Question"
     mock_testcase1 = MagicMock()
     mock_testcase1.id = uuid4()
@@ -305,6 +310,7 @@ async def test_evaluate_contest_submission_async_with_existing_testcases(
     mock_testcase1.output = "output1"
     mock_testcase1.is_hidden = False
     mock_testcase1.weight = 1
+    mock_testcase1.order = None
     mock_question.testcases = [mock_testcase1]
     mock_repo.get_question_or_raise.return_value = mock_question
 
@@ -333,12 +339,12 @@ async def test_evaluate_contest_submission_async_with_existing_testcases(
 
 
 @pytest.mark.asyncio
-@patch("worker.evaluation.SessionLocal")
-@patch("worker.evaluation.QuestionRepository")
-@patch("worker.evaluation._run_evaluation")
-@patch("worker.evaluation.QuestionValidator")
-@patch("worker.evaluation._update_progress_redis")
-@patch("worker.evaluation.get_redis")
+@patch("worker.evaluation_service.SessionLocal")
+@patch("worker.evaluation_service.QuestionRepository")
+@patch("worker.judge0_service.Judge0EvaluationService.run_evaluation")
+@patch("worker.evaluation_service.QuestionValidator")
+@patch("worker.evaluation_service.update_evaluation_progress")
+@patch("worker.redis_helper.get_redis")
 async def test_evaluate_contest_submission_async_no_existing_testcases(
     mock_get_redis: MagicMock,
     mock_update_progress: MagicMock,
@@ -383,6 +389,8 @@ async def test_evaluate_contest_submission_async_no_existing_testcases(
 
     # Mock Question
     mock_question = MagicMock(spec=Question)
+    mock_question.id = uuid4()
+    mock_question.templates = []
     mock_question.title = "Test Question"
     mock_testcase1 = MagicMock()
     mock_testcase1.id = uuid4()
@@ -390,6 +398,7 @@ async def test_evaluate_contest_submission_async_no_existing_testcases(
     mock_testcase1.output = "output1"
     mock_testcase1.is_hidden = False
     mock_testcase1.weight = 1
+    mock_testcase1.order = None
     mock_question.testcases = [mock_testcase1]
     mock_repo.get_question_or_raise.return_value = mock_question
 

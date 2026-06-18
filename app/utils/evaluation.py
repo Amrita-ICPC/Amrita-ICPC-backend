@@ -1,13 +1,16 @@
 import uuid
-from typing import Collection, Sequence
+from typing import TYPE_CHECKING, Collection, Sequence
 
 from app.models.question import SubmissionTestCase, TestCase
 from app.utils.enums import SubmissionStatus
 
+if TYPE_CHECKING:
+    from app.schema.question import QuestionTestCaseResponse
+
 
 def calculate_score_from_weights(
     total_score: int,
-    testcases: Sequence[TestCase],
+    testcases: Sequence[TestCase] | Sequence["QuestionTestCaseResponse"],
     passed_testcase_ids: Collection[uuid.UUID],
 ) -> int:
     """
@@ -42,7 +45,7 @@ def calculate_score_from_weights(
 
 def calculate_submission_score(
     total_score: int,
-    testcases: Sequence[TestCase],
+    testcases: Sequence[TestCase] | Sequence["QuestionTestCaseResponse"],
     testcase_results: Sequence[SubmissionTestCase],
 ) -> int:
     """
