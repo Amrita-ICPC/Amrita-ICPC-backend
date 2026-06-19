@@ -164,6 +164,7 @@ def to_contest_response(
         participation_type=contest.participation_type,
         evaluate_on_submit=contest.evaluate_on_submit,
         max_submission_per_question=contest.max_submission_per_question,
+        result_visibility=contest.result_visibility,
     )
 
     return response

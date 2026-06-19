@@ -4,6 +4,7 @@ from uuid import UUID
 
 from app.utils.enums import (
     ContestMode,
+    ContestResultVisibility,
     ContestRunStatus,
     ContestStatus,
     ContestTeamParticipationType,
@@ -120,6 +121,10 @@ class StudentContestDetailsResponse(StudentContestAvailableResponse):
         description="How teams are approved in this contest",
     )
     status: ContestStatus = Field(..., description="Contest lifecycle status")
+    result_visibility: ContestResultVisibility = Field(
+        default=ContestResultVisibility.HIDDEN,
+        description="Result visibility configuration for this contest",
+    )
 
 
 class StudentContestQuestionResponse(BaseModel):

@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import TypedDict
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -39,10 +38,12 @@ class EvaluationStatusResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class ContestSubmissionContext(TypedDict):
+class ContestSubmissionContext(BaseModel):
+    """Pydantic schema for the contest submission context fetched during evaluation."""
+
     contest_id: UUID
-    team_id: UUID | None
-    contest_team_member_id: UUID | None
+    team_id: UUID | None = None
+    contest_team_member_id: UUID | None = None
 
 
 class EvaluationPreparationDetails(BaseModel):

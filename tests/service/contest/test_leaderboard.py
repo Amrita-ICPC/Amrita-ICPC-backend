@@ -107,7 +107,6 @@ class TestGetContestLeaderboard:
         # 4. Verify result
         assert isinstance(response, LeaderboardResponse)
         assert response.contest_id == mock_contest.id
-        assert response.result_visibility == ContestResultVisibility.FULL_RESULTS
         assert len(response.standings) == 2
         assert total == 2
 

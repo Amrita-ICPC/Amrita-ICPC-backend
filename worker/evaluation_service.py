@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.clients.database import SessionLocal
 from app.core.logger import logger
+from app.models.contest import ContestSubmission, ContestTeam
 from app.models.question import Submission, SubmissionTestCase
 from app.repositories.dto.evaluation import EvaluationResult
 from app.repositories.question import QuestionRepository
@@ -32,6 +33,37 @@ class EvaluationService:
 
     def __init__(self) -> None:
         self.judge0_service = Judge0EvaluationService()
+
+    async def _get_contest_submission_context(
+        self, db: AsyncSession, submission_id: UUID
+    ) -> ContestSubmissionContext | None:
+        """Fetch the contest submission context via a direct SELECT, avoiding ORM lazy-loading.
+
+        Args:
+            db: The async database session.
+            submission_id: UUID of the submission to look up.
+
+        Returns:
+            ContestSubmissionContext if the submission belongs to a contest, otherwise None.
+        """
+        stmt = (
+            select(
+                ContestSubmission.contest_id,
+                ContestSubmission.contest_team_member_id,
+                ContestTeam.team_id,
+            )
+            .join(ContestTeam, ContestTeam.id == ContestSubmission.contest_team_id)
+            .where(ContestSubmission.submission_id == submission_id)
+        )
+        res = await db.execute(stmt)
+        row = res.first()
+        if row:
+            return ContestSubmissionContext(
+                contest_id=row.contest_id,
+                team_id=row.team_id,
+                contest_team_member_id=row.contest_team_member_id,
+            )
+        return None
 
     async def get_question_and_testcases(
         self, db: AsyncSession, question_id: UUID
@@ -112,17 +144,9 @@ class EvaluationService:
                 return None
 
         # Build context for SSE updates
-        contest_submission_context = None
-        if submission.contest_submission:
-            contest_submission_context = {
-                "contest_id": submission.contest_submission.contest_id,
-                "team_id": (
-                    submission.contest_submission.contest_team.team_id
-                    if submission.contest_submission.contest_team
-                    else None
-                ),
-                "contest_team_member_id": submission.contest_submission.contest_team_member_id,
-            }
+        contest_submission_context = await self._get_contest_submission_context(
+            db, submission_id
+        )
 
         # 2. Fetch question and testcases
         data = await self.get_question_and_testcases(db, submission.question_id)
@@ -149,8 +173,8 @@ class EvaluationService:
 
         # 4. Get max score
         max_score = 100
-        if submission.contest_submission:
-            contest_id = submission.contest_submission.contest_id
+        if contest_submission_context:
+            contest_id = contest_submission_context.contest_id
             contest_question_score = await repository.get_contest_question_score(
                 contest_id, submission.question_id
             )
@@ -205,12 +229,9 @@ class EvaluationService:
         """Publish submission status update event to the contest event publisher for students."""
         if not contest_submission_context:
             return
-        contest_id = contest_submission_context.get("contest_id")
-        team_id = contest_submission_context.get("team_id")
-        contest_team_member_id = contest_submission_context.get(
-            "contest_team_member_id"
-        )
-
+        contest_id = contest_submission_context.contest_id
+        team_id = contest_submission_context.team_id
+        contest_team_member_id = contest_submission_context.contest_team_member_id
         if contest_id and team_id and contest_team_member_id:
             from app.schema.student.submission import (
                 StudentSubmissionUpdateEvent,
@@ -266,47 +287,48 @@ class EvaluationService:
                 max_score = prep.max_score
                 contest_submission_context = prep.contest_submission_context
                 question_id = submission.question_id
+                language_id = submission.language_id
             except Exception as e:
                 logger.error(
                     f"Validation/load failed for submission {submission_id}: {e}"
                 )
-                repository = QuestionRepository(db)
-                sub = await repository.get_submission(submission_id)
-                if sub:
-                    result = EvaluationResult(
-                        status=SubmissionStatus.SYSTEM_ERROR,
-                        passed_testcases=0,
-                        total_testcases=0,
-                        total_time=0,
-                        total_memory=0,
-                        testcase_results=[],
-                    )
-                    sub.score = 0
-                    await repository.complete_submission(sub, result)
-                    await db.commit()
+                try:
+                    await db.rollback()
+                except Exception:
+                    pass
 
-                    if publish_events:
-                        contest_sub_ctx: ContestSubmissionContext | None = None
-                        if sub.contest_submission:
-                            contest_sub_ctx = {
-                                "contest_id": sub.contest_submission.contest_id,
-                                "team_id": (
-                                    sub.contest_submission.contest_team.team_id
-                                    if sub.contest_submission.contest_team
-                                    else None
-                                ),
-                                "contest_team_member_id": sub.contest_submission.contest_team_member_id,
-                            }
-                        await self._publish_student_event(
-                            event_service,
-                            submission_id,
-                            sub.question_id,
-                            contest_sub_ctx,
-                            "SYSTEM_ERROR",
+                async with SessionLocal() as fresh_db:
+                    repository = QuestionRepository(fresh_db)
+                    sub = await repository.get_submission(submission_id)
+                    if sub:
+                        result = EvaluationResult(
+                            status=SubmissionStatus.SYSTEM_ERROR,
+                            passed_testcases=0,
+                            total_testcases=0,
+                            total_time=0,
+                            total_memory=0,
+                            testcase_results=[],
                         )
-                if contest_id and evaluation_id:
-                    await update_evaluation_progress(contest_id, evaluation_id)
-                return
+                        sub.score = 0
+                        await repository.complete_submission(sub, result)
+                        await fresh_db.commit()
+
+                        if publish_events:
+                            contest_sub_ctx = (
+                                await self._get_contest_submission_context(
+                                    fresh_db, submission_id
+                                )
+                            )
+                            await self._publish_student_event(
+                                event_service,
+                                submission_id,
+                                sub.question_id,
+                                contest_sub_ctx,
+                                "SYSTEM_ERROR",
+                            )
+                    if contest_id and evaluation_id:
+                        await update_evaluation_progress(contest_id, evaluation_id)
+                    return
 
             # Publish RUNNING event
             if publish_events:
@@ -346,7 +368,7 @@ class EvaluationService:
 
         # Phase 2: Run evaluation (No database session held)
         eval_result = await self.judge0_service.run_evaluation(
-            submission, testcases, final_source_code
+            submission_id, question_id, language_id, testcases, final_source_code
         )
 
         # Phase 3: Save results
