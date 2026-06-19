@@ -63,6 +63,9 @@ class ContestBase(BaseModel):
     max_submission_per_question: Optional[int] = Field(
         None, gt=0, description="Maximum submissions allowed per question"
     )
+    results_published: bool = Field(
+        default=False, description="Whether contest results are published"
+    )
 
     @model_validator(mode="after")
     def validate_dates(self):

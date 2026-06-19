@@ -151,6 +151,8 @@ class Contest(Base):
         Integer, default=None, nullable=True
     )
 
+    results_published: Mapped[bool] = mapped_column(Boolean, default=False)
+
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )

@@ -1323,6 +1323,10 @@ async def compute_team_scores(
 async def get_contest_leaderboard(
     request: Request,
     contest_id: UUID,
+    search: str | None = Query(None, description="Search by team name"),
+    sort_order: str = Query("desc", description="Sort order: asc or desc"),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(50, ge=1, le=100, description="Items per page"),
     service: ContestService = Depends(get_contest_service),
     user_id: UUID = Depends(get_current_user_id),
 ) -> APIResponse[LeaderboardResponse]:
@@ -1334,6 +1338,10 @@ async def get_contest_leaderboard(
     Args:
         request: Framework context.
         contest_id: The unique identifier of the contest.
+        search: Optional search term for team name.
+        sort_order: Sort order by score ('asc' or 'desc').
+        page: Current page number.
+        page_size: Maximum items per page.
         service: Injected domain service.
         user_id: Authenticated user ID.
 
@@ -1344,11 +1352,68 @@ async def get_contest_leaderboard(
         ContestNotFoundError: If the contest is not found.
         PermissionDeniedError: If the user lacks permission to access the contest.
     """
-    leaderboard = await service.get_contest_leaderboard(contest_id, user_id)
+    skip = (page - 1) * page_size
+    leaderboard, total = await service.get_contest_leaderboard(
+        contest_id=contest_id,
+        user_id=user_id,
+        search_term=search,
+        sort_order=sort_order,
+        skip=skip,
+        limit=page_size,
+    )
+    pagination = get_pagination(total=total, page=page, page_size=page_size)
     logger.info(f"Contest leaderboard retrieved for {contest_id} (actor=REDACTED)")
     return create_api_response(
         request,
         data=leaderboard,
+        pagination=pagination,
         message="Leaderboard fetched successfully",
+        status_code=status.HTTP_200_OK,
+    )
+
+
+@router.post(
+    "/{contest_id}/publish-results",
+    response_model=APIResponse[MessageResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Publish or unpublish contest results",
+    dependencies=[can_update("contests")],
+)
+async def publish_results(
+    request: Request,
+    contest_id: UUID,
+    publish: bool = Query(
+        ...,
+        description="Whether to publish (true) or unpublish (false) results",
+    ),
+    user_id: UUID = Depends(get_current_user_id),
+    service: ContestService = Depends(get_contest_service),
+) -> APIResponse[MessageResponse]:
+    """
+    Publish or unpublish contest results.
+
+    Only accessible by authorized users with update permissions.
+
+    Args:
+        request: Framework context.
+        contest_id: Unique identifier of the contest.
+        publish: Query parameter indicating whether to publish (true) or unpublish (false).
+        user_id: Authenticated user ID.
+        service: Injected domain service.
+
+    Returns:
+        APIResponse[MessageResponse]: Standardized API response containing success message.
+
+    Raises:
+        ContestNotFoundError: If the contest is not found.
+        PermissionDeniedError: If the user lacks manage permission.
+    """
+    await service.publish_results(contest_id, publish, user_id)
+    action = "published" if publish else "unpublished"
+    logger.info(f"Contest results {action} for {contest_id} (actor=REDACTED)")
+    return create_api_response(
+        request,
+        data=MessageResponse(message=f"Contest results {action} successfully"),
+        message=f"Contest results {action} successfully",
         status_code=status.HTTP_200_OK,
     )

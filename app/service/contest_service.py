@@ -1091,26 +1091,36 @@ class ContestService:
         )
 
     @cache_get(
-        key_builder=lambda self, contest_id, user_id: (
-            f"contest:{contest_id}:leaderboard"
+        key_builder=lambda self, contest_id, user_id, search_term=None, sort_order="desc", skip=0, limit=50: (
+            f"contest:{contest_id}:leaderboard:search:{search_term}:sort:{sort_order}:skip:{skip}:limit:{limit}"
         ),
         ttl=300,
     )
     async def get_contest_leaderboard(
-        self, contest_id: UUID, user_id: UUID
-    ) -> LeaderboardResponse:
+        self,
+        contest_id: UUID,
+        user_id: UUID,
+        search_term: str | None = None,
+        sort_order: str = "desc",
+        skip: int = 0,
+        limit: int = 50,
+    ) -> tuple[LeaderboardResponse, int]:
         """Get the contest leaderboard using pre-computed team scores.
 
         Team ranking is resolved by an efficient SQL aggregation query
         (``get_teams_ranked_by_score``) that AVGs member scores from
-        ``ContestTeamProgress`` and sorts descending.
+        ``ContestTeamProgress`` and sorts.
 
         Args:
             contest_id: UUID of the contest.
             user_id: UUID of the user requesting the leaderboard.
+            search_term: Optional name filtering term.
+            sort_order: Sorting order ('asc' or 'desc').
+            skip: Number of teams to skip.
+            limit: Maximum number of teams to return.
 
         Returns:
-            LeaderboardResponse: The sorted standings.
+            tuple[LeaderboardResponse, int]: The standings and total count.
 
         Raises:
             ContestNotFoundError: If the contest does not exist or is deleted.
@@ -1123,10 +1133,17 @@ class ContestService:
         await self.guard.check_read_contest(user_id=user_id, contest=contest)
 
         # Get teams ranked by aggregated score (single SQL query)
-        ranked_teams = await self.repository.get_teams_ranked_by_score(contest_id)
+        ranked_teams, total_count = await self.repository.get_teams_ranked_by_score(
+            contest_id,
+            search_term=search_term,
+            sort_order=sort_order,
+            skip=skip,
+            limit=limit,
+        )
 
         standings: list[LeaderboardRow] = []
-        for rank, (team, total_score) in enumerate(ranked_teams, start=1):
+        for index, (team, total_score) in enumerate(ranked_teams, start=1):
+            rank = skip + index
             standings.append(
                 LeaderboardRow(
                     rank=rank,
@@ -1137,8 +1154,41 @@ class ContestService:
                 )
             )
 
-        return LeaderboardResponse(
+        leaderboard = LeaderboardResponse(
             contest_id=contest_id,
             last_updated_at=datetime.now(timezone.utc),
             standings=standings,
         )
+        return leaderboard, total_count
+
+    @cache_delete(
+        key_builder=lambda self, contest_id, publish, user_id: [
+            f"contest:{contest_id}*",
+            "contests:*",
+        ]
+    )
+    async def publish_results(
+        self, contest_id: UUID, publish: bool, user_id: UUID
+    ) -> None:
+        """Publish or unpublish contest results.
+
+        Args:
+            contest_id: UUID of the contest.
+            publish: Boolean indicating whether to publish or unpublish results.
+            user_id: UUID of the user performing the operation.
+
+        Returns:
+            None
+
+        Raises:
+            ContestNotFoundError: If the contest is not found.
+            PermissionDeniedError: If the user lacks manage permission.
+        """
+        contest = await self.repository.get_contest_or_raise(contest_id)
+        if contest.status == ContestStatus.DELETED:
+            raise ContestNotFoundError(str(contest_id))
+
+        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
+
+        contest.results_published = publish
+        await self.repository.update_contest(contest, user_id)

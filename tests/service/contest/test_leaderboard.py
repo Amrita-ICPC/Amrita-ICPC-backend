@@ -91,14 +91,14 @@ class TestGetContestLeaderboard:
         team2.id = t2_id
         team2.name = "Team 2"
 
-        # Mock repository to return ranked teams directly
-        mock_contest_repository.get_teams_ranked_by_score.return_value = [
-            (team1, 115),
-            (team2, 50),
-        ]
+        # Mock repository to return ranked teams directly along with total count
+        mock_contest_repository.get_teams_ranked_by_score.return_value = (
+            [(team1, 115), (team2, 50)],
+            2,
+        )
 
         # 3. Call service method
-        response = await contest_service.get_contest_leaderboard(
+        response, total = await contest_service.get_contest_leaderboard(
             mock_contest.id, user_id
         )
 
@@ -106,6 +106,7 @@ class TestGetContestLeaderboard:
         assert isinstance(response, LeaderboardResponse)
         assert response.contest_id == mock_contest.id
         assert len(response.standings) == 2
+        assert total == 2
 
         # Team 1 assertions (Rank 1, Score 115)
         t1_row = response.standings[0]
@@ -131,5 +132,9 @@ class TestGetContestLeaderboard:
             user_id=user_id, contest=mock_contest
         )
         mock_contest_repository.get_teams_ranked_by_score.assert_called_once_with(
-            mock_contest.id
+            mock_contest.id,
+            search_term=None,
+            sort_order="desc",
+            skip=0,
+            limit=50,
         )

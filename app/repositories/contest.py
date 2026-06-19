@@ -1277,11 +1277,16 @@ class ContestRepository:
         return teams, questions, submissions
 
     async def get_teams_ranked_by_score(
-        self, contest_id: UUID
-    ) -> list[tuple[ContestTeam, int]]:
-        """Aggregate team scores from ContestTeamProgress and return teams sorted descending.
+        self,
+        contest_id: UUID,
+        search_term: str | None = None,
+        sort_order: str = "desc",
+        skip: int | None = None,
+        limit: int | None = None,
+    ) -> tuple[list[tuple[ContestTeam, int]], int]:
+        """Aggregate team scores from ContestTeamProgress and return teams sorted.
 
-        Efficient single query:
+        Efficient query:
           JOIN ContestTeam → ContestTeamMember (ACCEPTED) → ContestTeamProgress,
           compute ROUND(AVG(score)) per team, ORDER BY total DESC.
 
@@ -1290,12 +1295,30 @@ class ContestRepository:
 
         Args:
             contest_id: ID of the contest.
+            search_term: Optional term to filter teams by name.
+            sort_order: 'asc' or 'desc' for score sorting.
+            skip: Optional pagination offset.
+            limit: Optional pagination limit.
 
         Returns:
-            List of (ContestTeam, rounded_avg_score) tuples, highest first.
+            Tuple containing:
+            - List of (ContestTeam, rounded_avg_score) tuples
+            - Total count of matching teams
         """
         from app.models.contest import ContestTeamMember
 
+        # 1. Get total count
+        count_stmt = select(func.count(ContestTeam.id)).where(
+            ContestTeam.contest_id == contest_id,
+            ContestTeam.team_status == TeamStatus.CONFIRMED,
+            ContestTeam.approval_status == TeamApprovalStatus.APPROVED,
+        )
+        if search_term:
+            count_stmt = count_stmt.where(ContestTeam.name.ilike(f"%{search_term}%"))
+
+        total_count = await self.db.scalar(count_stmt) or 0
+
+        # 2. Get ranked teams
         avg_score = func.coalesce(
             func.round(func.avg(ContestTeamProgress.score)), 0
         ).label("team_score")
@@ -1323,9 +1346,22 @@ class ContestRepository:
                 ContestTeam.team_status == TeamStatus.CONFIRMED,
                 ContestTeam.approval_status == TeamApprovalStatus.APPROVED,
             )
-            .group_by(ContestTeam.id)
-            .order_by(desc("team_score"))
         )
 
+        if search_term:
+            stmt = stmt.where(ContestTeam.name.ilike(f"%{search_term}%"))
+
+        stmt = stmt.group_by(ContestTeam.id)
+
+        if sort_order == "asc":
+            stmt = stmt.order_by(asc("team_score"), ContestTeam.name.asc())
+        else:
+            stmt = stmt.order_by(desc("team_score"), ContestTeam.name.asc())
+
+        if skip is not None:
+            stmt = stmt.offset(skip)
+        if limit is not None:
+            stmt = stmt.limit(limit)
+
         result = await self.db.execute(stmt)
-        return [(row[0], int(row[1])) for row in result.all()]
+        return [(row[0], int(row[1])) for row in result.all()], total_count
