@@ -3,6 +3,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.utils.enums import ContestResultVisibility
+
 
 class LeaderboardRow(BaseModel):
     """A single row/entry in the contest leaderboard representing a team's standing."""
@@ -22,6 +24,10 @@ class LeaderboardResponse(BaseModel):
     """Response containing the complete leaderboard standings for a contest."""
 
     contest_id: UUID = Field(..., description="ID of the contest")
+    result_visibility: ContestResultVisibility = Field(
+        default=ContestResultVisibility.HIDDEN,
+        description="Result visibility configuration for this contest",
+    )
     last_updated_at: datetime = Field(
         ..., description="Timestamp of when the leaderboard was calculated"
     )

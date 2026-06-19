@@ -24,6 +24,7 @@ from app.models.base import Base
 from app.models.team import Team
 from app.utils.enums import (
     ContestMode,
+    ContestResultVisibility,
     ContestStatus,
     ContestTeamMemberStatus,
     ContestTeamParticipationType,
@@ -151,7 +152,11 @@ class Contest(Base):
         Integer, default=None, nullable=True
     )
 
-    results_published: Mapped[bool] = mapped_column(Boolean, default=False)
+    result_visibility: Mapped[ContestResultVisibility] = mapped_column(
+        "result_visibility",
+        Enum(ContestResultVisibility, name="contest_result_visibility"),
+        default=ContestResultVisibility.HIDDEN,
+    )
 
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True

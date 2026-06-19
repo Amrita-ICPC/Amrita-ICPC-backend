@@ -54,6 +54,7 @@ from app.schema.leaderboard import (
 from app.service.contest_event_publish import ContestEventPublisher
 from app.utils.contest import compute_run_status
 from app.utils.enums import (
+    ContestResultVisibility,
     ContestRunStatus,
     ContestStatus,
     ContestTeamMemberStatus,
@@ -1156,25 +1157,26 @@ class ContestService:
 
         leaderboard = LeaderboardResponse(
             contest_id=contest_id,
+            result_visibility=contest.result_visibility,
             last_updated_at=datetime.now(timezone.utc),
             standings=standings,
         )
         return leaderboard, total_count
 
     @cache_delete(
-        key_builder=lambda self, contest_id, publish, user_id: [
+        key_builder=lambda self, contest_id, visibility, user_id: [
             f"contest:{contest_id}*",
             "contests:*",
         ]
     )
     async def publish_results(
-        self, contest_id: UUID, publish: bool, user_id: UUID
+        self, contest_id: UUID, visibility: ContestResultVisibility, user_id: UUID
     ) -> None:
         """Publish or unpublish contest results.
 
         Args:
             contest_id: UUID of the contest.
-            publish: Boolean indicating whether to publish or unpublish results.
+            visibility: ContestResultVisibility enum configuration.
             user_id: UUID of the user performing the operation.
 
         Returns:
@@ -1190,5 +1192,5 @@ class ContestService:
 
         await self.guard.check_manage_contest(user_id=user_id, contest=contest)
 
-        contest.results_published = publish
+        contest.result_visibility = visibility
         await self.repository.update_contest(contest, user_id)
