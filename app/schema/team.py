@@ -10,7 +10,12 @@ from pydantic import (
 )
 from sqlalchemy import inspect
 
-from app.utils.enums import SubmissionStatus, TeamApprovalStatus, TeamStatus
+from app.utils.enums import (
+    QuestionDifficulty,
+    SubmissionStatus,
+    TeamApprovalStatus,
+    TeamStatus,
+)
 
 
 class TeamCreate(BaseModel):
@@ -400,70 +405,113 @@ class ContestTeamImport(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class TeamMemberPerformance(BaseModel):
+class ContestTeamMemberAnalytics(BaseModel):
     id: UUID
+    contest_team_member_id: UUID
     name: str
-    score: int
-    is_leader: bool
-    is_pariticpated: bool
+    email: str
+    score: int = 0
+    is_flagged: bool = False
+    flagged_reason: Optional[str] = None
     started_at: Optional[datetime] = None
     ended_at: Optional[datetime] = None
+    is_participated: bool = False
+    is_leader: bool = False
 
-    model_config = ConfigDict(from_attributes=True)
 
-
-class TeamPerformanceResponse(BaseModel):
-    id: UUID
+class ContestTeamAnalytics(BaseModel):
+    contest_team_id: UUID
     name: str
-    score: int
-    total_submissions: int
-    accepted_submission: int
-    rejected_submission: int
-    members: List[TeamMemberPerformance]
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class TeamMemberQuestionStatus(BaseModel):
-    id: UUID
-    is_submitted: bool
-
-    model_config = ConfigDict(from_attributes=True)
+    score: int = 0
+    members: List[ContestTeamMemberAnalytics] = Field(default_factory=list)
+    total_submissions: int = 0
+    accepted_submission: int = 0
+    wrong_answer: int = 0
+    time_limit_exceeded: int = 0
+    runtime_error: int = 0
+    compilation_error: int = 0
+    memory_limit_exceeded: int = 0
+    system_error: int = 0
+    pending_submission: int = 0
 
 
-class TeamMemberAnalytics(BaseModel):
-    id: UUID
-    total_submission: int
-    accepted_submission: int
-    rejected_submission: int
+class ContestTeamMemberQuestionAnalytics(BaseModel):
+    question_id: UUID
+    title: str
+    difficulty: QuestionDifficulty
+    time_limit_ms: int
+    memory_limit_mb: int
+    total_submission: int = 0
+    accepted_submission: int = 0
+
+
+class ContestTeamMemberSubmissionStatistics(BaseModel):
+    total: int = 0
+    accepted: int = 0
+    wrong_answer: int = 0
+    time_limit_exceeded: int = 0
+    runtime_error: int = 0
+    memory_limit_exceeded: int = 0
+    compilation_error: int = 0
+    system_error: int = 0
+    pending: int = 0
+
+
+class ContestTeamMemberQuestionStatistics(BaseModel):
+    attempted: int = 0
+    solved: int = 0
+    unsolved: int = 0
+
+
+class ContestTeamMemberDetail(BaseModel):
+    contest_team_member_id: UUID
+    user_id: UUID
+    name: str
+    email: str
+    is_leader: bool = False
+    is_participated: bool = False
+    score: int = 0
     started_at: Optional[datetime] = None
+    base_end_time: Optional[datetime] = None
     ended_at: Optional[datetime] = None
-    active_time: Optional[float] = None
-    score: int
-    questions: List[TeamMemberQuestionStatus]
+    extra_time_seconds: int = 0
+    remaining_time_seconds: int = 0
+    is_flagged: bool = False
+    flagged_at: Optional[datetime] = None
+    flagged_reason: Optional[str] = None
+    submission_statistics: ContestTeamMemberSubmissionStatistics = Field(
+        default_factory=ContestTeamMemberSubmissionStatistics
+    )
+    question_statistics: ContestTeamMemberQuestionStatistics = Field(
+        default_factory=ContestTeamMemberQuestionStatistics
+    )
 
-    model_config = ConfigDict(from_attributes=True)
+
+class ContestTeamMemberQuestionSubmissionStatistics(BaseModel):
+    total: int = 0
+    accepted: int = 0
+    wrong_answer: int = 0
+    time_limit_exceeded: int = 0
+    runtime_error: int = 0
+    compilation_error: int = 0
 
 
-TeamMemberAnalystics = TeamMemberAnalytics
-
-
-class QuestionSubmissionSummary(BaseModel):
-    id: UUID
+class ContestTeamMemberQuestionSubmissionItem(BaseModel):
+    submission_id: UUID
     status: Optional[SubmissionStatus] = None
-    score: int
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class SubmissionDetailResponse(BaseModel):
-    id: UUID
-    source_code: str
-    status: Optional[SubmissionStatus] = None
-    score: int
-    total_time: Optional[int] = None
-    total_memory: Optional[int] = None
+    score: int = 0
     language: str
     created_at: datetime
+    execution_time: Optional[int] = None
+    memory: Optional[int] = None
 
-    model_config = ConfigDict(from_attributes=True)
+
+class ContestTeamMemberQuestionSubmissions(BaseModel):
+    question_id: UUID
+    question_title: str
+    statistics: ContestTeamMemberQuestionSubmissionStatistics = Field(
+        default_factory=ContestTeamMemberQuestionSubmissionStatistics
+    )
+    submissions: List[ContestTeamMemberQuestionSubmissionItem] = Field(
+        default_factory=list
+    )

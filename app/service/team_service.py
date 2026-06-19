@@ -2,8 +2,13 @@ from uuid import UUID
 
 from app.core.cache.decorators import cache_delete, cache_get
 from app.core.guards.team import TeamOperationGuard
+from app.exceptions.contest import ContestTeamProgressNotFoundError
 from app.exceptions.team import ApprovalNotAllowedError
 from app.mappers.team import (
+    to_contest_team_analytics,
+    to_contest_team_member_detail,
+    to_contest_team_member_question_analytics,
+    to_contest_team_member_question_submissions,
     to_contest_team_member_responses,
     to_contest_team_response,
     to_team_list_response,
@@ -13,10 +18,15 @@ from app.repositories.dto import PaginationParams, TeamFilters
 from app.repositories.student.contest_team import ContestTeamRepository
 from app.repositories.team import TeamRepository
 from app.schema.team import (
+    ContestTeamAnalytics,
+    ContestTeamMemberDetail,
+    ContestTeamMemberQuestionAnalytics,
+    ContestTeamMemberQuestionSubmissions,
     ContestTeamResponse,
     TeamListResponse,
     TeamMemberResponse,
 )
+from app.utils.contest import calculate_effective_times
 from app.utils.enums import (
     ContestTeamMemberStatus,
     TeamApprovalMode,
@@ -394,6 +404,115 @@ class TeamService:
         )
 
         return to_contest_team_response(contest_team)
+
+    async def get_contest_team_analytics(
+        self, contest_id: UUID, contest_team_id: UUID, user_id: UUID
+    ) -> ContestTeamAnalytics:
+        """
+        Retrieve score, participation, flag, and submission status analytics for one contest team.
+        """
+        contest = await self.contest_repository.get_contest_or_raise(contest_id)
+        await self.guard.check_read_team(user_id=user_id, contest=contest)
+
+        team_row, member_rows = await self.repository.get_contest_team_analytics(
+            contest_id, contest_team_id
+        )
+        return to_contest_team_analytics(team_row, member_rows)
+
+    async def get_contest_team_member_detail(
+        self,
+        contest_id: UUID,
+        contest_team_id: UUID,
+        contest_team_member_id: UUID,
+        user_id: UUID,
+    ) -> ContestTeamMemberDetail:
+        """
+        Retrieve detail, session timing, and aggregate stats for one contest team member.
+        """
+        contest = await self.contest_repository.get_contest_or_raise(contest_id)
+        await self.guard.check_read_team(user_id=user_id, contest=contest)
+
+        member_row = await self.repository.get_contest_team_member_detail(
+            contest_id=contest_id,
+            contest_team_id=contest_team_id,
+            contest_team_member_id=contest_team_member_id,
+        )
+        _, remaining_seconds = calculate_effective_times(
+            base_end_time=member_row.base_end_time,
+            extra_time_seconds=member_row.extra_time_seconds,
+        )
+        if not member_row.is_participated:
+            remaining_seconds = 0
+
+        return to_contest_team_member_detail(
+            member_row,
+            remaining_time_seconds=remaining_seconds,
+        )
+
+    async def get_contest_team_member_questions(
+        self,
+        contest_team_id: UUID,
+        contest_team_member_id: UUID,
+        user_id: UUID,
+    ) -> list[ContestTeamMemberQuestionAnalytics]:
+        """
+        Retrieve all contest questions with this member's submission counts.
+        """
+        contest_team = (
+            await self.contest_team_repository.get_contest_team_by_id_or_raise(
+                contest_team_id
+            )
+        )
+        contest_id = contest_team.contest_id
+        contest = await self.contest_repository.get_contest_or_raise(contest_id)
+        await self.guard.check_read_team(user_id=user_id, contest=contest)
+
+        has_progress = await self.repository.has_contest_team_member_progress(
+            contest_team_id, contest_team_member_id
+        )
+        if not has_progress:
+            raise ContestTeamProgressNotFoundError(
+                str(contest_id), str(contest_team_id)
+            )
+
+        question_rows = (
+            await self.repository.get_contest_team_member_question_analytics(
+                contest_id=contest_id,
+                contest_team_id=contest_team_id,
+                contest_team_member_id=contest_team_member_id,
+            )
+        )
+        return to_contest_team_member_question_analytics(question_rows)
+
+    async def get_contest_team_member_question_submissions(
+        self,
+        contest_id: UUID,
+        contest_team_id: UUID,
+        contest_team_member_id: UUID,
+        question_id: UUID,
+        user_id: UUID,
+    ) -> ContestTeamMemberQuestionSubmissions:
+        """
+        Retrieve submissions and aggregate statistics for one member/question pair.
+        """
+        contest = await self.contest_repository.get_contest_or_raise(contest_id)
+        await self.guard.check_read_team(user_id=user_id, contest=contest)
+
+        (
+            question_row,
+            stats_row,
+            submission_rows,
+        ) = await self.repository.get_contest_team_member_question_submissions(
+            contest_id=contest_id,
+            contest_team_id=contest_team_id,
+            contest_team_member_id=contest_team_member_id,
+            question_id=question_id,
+        )
+        return to_contest_team_member_question_submissions(
+            question_row,
+            stats_row,
+            submission_rows,
+        )
 
     @cache_get(
         key_builder=lambda self, contest_id, contest_team_id, user_id, search_term=None, skip=0, limit=100: (

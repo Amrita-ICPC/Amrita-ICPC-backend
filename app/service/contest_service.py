@@ -48,7 +48,6 @@ from app.schema.contest import (
 )
 from app.schema.evaluation import EvaluationResponse, EvaluationStatusResponse
 from app.schema.leaderboard import (
-    LeaderboardQuestionDetail,
     LeaderboardResponse,
     LeaderboardRow,
 )
@@ -58,7 +57,6 @@ from app.utils.enums import (
     ContestRunStatus,
     ContestStatus,
     ContestTeamMemberStatus,
-    SubmissionStatus,
     UserRole,
 )
 from app.validators.contest import ContestValidator
@@ -1107,9 +1105,6 @@ class ContestService:
         (``get_teams_ranked_by_score``) that AVGs member scores from
         ``ContestTeamProgress`` and sorts descending.
 
-        Question-level detail (is_solved, attempts, time_taken) is still
-        derived from submissions.
-
         Args:
             contest_id: UUID of the contest.
             user_id: UUID of the user requesting the leaderboard.
@@ -1127,91 +1122,11 @@ class ContestService:
 
         await self.guard.check_read_contest(user_id=user_id, contest=contest)
 
-        # 1. Get teams ranked by aggregated score (single SQL query)
+        # Get teams ranked by aggregated score (single SQL query)
         ranked_teams = await self.repository.get_teams_ranked_by_score(contest_id)
-
-        # 2. Fetch questions and submissions for question-level detail
-        (
-            _,
-            questions,
-            submissions,
-        ) = await self.repository.get_contest_leaderboard_raw_data(contest_id)
-
-        from collections import defaultdict
-
-        # Structure: team_id -> question_id -> list of all submissions
-        team_question_subs = defaultdict(lambda: defaultdict(list))
-        # Structure: team_id -> member_id -> question_id -> list of evaluated subs
-        team_member_question_subs = defaultdict(
-            lambda: defaultdict(lambda: defaultdict(list))
-        )
-
-        for sub in submissions:
-            if sub.contest_submission:
-                t_id = sub.contest_submission.contest_team_id
-                m_id = sub.contest_submission.contest_team_member_id
-                q_id = sub.question_id
-
-                team_question_subs[t_id][q_id].append(sub)
-                if sub.is_evaluated:
-                    team_member_question_subs[t_id][m_id][q_id].append(sub)
 
         standings: list[LeaderboardRow] = []
         for rank, (team, total_score) in enumerate(ranked_teams, start=1):
-            accepted_members = [
-                m
-                for m in team.contest_team_member
-                if m.status == ContestTeamMemberStatus.ACCEPTED
-            ]
-
-            question_details: list[LeaderboardQuestionDetail] = []
-            for question in questions:
-                # Compute per-question average score from member best scores
-                best_scores = []
-                for member in accepted_members:
-                    subs = team_member_question_subs[team.id][member.id][question.id]
-                    best_score = max((s.score for s in subs), default=0)
-                    best_scores.append(best_score)
-
-                if accepted_members:
-                    avg_score = sum(best_scores) / len(accepted_members)
-                else:
-                    avg_score = 0.0
-
-                # Determine attempts and solved status
-                all_subs = team_question_subs[team.id][question.id]
-                attempts = len(all_subs)
-                is_solved = any(
-                    s.is_evaluated and s.status == SubmissionStatus.AC for s in all_subs
-                )
-
-                time_taken = None
-                if is_solved:
-                    solved_subs = [
-                        s
-                        for s in all_subs
-                        if s.is_evaluated and s.status == SubmissionStatus.AC
-                    ]
-                    if solved_subs and contest.start_time:
-                        first_solved = min(s.created_at for s in solved_subs)
-                        start_time = contest.start_time
-                        if start_time.tzinfo is None:
-                            start_time = start_time.replace(tzinfo=timezone.utc)
-                        if first_solved.tzinfo is None:
-                            first_solved = first_solved.replace(tzinfo=timezone.utc)
-                        time_taken = int((first_solved - start_time).total_seconds())
-
-                question_details.append(
-                    LeaderboardQuestionDetail(
-                        question_id=question.id,
-                        question_title=question.title,
-                        is_solved=is_solved,
-                        score=int(round(avg_score)),
-                        attempts=attempts,
-                        time_taken_seconds=time_taken,
-                    )
-                )
-
             standings.append(
                 LeaderboardRow(
                     rank=rank,
@@ -1219,7 +1134,6 @@ class ContestService:
                     team_name=team.name,
                     total_score=total_score,
                     total_penalty=0,
-                    question_details=question_details,
                 )
             )
 
