@@ -69,6 +69,7 @@ from app.exceptions.student.teams import (
     InvalidContestTeamMemberStatusUpdateException,
     TeamStatusNotAllowedForUpdatingContestTeamMemberStatusException,
 )
+from app.exceptions.submission import SubmissionNotFoundError
 from app.exceptions.team import (
     IndividualModeActionNotAllowedError,
     LeaderMustBeMemberError,
@@ -715,6 +716,19 @@ def setup_exception_handlers(app: FastAPI) -> None:
             status_code=exc.status_code,
             message=exc.message,
             error_code="CONTEST_TEAM_PROGRESS_NOT_FOUND",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(SubmissionNotFoundError)
+    async def submission_not_found_handler(
+        request: Request, exc: SubmissionNotFoundError
+    ):
+        logger.warning(f"Submission not found: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="SUBMISSION_NOT_FOUND",
             details=[exc.detail] if exc.detail else None,
         )
 

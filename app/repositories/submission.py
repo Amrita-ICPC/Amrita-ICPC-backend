@@ -3,6 +3,7 @@ import uuid
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.exceptions.submission import SubmissionNotFoundError
 from app.models.contest import (
     ContestQuestion,
     ContestSubmission,
@@ -10,7 +11,7 @@ from app.models.contest import (
     ContestTeamMember,
 )
 from app.models.language import Language
-from app.models.question import Question, Submission
+from app.models.question import Question, Submission, SubmissionTestCase, TestCase
 from app.models.user import User
 from app.repositories.dto.submission import (
     ContestAnalyticsRaw,
@@ -27,6 +28,216 @@ class ContestSubmissionRepository:
 
     def __init__(self, db: AsyncSession):
         self.db = db
+
+    async def get_submission_detail(self, submission_id: uuid.UUID):
+        """Fetch a contest submission detail row with computed status and testcase counts."""
+        submission_testcase_stats_subq = (
+            select(
+                SubmissionTestCase.submission_id,
+                func.count(SubmissionTestCase.id).label("submission_testcase_count"),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (SubmissionTestCase.status == SubmissionStatus.AC, 1),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ).label("passed_testcases"),
+                case(
+                    (
+                        func.sum(
+                            case(
+                                (
+                                    SubmissionTestCase.status
+                                    == SubmissionStatus.SYSTEM_ERROR,
+                                    1,
+                                ),
+                                else_=0,
+                            )
+                        )
+                        > 0,
+                        SubmissionStatus.SYSTEM_ERROR,
+                    ),
+                    (
+                        func.sum(
+                            case(
+                                (SubmissionTestCase.status == SubmissionStatus.CE, 1),
+                                else_=0,
+                            )
+                        )
+                        > 0,
+                        SubmissionStatus.CE,
+                    ),
+                    (
+                        func.sum(
+                            case(
+                                (SubmissionTestCase.status == SubmissionStatus.MLE, 1),
+                                else_=0,
+                            )
+                        )
+                        > 0,
+                        SubmissionStatus.MLE,
+                    ),
+                    (
+                        func.sum(
+                            case(
+                                (SubmissionTestCase.status == SubmissionStatus.TLE, 1),
+                                else_=0,
+                            )
+                        )
+                        > 0,
+                        SubmissionStatus.TLE,
+                    ),
+                    (
+                        func.sum(
+                            case(
+                                (SubmissionTestCase.status == SubmissionStatus.RE, 1),
+                                else_=0,
+                            )
+                        )
+                        > 0,
+                        SubmissionStatus.RE,
+                    ),
+                    (
+                        func.sum(
+                            case(
+                                (SubmissionTestCase.status == SubmissionStatus.WA, 1),
+                                else_=0,
+                            )
+                        )
+                        > 0,
+                        SubmissionStatus.WA,
+                    ),
+                    else_=SubmissionStatus.AC,
+                ).label("computed_status"),
+            )
+            .group_by(SubmissionTestCase.submission_id)
+            .subquery()
+        )
+
+        question_testcase_counts_subq = (
+            select(
+                TestCase.question_id,
+                func.count(TestCase.id).label("question_testcase_count"),
+            )
+            .group_by(TestCase.question_id)
+            .subquery()
+        )
+
+        result = await self.db.execute(
+            select(
+                Submission.id.label("submission_id"),
+                Question.id.label("question_id"),
+                Question.title.label("question_title"),
+                User.id.label("submitted_by_id"),
+                User.name.label("submitted_by_name"),
+                case(
+                    (Submission.is_evaluated.is_(False), None),
+                    (
+                        func.coalesce(
+                            submission_testcase_stats_subq.c.submission_testcase_count,
+                            0,
+                        )
+                        == 0,
+                        SubmissionStatus.SYSTEM_ERROR,
+                    ),
+                    else_=submission_testcase_stats_subq.c.computed_status,
+                ).label("status"),
+                Submission.score,
+                Language.id.label("language_id"),
+                Language.name.label("language_name"),
+                Submission.created_at.label("submitted_at"),
+                Submission.total_time.label("execution_time_ms"),
+                Submission.total_memory.label("memory_kb"),
+                case(
+                    (
+                        Submission.is_evaluated.is_(True),
+                        func.coalesce(
+                            submission_testcase_stats_subq.c.passed_testcases,
+                            0,
+                        ),
+                    ),
+                    else_=0,
+                ).label("passed_testcases"),
+                case(
+                    (
+                        Submission.is_evaluated.is_(True),
+                        func.coalesce(
+                            submission_testcase_stats_subq.c.submission_testcase_count,
+                            0,
+                        ),
+                    ),
+                    else_=func.coalesce(
+                        question_testcase_counts_subq.c.question_testcase_count,
+                        0,
+                    ),
+                ).label("total_testcases"),
+                Submission.source_code,
+            )
+            .select_from(Submission)
+            .join(Question, Submission.question_id == Question.id)
+            .join(Language, Submission.language_id == Language.id)
+            .join(ContestSubmission, ContestSubmission.submission_id == Submission.id)
+            .join(
+                ContestTeamMember,
+                ContestSubmission.contest_team_member_id == ContestTeamMember.id,
+            )
+            .join(User, ContestTeamMember.user_id == User.id)
+            .outerjoin(
+                submission_testcase_stats_subq,
+                submission_testcase_stats_subq.c.submission_id == Submission.id,
+            )
+            .outerjoin(
+                question_testcase_counts_subq,
+                question_testcase_counts_subq.c.question_id == Submission.question_id,
+            )
+            .where(Submission.id == submission_id)
+        )
+        row = result.one_or_none()
+        if row is None:
+            raise SubmissionNotFoundError(submission_id)
+        return row
+
+    async def get_submission_testcases(
+        self,
+        submission_id: uuid.UUID,
+        *,
+        skip: int,
+        limit: int,
+    ) -> tuple[int, list]:
+        """Fetch paginated testcase results for a submission."""
+        exists_result = await self.db.execute(
+            select(Submission.id).where(Submission.id == submission_id)
+        )
+        if exists_result.scalar_one_or_none() is None:
+            raise SubmissionNotFoundError(submission_id)
+
+        total_result = await self.db.execute(
+            select(func.count(SubmissionTestCase.id)).where(
+                SubmissionTestCase.submission_id == submission_id
+            )
+        )
+        total = int(total_result.scalar() or 0)
+
+        result = await self.db.execute(
+            select(
+                SubmissionTestCase.id,
+                TestCase.order.label("order"),
+                SubmissionTestCase.status,
+                SubmissionTestCase.time.label("execution_time"),
+                SubmissionTestCase.memory,
+                TestCase.input,
+                TestCase.output.label("expected_output"),
+                SubmissionTestCase.stdout.label("actual_output"),
+            )
+            .join(TestCase, SubmissionTestCase.testcase_id == TestCase.id)
+            .where(SubmissionTestCase.submission_id == submission_id)
+            .order_by(TestCase.order)
+            .offset(skip)
+            .limit(limit)
+        )
+        return total, list(result.all())
 
     async def get_dashboard_analytics_raw(
         self, contest_id: uuid.UUID

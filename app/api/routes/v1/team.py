@@ -17,6 +17,10 @@ from app.repositories.student.contest_team import ContestTeamRepository
 from app.repositories.team import TeamRepository
 from app.schema.base import APIResponse
 from app.schema.team import (
+    ContestTeamAnalytics,
+    ContestTeamMemberDetail,
+    ContestTeamMemberQuestionAnalytics,
+    ContestTeamMemberQuestionSubmissions,
     ContestTeamResponse,
     TeamListResponse,
     TeamMemberResponse,
@@ -230,6 +234,32 @@ async def get_team(
 
 
 @router.get(
+    "/contests/{contest_id}/teams/{contest_team_id}/analytics",
+    response_model=APIResponse[ContestTeamAnalytics],
+    summary="Get contest team analytics",
+    dependencies=[can_read("contests")],
+)
+async def get_contest_team_analytics(
+    request: Request,
+    contest_id: UUID,
+    contest_team_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: TeamService = Depends(get_team_service),
+):
+    """
+    Get score, participation, flag, and submission status analytics for a contest team.
+    """
+    analytics = await service.get_contest_team_analytics(
+        contest_id, contest_team_id, user_id
+    )
+    return create_api_response(
+        request,
+        data=analytics,
+        message="Team analytics fetched successfully",
+    )
+
+
+@router.get(
     "/contests/{contest_id}/teams/{contest_team_id}/members",
     response_model=APIResponse[list[TeamMemberResponse]],
     summary="Get team members",
@@ -274,4 +304,85 @@ async def get_team_members(
         data=members,
         message="Team members fetched successfully",
         pagination=pagination,
+    )
+
+
+@router.get(
+    "/contests/{contest_id}/teams/{contest_team_id}/members/{contest_team_member_id}",
+    response_model=APIResponse[ContestTeamMemberDetail],
+    summary="Get contest team member detail",
+    dependencies=[can_read("contests")],
+)
+async def get_contest_team_member_detail(
+    request: Request,
+    contest_id: UUID,
+    contest_team_id: UUID,
+    contest_team_member_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: TeamService = Depends(get_team_service),
+):
+    """
+    Get member profile, contest session timing, and aggregate analytics.
+    """
+    member = await service.get_contest_team_member_detail(
+        contest_id, contest_team_id, contest_team_member_id, user_id
+    )
+    return create_api_response(
+        request,
+        data=member,
+        message="Contest team member fetched successfully",
+    )
+
+
+@router.get(
+    "/contests/team/{contest_team_id}/members/{contest_team_member_id}/questions",
+    response_model=APIResponse[list[ContestTeamMemberQuestionAnalytics]],
+    summary="Get contest team member question analytics",
+    dependencies=[can_read("contests")],
+)
+async def get_contest_team_member_questions(
+    request: Request,
+    contest_team_id: UUID,
+    contest_team_member_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: TeamService = Depends(get_team_service),
+):
+    """
+    Get all contest questions with submission counts for a contest team member.
+    """
+    questions = await service.get_contest_team_member_questions(
+        contest_team_id, contest_team_member_id, user_id
+    )
+    return create_api_response(
+        request,
+        data=questions,
+        message="Contest team member questions fetched successfully",
+    )
+
+
+@router.get(
+    "/contests/{contest_id}/teams/{contest_team_id}/members/{contest_team_member_id}/questions/{question_id}/submissions",
+    response_model=APIResponse[ContestTeamMemberQuestionSubmissions],
+    summary="Get contest team member question submissions",
+    dependencies=[can_read("contests")],
+)
+async def get_contest_team_member_question_submissions(
+    request: Request,
+    contest_id: UUID,
+    contest_team_id: UUID,
+    contest_team_member_id: UUID,
+    question_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: TeamService = Depends(get_team_service),
+):
+    """
+    Get submissions and submission statistics for one contest team member question.
+    """
+    submissions = await service.get_contest_team_member_question_submissions(
+        contest_id, contest_team_id, contest_team_member_id, question_id, user_id
+    )
+    return create_api_response(
+        request,
+        data=submissions,
+        message="Contest team member question submissions fetched successfully",
     )

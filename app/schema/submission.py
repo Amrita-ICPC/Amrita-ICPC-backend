@@ -156,6 +156,64 @@ class RecentSubmissionSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class SubmissionDetailQuestionSchema(BaseModel):
+    """Question details for a submission detail response."""
+
+    id: UUID
+    title: str
+
+
+class SubmissionDetailUserSchema(BaseModel):
+    """User details for a submission detail response."""
+
+    id: UUID
+    name: str
+
+
+class SubmissionDetailLanguageSchema(BaseModel):
+    """Language details for a submission detail response."""
+
+    id: int
+    name: str
+
+
+class SubmissionDetailResponse(BaseModel):
+    """Detailed submission response for instructor/admin review."""
+
+    submission_id: UUID
+    question: SubmissionDetailQuestionSchema
+    submitted_by: SubmissionDetailUserSchema
+    status: SubmissionStatus | None = None
+    score: int
+    language: SubmissionDetailLanguageSchema
+    submitted_at: datetime
+    execution_time_ms: Optional[int] = None
+    memory_kb: Optional[int] = None
+    passed_testcases: int = 0
+    total_testcases: int = 0
+    source_code: str
+
+
+class SubmissionTestCaseResultSchema(BaseModel):
+    """Single testcase result for a submission."""
+
+    id: UUID
+    name: str
+    status: SubmissionStatus | None = None
+    execution_time: Optional[int] = None
+    memory: Optional[int] = None
+    input: str
+    expected_output: str
+    actual_output: Optional[str] = None
+
+
+class SubmissionTestCaseListResponse(BaseModel):
+    """Paginated testcase results for a submission."""
+
+    items: list[SubmissionTestCaseResultSchema] = Field(default_factory=list)
+    total: int = 0
+
+
 class ContestDashboardResponse(BaseModel):
     """Comprehensive schema for the contest submission and analytics dashboard."""
 

@@ -9,6 +9,7 @@ from . import (
     execution,
     image,
     question,
+    submissions,
     team,
     user,
 )
@@ -24,6 +25,9 @@ api_v1_router.include_router(
     bank_questions.router, prefix="/banks", tags=["Bank Questions"]
 )
 api_v1_router.include_router(team.router, tags=["Teams"])
+api_v1_router.include_router(
+    submissions.router, prefix="/submissions", tags=["Submissions"]
+)
 api_v1_router.include_router(
     audience.router,
     prefix="/audiences",
