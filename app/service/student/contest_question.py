@@ -471,6 +471,13 @@ class StudentContestQuestionService:
             submission=submission, contest_submission=contest_submission
         )
 
+        # Commit the transaction before dispatching the Celery task.
+        # The `get_db` dependency auto-commits only after the route handler returns,
+        # which is after send_task(). Without an explicit commit here the worker
+        # picks up the task and queries the DB before the row is visible,
+        # causing "Submission not found" errors.
+        await self.question_repository.db.commit()
+
         # Trigger background evaluation task via Celery only if evaluate_on_submit is True
         if session_data.evaluate_on_submit:
             celery_app.send_task(

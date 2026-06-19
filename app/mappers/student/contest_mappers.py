@@ -175,6 +175,7 @@ def to_student_contest_details_response(
         duration=contest.duration,
         show_leaderboard_during_contest=contest.show_leaderboard_during_contest,
         participation_type=contest.participation_type,
+        result_visibility=contest.result_visibility,
     )
 
 

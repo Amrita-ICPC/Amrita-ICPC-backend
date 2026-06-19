@@ -1157,7 +1157,6 @@ class ContestService:
 
         leaderboard = LeaderboardResponse(
             contest_id=contest_id,
-            result_visibility=contest.result_visibility,
             last_updated_at=datetime.now(timezone.utc),
             standings=standings,
         )

@@ -3,7 +3,7 @@ from typing import Sequence
 from uuid import UUID
 
 from app.core.logger import logger
-from app.models.question import Submission, SubmissionTestCase, TestCase
+from app.models.question import SubmissionTestCase, TestCase
 from app.repositories.dto.evaluation import EvaluationResult
 from app.repositories.dto.judge0 import Judge0ExecutionRequestDTO, Judge0SubmissionDTO
 from app.repositories.judge0 import Judge0Repository
@@ -37,15 +37,17 @@ class Judge0EvaluationService:
 
     async def run_evaluation(
         self,
-        submission: Submission,
+        submission_id: UUID,
+        question_id: UUID,
+        language_id: int,
         testcases: Sequence[TestCase] | Sequence[QuestionTestCaseResponse],
         final_source_code: str,
     ) -> EvaluationResult:
         """Run concurrent Judge0 evaluations and return the evaluation result."""
         request_dto = Judge0ExecutionRequestDTO(
-            question_id=str(submission.question_id),
+            question_id=str(question_id),
             source_code=final_source_code,
-            language_id=submission.language_id,
+            language_id=language_id,
         )
 
         total_time = 0.0
@@ -102,11 +104,10 @@ class Judge0EvaluationService:
                 )
                 final_status = SubmissionStatus.SYSTEM_ERROR
                 stc = SubmissionTestCase(
-                    submission_id=submission.id,
+                    submission_id=submission_id,
                     testcase_id=testcase.id,
                     status=SubmissionStatus.SYSTEM_ERROR,
                     stderr=str(result),
-                    submission=submission,
                 )
                 testcase_results.append(stc)
                 continue
@@ -124,8 +125,7 @@ class Judge0EvaluationService:
                 max_memory = max(max_memory, result.memory)
 
             # Create testcase record
-            stc = create_submission_testcase(submission.id, testcase, result, status)
-            stc.submission = submission
+            stc = create_submission_testcase(submission_id, testcase, result, status)
             testcase_results.append(stc)
 
             if status == SubmissionStatus.AC:

@@ -45,6 +45,11 @@ async def test_evaluate_submission_async_success(
     mock_submission.contest_submission = None
     mock_repo.get_submission.return_value = mock_submission
 
+    # Mock db.execute: _get_contest_submission_context calls db.execute; return no row (non-contest submission)
+    mock_execute_result = MagicMock()
+    mock_execute_result.first.return_value = None
+    mock_db.execute = AsyncMock(return_value=mock_execute_result)
+
     # Mock QuestionValidator
     mock_validator.validate_submission_language.return_value = MagicMock()
 
@@ -276,6 +281,7 @@ async def test_evaluate_contest_submission_async_with_existing_testcases(
     # Setup database execute mock
     mock_res_stc = MagicMock()
     mock_res_stc.scalar_one_or_none.return_value = uuid4()  # dummy testcase id
+    mock_res_stc.first.return_value = None  # no contest submission row
     mock_db.execute.return_value = mock_res_stc
 
     # Mock Redis
@@ -364,6 +370,7 @@ async def test_evaluate_contest_submission_async_no_existing_testcases(
     # Setup database execute mock: testcases do not exist
     mock_res_stc = MagicMock()
     mock_res_stc.scalar_one_or_none.return_value = None
+    mock_res_stc.first.return_value = None  # no contest submission row
     mock_db.execute.return_value = mock_res_stc
 
     # Mock Redis
