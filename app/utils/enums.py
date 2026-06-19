@@ -446,3 +446,23 @@ class EvaluationStatus(str, enum.Enum):
     PENDING = "PENDING"
     RUNNING = "RUNNING"
     COMPLETED = "COMPLETED"
+
+
+class ContestResultVisibility(str, enum.Enum):
+    """
+    Enumeration of contest result visibility configurations.
+
+    Defines visibility levels for displaying contest grading and standings
+    results to students.
+
+    Attributes:
+        HIDDEN: Results are completely hidden from student view.
+        LEADERBOARD_ONLY: Only the general standings leaderboard is visible.
+        TEAM_RESULTS_ONLY: Students can only view their own team's graded results.
+        FULL_RESULTS: Both the leaderboard and all detailed results are visible.
+    """
+
+    HIDDEN = "HIDDEN"
+    LEADERBOARD_ONLY = "LEADERBOARD_ONLY"
+    TEAM_RESULTS_ONLY = "TEAM_RESULTS_ONLY"
+    FULL_RESULTS = "FULL_RESULTS"

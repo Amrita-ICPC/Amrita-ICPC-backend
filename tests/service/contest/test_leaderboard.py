@@ -11,7 +11,7 @@ from app.models.contest import (
     ContestTeam,
 )
 from app.schema.leaderboard import LeaderboardResponse
-from app.utils.enums import ContestStatus
+from app.utils.enums import ContestResultVisibility, ContestStatus
 
 
 class TestGetContestLeaderboard:
@@ -78,6 +78,8 @@ class TestGetContestLeaderboard:
         # 1. Setup contest details
         mock_contest_repository.get_contest_or_raise.return_value = mock_contest
         mock_contest.status = ContestStatus.PUBLISHED
+        mock_contest.results_published = True
+        mock_contest.result_visibility = ContestResultVisibility.FULL_RESULTS
 
         # 2. Setup mock Teams
         t1_id = uuid4()
@@ -105,6 +107,7 @@ class TestGetContestLeaderboard:
         # 4. Verify result
         assert isinstance(response, LeaderboardResponse)
         assert response.contest_id == mock_contest.id
+        assert response.result_visibility == ContestResultVisibility.FULL_RESULTS
         assert len(response.standings) == 2
         assert total == 2
 
