@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import Select, and_, case, func, or_, select
+from sqlalchemy import Select, and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -254,14 +254,7 @@ class ContestTeamRepository:
             select(ContestTeamProgress.id)
             .join(
                 ContestTeamMember,
-                or_(
-                    ContestTeamProgress.contest_team_member_id == ContestTeamMember.id,
-                    and_(
-                        ContestTeamProgress.contest_team_member_id.is_(None),
-                        ContestTeamProgress.contest_team_id
-                        == ContestTeamMember.contest_team_id,
-                    ),
-                ),
+                ContestTeamProgress.contest_team_member_id == ContestTeamMember.id,
             )
             .where(
                 ContestTeamProgress.contest_id == contest_id,
