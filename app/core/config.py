@@ -96,6 +96,97 @@ class Config(BaseSettings):
         default=30, description="Judge0 API timeout"
     )
 
+    # Judge0 execution limits (global safety caps).
+    # Per-problem limits (Question.time_limit_ms / memory_limit_mb) are clamped
+    # by these values before being sent to Judge0.
+    JUDGE0_MAX_CPU_TIME: float = Field(
+        default=15.0,
+        description="Maximum CPU time limit (seconds) allowed per testcase execution",
+    )
+    JUDGE0_MAX_WALL_TIME: float = Field(
+        default=20.0,
+        description="Maximum wall-clock time limit (seconds) allowed per testcase execution",
+    )
+    JUDGE0_MAX_MEMORY_KB: int = Field(
+        default=512000,
+        description="Maximum memory limit (KB) allowed per testcase execution",
+    )
+    JUDGE0_MIN_MEMORY_KB: int = Field(
+        default=65536,
+        description=(
+            "Minimum memory limit (KB) applied as a floor after problem/default "
+            "limits. Judge0's API itself only requires >=2048, but that is far "
+            "too little for real runtimes to even start (the JVM alone needs "
+            "tens of MB) -- a too-low per-problem value would otherwise make "
+            "every submission fail with a false Runtime/Memory Limit Error "
+            "before the submitted code ever runs."
+        ),
+    )
+    JUDGE0_STACK_LIMIT_KB: int = Field(
+        default=64000, description="Stack size limit (KB) applied to every execution"
+    )
+    JUDGE0_DEFAULT_CPU_TIME: float = Field(
+        default=5.0,
+        description="Fallback CPU time limit (seconds) when a problem defines none",
+    )
+    JUDGE0_DEFAULT_MEMORY_KB: int = Field(
+        default=256000,
+        description="Fallback memory limit (KB) when a problem defines none",
+    )
+    JUDGE0_WALL_TIME_FACTOR: float = Field(
+        default=2.0,
+        description="Wall-time limit = cpu_time_limit * this factor (then capped)",
+    )
+
+    # Judge0 batching & backpressure
+    JUDGE0_BATCH_SIZE: int = Field(
+        default=20,
+        description="Number of submissions/tokens per Judge0 batch submit/get call",
+    )
+    JUDGE0_MAX_INFLIGHT: int = Field(
+        default=100,
+        description="Global cap on submissions awaiting Judge0 results (backpressure gate)",
+    )
+
+    # Evaluation pipeline backpressure
+    EVAL_MAX_CONCURRENT_TESTCASES: int = Field(
+        default=10,
+        description="Max concurrent Judge0 submit calls per submission (fallback path)",
+    )
+    EVAL_MAX_ACTIVE_TASKS_PER_CONTEST: int = Field(
+        default=50,
+        description="Max concurrent in-flight submissions per contest for bulk evaluation",
+    )
+    EVAL_POLL_INTERVAL_SECONDS: float = Field(
+        default=1.5, description="Cadence of the Celery Beat result poller (seconds)"
+    )
+    EVAL_SUBMISSION_DEADLINE_SECONDS: int = Field(
+        default=120,
+        description="Per-submission deadline; past this the poller force-persists a timeout",
+    )
+    EVAL_BACKPRESSURE_RETRY_SECONDS: int = Field(
+        default=5,
+        description="Countdown (seconds) before retrying a submit task blocked by backpressure",
+    )
+    JUDGE0_TRANSIENT_MAX_RETRIES: int = Field(
+        default=8,
+        description="Max retries for transient Judge0 failures (timeout/connection/503) "
+        "before a submission is given up on and recorded as SYSTEM_ERROR",
+    )
+    JUDGE0_TRANSIENT_RETRY_MAX_BACKOFF_SECONDS: int = Field(
+        default=60,
+        description="Cap on the exponential backoff countdown between transient Judge0 retries",
+    )
+
+    # Celery worker concurrency (applied via worker launch flags; documented here)
+    CELERY_STUDENT_CONCURRENCY: int = Field(
+        default=8, description="Worker concurrency for the student_submit queue"
+    )
+    CELERY_BULK_CONCURRENCY: int = Field(
+        default=4,
+        description="Worker concurrency for the bulk_contest_evaluation queue",
+    )
+
     # Keycloak Configuration
     KEYCLOAK_SERVER_URL: str = Field(
         default="http://localhost:8080",

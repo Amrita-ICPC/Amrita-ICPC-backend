@@ -1,4 +1,3 @@
-import json
 from datetime import datetime, timezone
 from typing import AsyncGenerator, List, cast
 from uuid import UUID, uuid4
@@ -46,7 +45,11 @@ from app.schema.contest import (
     InstructorManageRequest,
     InstructorResponse,
 )
-from app.schema.evaluation import EvaluationResponse, EvaluationStatusResponse
+from app.schema.evaluation import (
+    EvaluationRecord,
+    EvaluationResponse,
+    EvaluationStatusResponse,
+)
 from app.schema.leaderboard import (
     LeaderboardResponse,
     LeaderboardRow,
@@ -60,6 +63,12 @@ from app.utils.enums import (
     UserRole,
 )
 from app.validators.contest import ContestValidator
+from worker.redis_helper import (
+    create_evaluation,
+    derive_status,
+    get_evaluation_record,
+    get_processed_count,
+)
 
 
 class ContestService:
@@ -942,32 +951,48 @@ class ContestService:
         total_subs = len(submissions)
 
         evaluation_id = uuid4()
+        created_at = datetime.now(timezone.utc)
 
-        evaluation_data = {
-            "id": str(evaluation_id),
-            "contest_id": str(contest_id),
-            "is_evaluated": total_subs == 0,
-            "total_submissions": total_subs,
-            "processed_submissions": 0,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "created_by": str(user_id),
-            "status": "COMPLETED" if total_subs == 0 else "PENDING",
-        }
-
-        if self.redis is not None:
-            await self.redis.set(
-                f"contests:{contest_id}:evaluation",
-                json.dumps(evaluation_data),
+        # Store immutable metadata + reset atomic progress/active counters. The
+        # processed count is tracked via an atomic INCR counter (no lock) and the
+        # status is derived from it on read.
+        await create_evaluation(
+            EvaluationRecord(
+                id=evaluation_id,
+                contest_id=contest_id,
+                total_submissions=total_subs,
+                created_at=created_at,
+                created_by=user_id,
             )
+        )
 
+        # Dispatch one SUBMIT task per submission on the isolated bulk queue. Even
+        # with thousands queued, the per-contest active gate + bulk worker
+        # concurrency bound how many are in Judge0 at once. Backpressured tasks
+        # retry themselves; superseded runs short-circuit via is_evaluation_valid.
         if total_subs > 0:
             for sub in submissions:
                 celery_app.send_task(
-                    "worker.evaluation.evaluate_contest_submission",
-                    args=[str(contest_id), str(evaluation_id), str(sub.id)],
+                    "worker.evaluation.submit_evaluation",
+                    kwargs={
+                        "submission_id": str(sub.id),
+                        "reevaluation": True,
+                        "publish_events": False,
+                        "contest_id": str(contest_id),
+                        "evaluation_id": str(evaluation_id),
+                    },
+                    queue="bulk_contest_evaluation",
                 )
 
-        return EvaluationResponse.model_validate(evaluation_data)
+        return EvaluationResponse(
+            id=evaluation_id,
+            contest_id=contest_id,
+            is_evaluated=total_subs == 0,
+            total_submissions=total_subs,
+            processed_submissions=0,
+            created_at=created_at,
+            created_by=user_id,
+        )
 
     async def get_evaluation_status(
         self, contest_id: UUID, user_id: UUID
@@ -995,17 +1020,18 @@ class ContestService:
         if self.redis is None:
             raise EvaluationBackendUnavailableError("Redis client is not initialized")
 
-        data = await self.redis.get(f"contests:{contest_id}:evaluation")
-        if not data:
+        record = await get_evaluation_record(contest_id)
+        if not record:
             raise EvaluationNotFoundError("No active evaluation found for this contest")
 
-        eval_data = json.loads(data)
+        processed = await get_processed_count(contest_id, record.id)
+
         return EvaluationStatusResponse(
-            id=UUID(eval_data["id"]),
+            id=record.id,
             contest_id=contest_id,
-            status=eval_data.get("status", "PENDING"),
-            total_submissions=eval_data.get("total_submissions", 0),
-            processed_submissions=eval_data.get("processed_submissions", 0),
+            status=derive_status(processed, record.total_submissions),
+            total_submissions=record.total_submissions,
+            processed_submissions=processed,
         )
 
     @cache_delete(

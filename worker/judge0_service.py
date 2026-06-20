@@ -1,8 +1,6 @@
-import asyncio
 from typing import Sequence
 from uuid import UUID
 
-from app.core.logger import logger
 from app.models.question import SubmissionTestCase, TestCase
 from app.repositories.dto.evaluation import EvaluationResult
 from app.repositories.dto.judge0 import Judge0ExecutionRequestDTO, Judge0SubmissionDTO
@@ -17,11 +15,25 @@ def create_submission_testcase(
     testcase: TestCase | QuestionTestCaseResponse,
     result: Judge0SubmissionDTO,
     status: SubmissionStatus,
+    token: str | None = None,
 ) -> SubmissionTestCase:
+    """Build a SubmissionTestCase row from a Judge0 result.
+
+    Args:
+        submission_id: Owning submission id.
+        testcase: The testcase that was executed.
+        result: The Judge0 result DTO for this testcase.
+        status: Mapped platform verdict for this testcase.
+        token: Judge0 token, persisted for audit/recovery.
+
+    Returns:
+        An unsaved SubmissionTestCase ORM row.
+    """
     return SubmissionTestCase(
         submission_id=submission_id,
         testcase_id=testcase.id,
         status=status,
+        judge0_token=token,
         stdout=result.stdout,
         stderr=result.stderr or result.compile_output,
         time=int(result.time * 1000) if result.time is not None else None,
@@ -35,104 +47,109 @@ class Judge0EvaluationService:
     def __init__(self, judge0_repo: Judge0Repository | None = None) -> None:
         self.judge0_repo = judge0_repo or Judge0Repository()
 
-    async def run_evaluation(
+    async def submit_testcases(
+        self,
+        request_dto: Judge0ExecutionRequestDTO,
+        testcases: Sequence[TestCase] | Sequence[QuestionTestCaseResponse],
+    ) -> list[str | None]:
+        """Batch-submit every testcase to Judge0 without waiting for results.
+
+        This is the SUBMIT stage of the decoupled pipeline: it returns quickly
+        with one Judge0 token per testcase (or ``None`` where submission failed),
+        positionally aligned with ``testcases``.
+
+        Args:
+            request_dto: Execution request carrying source code, language, and
+                the (already-capped) execution limits.
+            testcases: Testcases to execute, each providing ``input``/``output``.
+
+        Returns:
+            A list of Judge0 tokens (or ``None``) in ``testcases`` order.
+        """
+        submissions = [
+            (request_dto, testcase.input, testcase.output) for testcase in testcases
+        ]
+        return await self.judge0_repo.submit_batch(submissions)
+
+    def build_evaluation_result(
         self,
         submission_id: UUID,
-        question_id: UUID,
-        language_id: int,
         testcases: Sequence[TestCase] | Sequence[QuestionTestCaseResponse],
-        final_source_code: str,
+        tokens: Sequence[str | None],
+        results_by_token: dict[str, Judge0SubmissionDTO],
+        timed_out: bool = False,
     ) -> EvaluationResult:
-        """Run concurrent Judge0 evaluations and return the evaluation result."""
-        request_dto = Judge0ExecutionRequestDTO(
-            question_id=str(question_id),
-            source_code=final_source_code,
-            language_id=language_id,
-        )
+        """Aggregate fetched Judge0 results into a final EvaluationResult.
 
+        This is the PERSIST-stage aggregation: it maps each testcase to its
+        Judge0 result (looked up by token) and computes the overall verdict and
+        resource totals. Missing results are recorded as SYSTEM_ERROR (or TLE
+        when ``timed_out`` is set), never silently dropped.
+
+        Args:
+            submission_id: Owning submission id.
+            testcases: Testcases that were executed (aligned with ``tokens``).
+            tokens: Judge0 tokens per testcase (``None`` where submit failed).
+            results_by_token: Mapping of token -> result DTO fetched from Judge0.
+            timed_out: When True, treat unresolved testcases as TLE instead of
+                SYSTEM_ERROR (the poller deadline elapsed).
+
+        Returns:
+            The aggregated EvaluationResult, ready to persist.
+        """
         total_time = 0.0
         max_memory = 0
         passed_cases = 0
-
-        testcase_results = []
+        testcase_results: list[SubmissionTestCase] = []
         final_status = SubmissionStatus.AC
 
-        # 1. Submit all test cases to Judge0 in parallel
-        submit_tasks = [
-            self.judge0_repo.submit_code(
-                request=request_dto,
-                stdin=testcase.input,
-                expected_output=testcase.output,
-            )
-            for testcase in testcases
-        ]
-        submission_results = await asyncio.gather(*submit_tasks, return_exceptions=True)
+        missing_status = (
+            SubmissionStatus.TLE if timed_out else SubmissionStatus.SYSTEM_ERROR
+        )
 
-        # 2. Filter out failed submissions and build wait tasks
-        wait_tasks = []
-        for testcase, sub_res in zip(testcases, submission_results):
-            if isinstance(sub_res, Exception):
-                wait_tasks.append(None)
-            else:
-                wait_tasks.append(self.judge0_repo.wait_for_completion(sub_res.token))
+        for testcase, token in zip(testcases, tokens):
+            result = results_by_token.get(token) if token else None
 
-        # 3. Poll for completion of successfully submitted tasks in parallel
-        actual_wait_tasks = [t for t in wait_tasks if t is not None]
-        if actual_wait_tasks:
-            completed_results = await asyncio.gather(
-                *actual_wait_tasks, return_exceptions=True
-            )
-        else:
-            completed_results = []
-
-        # 4. Map completed results back to the original list order
-        completed_iter = iter(completed_results)
-        results = []
-        for sub_res, wait_task in zip(submission_results, wait_tasks):
-            if isinstance(sub_res, Exception):
-                results.append(sub_res)
-            elif wait_task is None:
-                results.append(Exception("Submission failed to initialize"))
-            else:
-                results.append(next(completed_iter))
-
-        # 5. Process all results and aggregate stats
-        for testcase, result in zip(testcases, results):
-            if isinstance(result, Exception):
-                logger.error(
-                    f"Error evaluating testcase {testcase.id}: {result}", exc_info=True
+            if result is None:
+                if final_status == SubmissionStatus.AC:
+                    final_status = missing_status
+                testcase_results.append(
+                    SubmissionTestCase(
+                        submission_id=submission_id,
+                        testcase_id=testcase.id,
+                        status=missing_status,
+                        judge0_token=token,
+                        stderr=(
+                            "Execution timed out"
+                            if timed_out
+                            else "No result returned by Judge0"
+                        ),
+                    )
                 )
-                final_status = SubmissionStatus.SYSTEM_ERROR
-                stc = SubmissionTestCase(
-                    submission_id=submission_id,
-                    testcase_id=testcase.id,
-                    status=SubmissionStatus.SYSTEM_ERROR,
-                    stderr=str(result),
-                )
-                testcase_results.append(stc)
                 continue
 
-            logger.info(f"Code Result: {result}")
-            # Map status
-            status = JUDGE0_TO_SUBMISSION_STATUS.get(
-                result.status, SubmissionStatus.SYSTEM_ERROR
-            )
-
-            # Record stats
+            try:
+                status = JUDGE0_TO_SUBMISSION_STATUS.get(
+                    result.status, SubmissionStatus.SYSTEM_ERROR
+                )
+            except Exception:
+                # status_id missing/unknown -> treat as a system error for this case.
+                status = SubmissionStatus.SYSTEM_ERROR
             if result.time is not None:
                 total_time += result.time
             if result.memory is not None:
                 max_memory = max(max_memory, result.memory)
 
-            # Create testcase record
-            stc = create_submission_testcase(submission_id, testcase, result, status)
-            testcase_results.append(stc)
+            testcase_results.append(
+                create_submission_testcase(
+                    submission_id, testcase, result, status, token=token
+                )
+            )
 
             if status == SubmissionStatus.AC:
                 passed_cases += 1
-            else:
-                if final_status == SubmissionStatus.AC:
-                    final_status = status
+            elif final_status == SubmissionStatus.AC:
+                final_status = status
 
         return EvaluationResult(
             status=final_status,

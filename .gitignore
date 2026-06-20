@@ -17,5 +17,14 @@ wheels/
 #vscode generated files
 .vscode
 
-#mypy generated files
+# mypy generated files
 .mypy_cache/
+
+# Celery Beat schedule files
+celerybeat-schedule
+celerybeat-schedule.db
+celerybeat-schedule.bak
+celerybeat-schedule.dir
+celerybeat-schedule.dat
+celerybeat-schedule-shm
+celerybeat-schedule-wal

@@ -371,7 +371,7 @@ class StudentContestQuestionService:
                     if judge0_result.status
                     else "Unknown",
                     time=judge0_result.time or 0.0,
-                    memory=judge0_result.memory or 0.0,
+                    memory=(judge0_result.memory or 0) / 1024,
                     stdout=judge0_result.stdout,
                     stderr=judge0_result.stderr,
                     compile_output=judge0_result.compile_output,
@@ -480,9 +480,16 @@ class StudentContestQuestionService:
 
         # Trigger background evaluation task via Celery only if evaluate_on_submit is True
         if session_data.evaluate_on_submit:
+            # SUBMIT stage on the interactive queue. No contest_id/evaluation_id
+            # here -> live student submission (not a bulk re-evaluation run).
             celery_app.send_task(
-                "worker.evaluation.evaluate_submission",
-                args=[str(submission.id)],
+                "worker.evaluation.submit_evaluation",
+                kwargs={
+                    "submission_id": str(submission.id),
+                    "reevaluation": False,
+                    "publish_events": True,
+                },
+                queue="student_submit",
             )
             try:
                 team_id = session_data.team_id

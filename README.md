@@ -55,6 +55,33 @@ Backend service for the Amrita ICPC Coding Platform, built with FastAPI and SQLA
     The API will be available at `http://localhost:8000`.
     API Documentation (Swagger UI) is available at `http://localhost:8000/docs`.
 
+3.  **Run the Evaluation Worker**
+
+    Submission evaluation is split into stages (SUBMIT, POLL, PERSIST — see
+    `worker/`), each on its own Celery queue. **Celery Beat must be running** or
+    results are never collected: SUBMIT only pushes Judge0 tokens into Redis,
+    and only the Beat-scheduled poller (`worker.poller.poll_pending_evaluations`)
+    triggers PERSIST, which is the only place `SubmissionTestCase` rows get
+    written. A plain `celery worker` with no `-Q` only consumes the default
+    `student_submit` queue and no Beat — submissions will appear to do nothing.
+
+    For local development, run one worker that consumes every queue with an
+    embedded Beat scheduler (`-B`):
+
+    ```bash
+    uv run celery -A app.core.clients.celery:celery_app worker \
+      --loglevel=info \
+      -Q student_submit,bulk_contest_evaluation,poller,persist \
+      -B \
+      --concurrency=4
+    ```
+
+    In production, run the 4 roles as separate processes instead (see
+    `docker-compose.yml`: `celery_worker_student`, `celery_worker_bulk`,
+    `celery_worker_poller`, `celery_beat`) so bulk re-evaluation never starves
+    live student submissions, and `-B` is never embedded in more than one
+    process (a duplicated Beat schedules everything twice).
+
 ## Database Migrations
 
 This project uses Alembic for database migrations.
