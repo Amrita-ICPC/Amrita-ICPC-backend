@@ -104,6 +104,8 @@ def to_student_available_contest_response(
         teams_count=teams_count,
         duration=contest.duration,
         show_leaderboard_during_contest=contest.show_leaderboard_during_contest,
+        show_leaderboard=contest.show_leaderboard,
+        show_team_submissions=contest.show_team_submissions,
         participation_type=contest.participation_type,
     )
 
@@ -174,8 +176,10 @@ def to_student_contest_details_response(
         rules=contest.rules,
         duration=contest.duration,
         show_leaderboard_during_contest=contest.show_leaderboard_during_contest,
+        show_leaderboard=contest.show_leaderboard,
+        show_team_submissions=contest.show_team_submissions,
         participation_type=contest.participation_type,
-        result_visibility=contest.result_visibility,
+        results_published_at=contest.results_published_at,
     )
 
 

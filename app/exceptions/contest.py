@@ -174,6 +174,16 @@ class StudentNotEligibleForContestError(AppBaseException):
         )
 
 
+class ContestResultsNotVisibleError(AppBaseException):
+    """Raised when contest results/leaderboard are not visible to students."""
+
+    def __init__(self, contest_id: str):
+        super().__init__(
+            message=f"Results are not visible to students for contest {contest_id}",
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+
+
 class StudentAlreadyInContestError(AppBaseException):
     """Raised when student is already registered or enrolled in the contest."""
 

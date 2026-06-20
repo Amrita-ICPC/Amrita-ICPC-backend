@@ -28,7 +28,6 @@ from app.schema.contest import ContestCreate, ContestUpdate
 from app.service.contest_service import ContestService
 from app.utils.enums import (
     ContestMode,
-    ContestResultVisibility,
     ContestStatus,
     ContestTeamParticipationType,
     ScoringType,
@@ -193,7 +192,9 @@ def mock_contest(user_id):
     contest.published_by = None
     contest.show_leaderboard_during_contest = False
     contest.participation_type = ContestTeamParticipationType.LEADER_ONLY
-    contest.result_visibility = ContestResultVisibility.HIDDEN
+    contest.results_published_at = None
+    contest.show_leaderboard = False
+    contest.show_team_submissions = False
     contest.is_deleted = False
     contest.deleted_at = None
     contest.deleted_by = None

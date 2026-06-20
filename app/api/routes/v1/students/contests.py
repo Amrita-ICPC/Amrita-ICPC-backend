@@ -20,6 +20,13 @@ from app.repositories.student.contest_team import ContestTeamRepository
 from app.repositories.student.team import StudentTeamRepository
 from app.repositories.team import TeamRepository
 from app.schema.base import APIResponse
+from app.schema.leaderboard import LeaderboardResponse
+from app.schema.student.analytics import (
+    StudentMemberDetail,
+    StudentMemberQuestionAnalytics,
+    StudentMemberQuestionSubmissions,
+    StudentTeamAnalytics,
+)
 from app.schema.student.contest_team import (
     ContestTeamInviteRequest,
     ContestTeamLeaderTransfer,
@@ -37,6 +44,7 @@ from app.schema.student.contests import (
 from app.schema.team import ContestTeamCreate, ContestTeamImport
 from app.service.student.contest_team import ContestTeamService
 from app.service.student.contests import StudentContestService
+from app.utils.pagination import get_pagination
 
 router = APIRouter()
 
@@ -70,12 +78,14 @@ def get_contest_team_service(
     team_student_guard = TeamStudentGuard(db)
     contest_repository = ContestRepository(db)
     contest_student_guard = ContestStudentGuard(db)
+    team_analytics_repository = TeamRepository(db)
     return ContestTeamService(
         repository=repository,
         team_repository=team_repository,
         team_student_guard=team_student_guard,
         contest_repository=contest_repository,
         contest_student_guard=contest_student_guard,
+        team_analytics_repository=team_analytics_repository,
     )
 
 
@@ -379,6 +389,147 @@ async def invite_members_to_contest_team(
         request,
         data=None,
         message="Members invited successfully",
+    )
+
+
+@router.get(
+    "/{contest_id}/leaderboard",
+    response_model=APIResponse[LeaderboardResponse],
+    summary="Get contest leaderboard for student",
+)
+async def get_student_contest_leaderboard(
+    request: Request,
+    contest_id: UUID,
+    search: str | None = Query(None, description="Search by team name"),
+    sort_order: str = Query("desc", description="Sort order: asc or desc"),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(50, ge=1, le=100, description="Items per page"),
+    user_id: UUID = Depends(get_current_user_id),
+    service: ContestTeamService = Depends(get_contest_team_service),
+):
+    """
+    Get the contest leaderboard for a student, gated by the contest's result visibility setting.
+    """
+    skip = (page - 1) * page_size
+    leaderboard, total = await service.get_contest_leaderboard(
+        contest_id=contest_id,
+        user_id=user_id,
+        search_term=search,
+        sort_order=sort_order,
+        skip=skip,
+        limit=page_size,
+    )
+    pagination = get_pagination(total=total, page=page, page_size=page_size)
+    return create_api_response(
+        request,
+        data=leaderboard,
+        pagination=pagination,
+        message="Leaderboard fetched successfully",
+    )
+
+
+@router.get(
+    "/{contest_id}/results",
+    response_model=APIResponse[StudentTeamAnalytics],
+    summary="Get the caller's own team results for a contest",
+)
+async def get_my_contest_team_results(
+    request: Request,
+    contest_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: ContestTeamService = Depends(get_contest_team_service),
+):
+    """
+    Get score, participation, and submission status analytics for the student's own team.
+    """
+    results = await service.get_my_team_results(contest_id=contest_id, user_id=user_id)
+    return create_api_response(
+        request,
+        data=results,
+        message="Team results fetched successfully",
+    )
+
+
+@router.get(
+    "/{contest_id}/results/members/{contest_team_member_id}",
+    response_model=APIResponse[StudentMemberDetail],
+    summary="Get a team member's results for a contest",
+)
+async def get_contest_team_member_results(
+    request: Request,
+    contest_id: UUID,
+    contest_team_member_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: ContestTeamService = Depends(get_contest_team_service),
+):
+    """
+    Get profile, session timing, and aggregate analytics for a member of the caller's own team.
+    """
+    member = await service.get_team_member_results(
+        contest_id=contest_id,
+        contest_team_member_id=contest_team_member_id,
+        user_id=user_id,
+    )
+    return create_api_response(
+        request,
+        data=member,
+        message="Team member results fetched successfully",
+    )
+
+
+@router.get(
+    "/{contest_id}/results/members/{contest_team_member_id}/questions",
+    response_model=APIResponse[list[StudentMemberQuestionAnalytics]],
+    summary="Get a team member's question analytics for a contest",
+)
+async def get_contest_team_member_question_analytics(
+    request: Request,
+    contest_id: UUID,
+    contest_team_member_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: ContestTeamService = Depends(get_contest_team_service),
+):
+    """
+    Get all contest questions with submission counts for a member of the caller's own team.
+    """
+    questions = await service.get_team_member_question_analytics(
+        contest_id=contest_id,
+        contest_team_member_id=contest_team_member_id,
+        user_id=user_id,
+    )
+    return create_api_response(
+        request,
+        data=questions,
+        message="Team member question analytics fetched successfully",
+    )
+
+
+@router.get(
+    "/{contest_id}/results/members/{contest_team_member_id}/questions/{question_id}/submissions",
+    response_model=APIResponse[StudentMemberQuestionSubmissions],
+    summary="Get a team member's submissions for one question in a contest",
+)
+async def get_contest_team_member_question_submissions(
+    request: Request,
+    contest_id: UUID,
+    contest_team_member_id: UUID,
+    question_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: ContestTeamService = Depends(get_contest_team_service),
+):
+    """
+    Get submissions and verdict statistics for one question by a member of the caller's own team.
+    """
+    submissions = await service.get_team_member_question_submissions(
+        contest_id=contest_id,
+        contest_team_member_id=contest_team_member_id,
+        question_id=question_id,
+        user_id=user_id,
+    )
+    return create_api_response(
+        request,
+        data=submissions,
+        message="Team member question submissions fetched successfully",
     )
 
 

@@ -41,6 +41,8 @@ def build_create_contest_dto(
         participation_type=contest.participation_type,
         evaluate_on_submit=contest.evaluate_on_submit,
         max_submission_per_question=contest.max_submission_per_question,
+        show_leaderboard=contest.show_leaderboard,
+        show_team_submissions=contest.show_team_submissions,
     )
 
 
@@ -100,6 +102,14 @@ def build_update_contest_dto(contest_data: ContestUpdate) -> UpdateContestData:
         max_submission_per_question=(
             contest_data.max_submission_per_question
             if "max_submission_per_question" in fields_set
+            else UNSET
+        ),
+        show_leaderboard=(
+            contest_data.show_leaderboard if "show_leaderboard" in fields_set else UNSET
+        ),
+        show_team_submissions=(
+            contest_data.show_team_submissions
+            if "show_team_submissions" in fields_set
             else UNSET
         ),
     )
@@ -164,7 +174,9 @@ def to_contest_response(
         participation_type=contest.participation_type,
         evaluate_on_submit=contest.evaluate_on_submit,
         max_submission_per_question=contest.max_submission_per_question,
-        result_visibility=contest.result_visibility,
+        results_published_at=contest.results_published_at,
+        show_leaderboard=contest.show_leaderboard,
+        show_team_submissions=contest.show_team_submissions,
     )
 
     return response
@@ -195,6 +207,8 @@ def to_contest_summary_response(
         participation_type=contest.participation_type,
         evaluate_on_submit=contest.evaluate_on_submit,
         max_submission_per_question=contest.max_submission_per_question,
+        show_leaderboard=contest.show_leaderboard,
+        show_team_submissions=contest.show_team_submissions,
         audiences=[
             ContestAudienceResponse.model_validate(link.audience)
             for link in contest.audience_links
@@ -232,6 +246,8 @@ def build_contest_entity(contest_data: CreateContestData) -> Contest:
         participation_type=contest_data.participation_type,
         evaluate_on_submit=contest_data.evaluate_on_submit,
         max_submission_per_question=contest_data.max_submission_per_question,
+        show_leaderboard=contest_data.show_leaderboard,
+        show_team_submissions=contest_data.show_team_submissions,
     )
 
 
