@@ -7,7 +7,6 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.utils.enums import (
     AudienceType,
     ContestMode,
-    ContestResultVisibility,
     ContestRunStatus,
     ContestStatus,
     ContestTeamParticipationType,
@@ -64,9 +63,13 @@ class ContestBase(BaseModel):
     max_submission_per_question: Optional[int] = Field(
         None, gt=0, description="Maximum submissions allowed per question"
     )
-    result_visibility: ContestResultVisibility = Field(
-        default=ContestResultVisibility.HIDDEN,
-        description="Result visibility configuration for this contest",
+    show_leaderboard: bool = Field(
+        default=False,
+        description="Whether the leaderboard is visible once results are published",
+    )
+    show_team_submissions: bool = Field(
+        default=False,
+        description="Whether a team's own submissions are visible once results are published",
     )
 
     @model_validator(mode="after")
@@ -143,6 +146,14 @@ class ContestUpdate(BaseModel):
     max_submission_per_question: Optional[int] = Field(
         None, description="Maximum submissions allowed per question"
     )
+    show_leaderboard: Optional[bool] = Field(
+        None,
+        description="Whether the leaderboard is visible once results are published",
+    )
+    show_team_submissions: Optional[bool] = Field(
+        None,
+        description="Whether a team's own submissions are visible once results are published",
+    )
 
     @model_validator(mode="after")
     def validate_dates(self):
@@ -212,6 +223,13 @@ class ContestSummaryResponse(BaseModel):
     team_count: int = Field(
         0, ge=0, description="Number of teams in the contest (confirmed and approved)"
     )
+    show_leaderboard: bool = Field(
+        ..., description="Whether the leaderboard is visible once results are published"
+    )
+    show_team_submissions: bool = Field(
+        ...,
+        description="Whether a team's own submissions are visible once results are published",
+    )
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -244,6 +262,9 @@ class ContestDetailResponse(ContestBase):
         None, description="User ID who published the contest"
     )
     duration: Optional[int] = Field(None, description="Contest duration in seconds")
+    results_published_at: Optional[datetime] = Field(
+        None, description="Time results were published (UTC); null if unpublished"
+    )
 
     model_config = ConfigDict(from_attributes=True)
 

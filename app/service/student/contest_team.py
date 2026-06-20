@@ -5,6 +5,8 @@ from app.core.cache.decorators import cache_delete
 from app.core.guards.contest_student import ContestStudentGuard
 from app.core.guards.team_student import TeamStudentGuard
 from app.exceptions.contest import (
+    ContestNotFoundError,
+    ContestResultsNotVisibleError,
     ContestTeamNotFoundException,
     StudentAlreadyInContestError,
     StudentContestSessionAlreadyStartedError,
@@ -19,15 +21,31 @@ from app.exceptions.team import (
     TeamMemberAccessDeniedError,
     TeamNotHavingRequiredNumberOfMembersException,
 )
+from app.mappers.student.analytics import (
+    to_student_member_detail,
+    to_student_member_question_analytics,
+    to_student_member_question_submissions,
+    to_student_team_analytics,
+)
 from app.mappers.student.contest_mappers import to_contest_team, to_contest_team_members
 from app.models import Contest, ContestTeam, ContestTeamMember
 from app.repositories.contest import ContestRepository
 from app.repositories.student.contest_team import ContestTeamRepository
 from app.repositories.student.team import StudentTeamRepository
+from app.repositories.team import TeamRepository
+from app.schema.leaderboard import LeaderboardResponse
+from app.schema.student.analytics import (
+    StudentMemberDetail,
+    StudentMemberQuestionAnalytics,
+    StudentMemberQuestionSubmissions,
+    StudentTeamAnalytics,
+)
 from app.schema.student.contest_team import ContestTeamUpdate
 from app.schema.team import ContestTeamCreate, ContestTeamImport
+from app.service.contest_service import ContestService
 from app.utils.enums import (
     ContestMode,
+    ContestStatus,
     ContestTeamMemberStatus,
     TeamApprovalMode,
     TeamApprovalStatus,
@@ -48,6 +66,7 @@ class ContestTeamService:
         team_student_guard: TeamStudentGuard,
         contest_repository: ContestRepository,
         contest_student_guard: ContestStudentGuard,
+        team_analytics_repository: TeamRepository | None = None,
     ) -> None:
         """Initialize the ContestTeamService with required dependencies.
 
@@ -57,12 +76,14 @@ class ContestTeamService:
             team_student_guard: Guard for validating student team permissions.
             contest_repository: Repository for contests.
             contest_student_guard: Guard for validating student contest access.
+            team_analytics_repository: Repository providing team analytics queries.
         """
         self.repository = repository
         self.team_repository = team_repository
         self.team_student_guard = team_student_guard
         self.contest_repository = contest_repository
         self.contest_student_guard = contest_student_guard
+        self.team_analytics_repository = team_analytics_repository
 
     async def _ensure_students_have_not_started_session(
         self, contest_id: UUID, user_ids: list[UUID]
@@ -695,3 +716,205 @@ class ContestTeamService:
             for uid in invite_user_ids
         ]
         await self.repository.create_contest_team_members(new_members)
+
+    async def get_contest_leaderboard(
+        self,
+        contest_id: UUID,
+        user_id: UUID,
+        search_term: str | None = None,
+        sort_order: str = "desc",
+        skip: int = 0,
+        limit: int = 50,
+    ) -> tuple[LeaderboardResponse, int]:
+        """Get the contest leaderboard for a student, gated by result visibility.
+
+        Reuses the same cached computation as the instructor-facing
+        leaderboard (``get_cached_contest_leaderboard``), and additionally
+        surfaces the requesting student's own team rank/score (which may
+        fall outside the requested page).
+
+        Args:
+            contest_id: UUID of the contest.
+            user_id: UUID of the student requesting the leaderboard.
+            search_term: Optional name filtering term.
+            sort_order: Sorting order ('asc' or 'desc').
+            skip: Number of teams to skip.
+            limit: Maximum number of teams to return.
+
+        Raises:
+            ContestNotFoundError: If the contest does not exist or is deleted.
+            StudentNotEligibleForContestError: If the student lacks audience access.
+            ContestResultsNotVisibleError: If results are hidden or team-only.
+        """
+        contest = await self.contest_repository.get_contest_or_raise(contest_id)
+        if contest.status == ContestStatus.DELETED:
+            raise ContestNotFoundError(str(contest_id))
+
+        await self.contest_student_guard.check_student_eligibility(
+            user_id=user_id, contest=contest
+        )
+
+        if not contest.results_published_at or not contest.show_leaderboard:
+            raise ContestResultsNotVisibleError(str(contest_id))
+
+        leaderboard, total = await ContestService.get_cached_contest_leaderboard(
+            self.contest_repository, contest_id, search_term, sort_order, skip, limit
+        )
+
+        return leaderboard, total
+
+    async def _get_own_contest_team_id(
+        self, contest_id: UUID, user_id: UUID
+    ) -> UUID | None:
+        """Look up the caller's own accepted contest team membership, if any."""
+        member = await self.repository.get_contest_team_member_by_user_id(
+            user_id=user_id,
+            contest_id=contest_id,
+            status=ContestTeamMemberStatus.ACCEPTED,
+        )
+        if not member or not member.contest_team:
+            return None
+        return member.contest_team_id
+
+    async def _check_member_belongs_to_my_team(
+        self, contest_id: UUID, contest_team_member_id: UUID, user_id: UUID
+    ) -> UUID:
+        """Ensure the target member is part of the caller's own contest team.
+
+        Returns:
+            The caller's contest_team_id.
+
+        Raises:
+            TeamMemberAccessDeniedError: If the caller has no team in this contest,
+                or the target member belongs to a different team.
+        """
+        own_team_id = await self._get_own_contest_team_id(contest_id, user_id)
+        if own_team_id is None:
+            raise TeamMemberAccessDeniedError(
+                team_id=str(contest_id), user_id=str(user_id)
+            )
+
+        target_member = await self.repository.get_contest_team_member_or_raise(
+            contest_team_member_id
+        )
+        if target_member.contest_team_id != own_team_id:
+            raise TeamMemberAccessDeniedError(
+                team_id=str(own_team_id), user_id=str(user_id)
+            )
+
+        return own_team_id
+
+    async def _check_team_results_visible(self, contest_id: UUID) -> None:
+        """Ensure contest results are published with team submissions visible.
+
+        Raises:
+            ContestNotFoundError: If the contest does not exist or is deleted.
+            ContestResultsNotVisibleError: If results are unpublished or
+                team submissions are not configured to be shown.
+        """
+        contest = await self.contest_repository.get_contest_or_raise(contest_id)
+        if contest.status == ContestStatus.DELETED:
+            raise ContestNotFoundError(str(contest_id))
+
+        if not contest.results_published_at:
+            raise ContestResultsNotVisibleError(str(contest_id))
+
+    async def get_my_team_results(
+        self, contest_id: UUID, user_id: UUID
+    ) -> StudentTeamAnalytics | None:
+        """Get score, participation, and submission analytics for the caller's team.
+
+        Args:
+            contest_id: UUID of the contest.
+            user_id: UUID of the student requesting their team's results.
+
+        Returns:
+            StudentTeamAnalytics for the student's contest team, or None if the
+            student has no accepted team membership in this contest.
+
+        Raises:
+            ContestNotFoundError: If the contest does not exist or is deleted.
+            ContestResultsNotVisibleError: If results are unpublished or
+                team submissions are not configured to be shown.
+        """
+        await self._check_team_results_visible(contest_id)
+
+        own_team_id = await self._get_own_contest_team_id(contest_id, user_id)
+        if own_team_id is None:
+            return None
+
+        assert self.team_analytics_repository is not None
+        (
+            team_row,
+            member_rows,
+        ) = await self.team_analytics_repository.get_contest_team_analytics(
+            contest_id, own_team_id
+        )
+        return to_student_team_analytics(team_row, member_rows)
+
+    async def get_team_member_results(
+        self, contest_id: UUID, contest_team_member_id: UUID, user_id: UUID
+    ) -> StudentMemberDetail:
+        """Get detail, session timing, and aggregate stats for a member of the caller's team."""
+        await self._check_team_results_visible(contest_id)
+
+        own_team_id = await self._check_member_belongs_to_my_team(
+            contest_id, contest_team_member_id, user_id
+        )
+
+        assert self.team_analytics_repository is not None
+        member_row = (
+            await self.team_analytics_repository.get_contest_team_member_detail(
+                contest_id=contest_id,
+                contest_team_id=own_team_id,
+                contest_team_member_id=contest_team_member_id,
+            )
+        )
+        return to_student_member_detail(member_row)
+
+    async def get_team_member_question_analytics(
+        self, contest_id: UUID, contest_team_member_id: UUID, user_id: UUID
+    ) -> list[StudentMemberQuestionAnalytics]:
+        """Get all contest questions with submission counts for a member of the caller's team."""
+        await self._check_team_results_visible(contest_id)
+
+        own_team_id = await self._check_member_belongs_to_my_team(
+            contest_id, contest_team_member_id, user_id
+        )
+
+        assert self.team_analytics_repository is not None
+        question_rows = await self.team_analytics_repository.get_contest_team_member_question_analytics(
+            contest_id=contest_id,
+            contest_team_id=own_team_id,
+            contest_team_member_id=contest_team_member_id,
+        )
+        return to_student_member_question_analytics(question_rows)
+
+    async def get_team_member_question_submissions(
+        self,
+        contest_id: UUID,
+        contest_team_member_id: UUID,
+        question_id: UUID,
+        user_id: UUID,
+    ) -> StudentMemberQuestionSubmissions:
+        """Get submissions and verdict stats for one question by a member of the caller's team."""
+        await self._check_team_results_visible(contest_id)
+
+        own_team_id = await self._check_member_belongs_to_my_team(
+            contest_id, contest_team_member_id, user_id
+        )
+
+        assert self.team_analytics_repository is not None
+        (
+            question_row,
+            stats_row,
+            submission_rows,
+        ) = await self.team_analytics_repository.get_contest_team_member_question_submissions(
+            contest_id=contest_id,
+            contest_team_id=own_team_id,
+            contest_team_member_id=contest_team_member_id,
+            question_id=question_id,
+        )
+        return to_student_member_question_submissions(
+            question_row, stats_row, submission_rows
+        )

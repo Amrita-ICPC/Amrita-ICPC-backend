@@ -55,7 +55,6 @@ from app.service.contest_event_publish import ContestEventPublisher
 from app.service.contest_question_service import ContestQuestionService
 from app.service.contest_service import ContestService
 from app.utils.enums import (
-    ContestResultVisibility,
     ContestRunStatus,
     ContestStatus,
     QuestionDifficulty,
@@ -1377,28 +1376,28 @@ async def get_contest_leaderboard(
     "/{contest_id}/publish-results",
     response_model=APIResponse[MessageResponse],
     status_code=status.HTTP_200_OK,
-    summary="Publish or update contest results visibility",
+    summary="Publish or unpublish contest results",
     dependencies=[can_update("contests")],
 )
 async def publish_results(
     request: Request,
     contest_id: UUID,
-    visibility: ContestResultVisibility = Query(
+    publish: bool = Query(
         ...,
-        description="The results visibility status to set",
+        description="True to publish results, false to unpublish",
     ),
     user_id: UUID = Depends(get_current_user_id),
     service: ContestService = Depends(get_contest_service),
 ) -> APIResponse[MessageResponse]:
     """
-    Publish or update contest results visibility.
+    Publish or unpublish contest results.
 
     Only accessible by authorized users with update permissions.
 
     Args:
         request: Framework context.
         contest_id: Unique identifier of the contest.
-        visibility: The visibility status to set.
+        publish: True to publish results, false to unpublish.
         user_id: Authenticated user ID.
         service: Injected domain service.
 
@@ -1409,15 +1408,12 @@ async def publish_results(
         ContestNotFoundError: If the contest is not found.
         PermissionDeniedError: If the user lacks manage permission.
     """
-    await service.publish_results(contest_id, visibility, user_id)
-    logger.info(
-        f"Contest results visibility updated to {visibility} for {contest_id} (actor=REDACTED)"
-    )
+    await service.publish_results(contest_id, publish, user_id)
+    action = "published" if publish else "unpublished"
+    logger.info(f"Contest results {action} for {contest_id} (actor=REDACTED)")
     return create_api_response(
         request,
-        data=MessageResponse(
-            message=f"Contest results visibility updated to {visibility} successfully"
-        ),
-        message=f"Contest results visibility updated to {visibility} successfully",
+        data=MessageResponse(message=f"Contest results {action} successfully"),
+        message=f"Contest results {action} successfully",
         status_code=status.HTTP_200_OK,
     )

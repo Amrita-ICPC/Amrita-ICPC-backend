@@ -1365,3 +1365,64 @@ class ContestRepository:
 
         result = await self.db.execute(stmt)
         return [(row[0], int(row[1])) for row in result.all()], total_count
+
+    async def get_team_rank_and_score(
+        self, contest_id: UUID, contest_team_id: UUID, sort_order: str = "desc"
+    ) -> tuple[int, int] | None:
+        """Compute a single team's rank/score within the contest standings.
+
+        Uses a RANK() window function so the team's rank can be resolved
+        without fetching/paginating the entire leaderboard.
+
+        Args:
+            contest_id: ID of the contest.
+            contest_team_id: ID of the team to look up.
+            sort_order: 'asc' or 'desc' for score sorting (must match the
+                leaderboard's sort order for ranks to be consistent).
+
+        Returns:
+            Tuple of (rank, score), or None if the team is not part of the
+            ranked standings (e.g. not CONFIRMED/APPROVED).
+        """
+        from app.models.contest import ContestTeamMember
+
+        avg_score = func.coalesce(
+            func.round(func.avg(ContestTeamProgress.score)), 0
+        ).label("team_score")
+        order_col = asc("team_score") if sort_order == "asc" else desc("team_score")
+
+        ranked = (
+            select(
+                ContestTeam.id.label("team_id"),
+                avg_score,
+                func.rank().over(order_by=order_col).label("team_rank"),
+            )
+            .outerjoin(
+                ContestTeamMember,
+                and_(
+                    ContestTeamMember.contest_team_id == ContestTeam.id,
+                    ContestTeamMember.status == ContestTeamMemberStatus.ACCEPTED,
+                ),
+            )
+            .outerjoin(
+                ContestTeamProgress,
+                and_(
+                    ContestTeamProgress.contest_team_id == ContestTeam.id,
+                    ContestTeamProgress.contest_team_member_id == ContestTeamMember.id,
+                    ContestTeamProgress.contest_id == contest_id,
+                ),
+            )
+            .where(
+                ContestTeam.contest_id == contest_id,
+                ContestTeam.team_status == TeamStatus.CONFIRMED,
+                ContestTeam.approval_status == TeamApprovalStatus.APPROVED,
+            )
+            .group_by(ContestTeam.id)
+            .subquery()
+        )
+
+        stmt = select(ranked.c.team_rank, ranked.c.team_score).where(
+            ranked.c.team_id == contest_team_id
+        )
+        row = (await self.db.execute(stmt)).first()
+        return (int(row.team_rank), int(row.team_score)) if row else None

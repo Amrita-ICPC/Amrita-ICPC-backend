@@ -6,7 +6,7 @@ import pytest
 
 from app.core.permissions import PermissionDeniedError
 from app.exceptions.contest import ContestNotFoundError
-from app.utils.enums import ContestResultVisibility, ContestStatus
+from app.utils.enums import ContestStatus
 
 
 class TestPublishResults:
@@ -22,14 +22,12 @@ class TestPublishResults:
         user_id,
     ):
         """Test successful publishing of results."""
-        mock_contest.result_visibility = ContestResultVisibility.HIDDEN
+        mock_contest.results_published_at = None
         mock_contest_repository.update_contest.return_value = mock_contest
 
-        await contest_service.publish_results(
-            mock_contest.id, ContestResultVisibility.FULL_RESULTS, user_id
-        )
+        await contest_service.publish_results(mock_contest.id, True, user_id)
 
-        assert mock_contest.result_visibility == ContestResultVisibility.FULL_RESULTS
+        assert mock_contest.results_published_at is not None
         mock_contest_repository.update_contest.assert_called_once_with(
             mock_contest, user_id
         )
@@ -44,14 +42,14 @@ class TestPublishResults:
         user_id,
     ):
         """Test successful unpublishing of results."""
-        mock_contest.result_visibility = ContestResultVisibility.FULL_RESULTS
+        from datetime import datetime, timezone
+
+        mock_contest.results_published_at = datetime.now(timezone.utc)
         mock_contest_repository.update_contest.return_value = mock_contest
 
-        await contest_service.publish_results(
-            mock_contest.id, ContestResultVisibility.HIDDEN, user_id
-        )
+        await contest_service.publish_results(mock_contest.id, False, user_id)
 
-        assert mock_contest.result_visibility == ContestResultVisibility.HIDDEN
+        assert mock_contest.results_published_at is None
         mock_contest_repository.update_contest.assert_called_once_with(
             mock_contest, user_id
         )
@@ -70,9 +68,7 @@ class TestPublishResults:
         )
 
         with pytest.raises(ContestNotFoundError):
-            await contest_service.publish_results(
-                contest_id, ContestResultVisibility.FULL_RESULTS, user_id
-            )
+            await contest_service.publish_results(contest_id, True, user_id)
 
     @pytest.mark.asyncio
     async def test_publish_results_deleted_contest(
@@ -87,9 +83,7 @@ class TestPublishResults:
         mock_contest_repository.get_contest_or_raise.return_value = mock_contest
 
         with pytest.raises(ContestNotFoundError):
-            await contest_service.publish_results(
-                mock_contest.id, ContestResultVisibility.FULL_RESULTS, user_id
-            )
+            await contest_service.publish_results(mock_contest.id, True, user_id)
 
     @pytest.mark.asyncio
     async def test_publish_results_permission_denied(
@@ -104,6 +98,4 @@ class TestPublishResults:
         mock_contest = setup_valid_contest
 
         with pytest.raises(PermissionDeniedError):
-            await contest_service.publish_results(
-                mock_contest.id, ContestResultVisibility.FULL_RESULTS, user_id
-            )
+            await contest_service.publish_results(mock_contest.id, True, user_id)

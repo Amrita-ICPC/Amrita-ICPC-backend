@@ -4,7 +4,6 @@ from uuid import UUID
 
 from app.utils.enums import (
     ContestMode,
-    ContestResultVisibility,
     ContestRunStatus,
     ContestStatus,
     ContestTeamParticipationType,
@@ -97,6 +96,13 @@ class StudentContestAvailableResponse(BaseModel):
     show_leaderboard_during_contest: bool = Field(
         ..., description="Whether to show leaderboard during the contest"
     )
+    show_leaderboard: bool = Field(
+        ..., description="Whether the leaderboard is visible once results are published"
+    )
+    show_team_submissions: bool = Field(
+        ...,
+        description="Whether a team's own submissions are visible once results are published",
+    )
     participation_type: ContestTeamParticipationType = Field(
         ..., description="Participation type for team contests"
     )
@@ -121,9 +127,8 @@ class StudentContestDetailsResponse(StudentContestAvailableResponse):
         description="How teams are approved in this contest",
     )
     status: ContestStatus = Field(..., description="Contest lifecycle status")
-    result_visibility: ContestResultVisibility = Field(
-        default=ContestResultVisibility.HIDDEN,
-        description="Result visibility configuration for this contest",
+    results_published_at: Optional[datetime] = Field(
+        None, description="Time results were published (UTC); null if unpublished"
     )
 
 
