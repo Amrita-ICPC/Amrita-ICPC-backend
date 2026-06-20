@@ -77,6 +77,80 @@ class Judge0Repository:
         except Exception:
             return value
 
+    @staticmethod
+    def _encode_base64(value: str) -> str:
+        """Encode a UTF-8 string to base64 for Judge0 transport."""
+        return base64.b64encode(value.encode("utf-8")).decode("utf-8")
+
+    def _build_submission_payload(
+        self,
+        request: Judge0ExecutionRequestDTO,
+        stdin: str,
+        expected_output: str | None,
+    ) -> dict[str, object]:
+        """Build a single Judge0 submission payload (base64-encoded, with limits).
+
+        Args:
+            request: Execution request including source code, language, and limits.
+            stdin: Standard input for the program.
+            expected_output: Expected output for verdict comparison (optional).
+
+        Returns:
+            A dict ready to be JSON-serialized as a Judge0 submission. Execution
+            limits are included only when set on the request so unset values fall
+            back to the Judge0 instance defaults.
+        """
+        payload: dict[str, object] = {
+            "source_code": self._encode_base64(request.source_code),
+            "language_id": request.language_id,
+            "stdin": self._encode_base64(stdin),
+        }
+        if expected_output is not None:
+            payload["expected_output"] = self._encode_base64(expected_output)
+
+        # Execution limits (omit when None so Judge0 instance defaults apply).
+        if request.cpu_time_limit is not None:
+            payload["cpu_time_limit"] = request.cpu_time_limit
+        if request.wall_time_limit is not None:
+            payload["wall_time_limit"] = request.wall_time_limit
+        if request.memory_limit is not None:
+            payload["memory_limit"] = request.memory_limit
+        if request.stack_limit is not None:
+            payload["stack_limit"] = request.stack_limit
+        return payload
+
+    def _parse_submission_data(self, data: dict) -> Judge0SubmissionDTO:
+        """Map a raw Judge0 submission JSON object to a Judge0SubmissionDTO.
+
+        Args:
+            data: Decoded JSON object for a single Judge0 submission.
+
+        Returns:
+            A populated Judge0SubmissionDTO. Decodes base64 output fields and
+            normalizes the nested ``status`` object to ``status_id``.
+        """
+        status_id = data.get("status_id")
+        if status_id is None and "status" in data:
+            status_id = data["status"].get("id")
+
+        token = data.get("token")
+        if not token or not isinstance(token, str):
+            raise Judge0APIError(
+                status_code=500,
+                detail=f"Judge0 response missing token: {data}",
+            )
+
+        return Judge0SubmissionDTO(
+            token=token,
+            status_id=status_id,
+            stdout=self._decode_base64(data.get("stdout")),
+            stderr=self._decode_base64(data.get("stderr")),
+            time=data.get("time"),
+            memory=data.get("memory"),
+            compile_output=self._decode_base64(data.get("compile_output")),
+            message=self._decode_base64(data.get("message")),
+        )
+
     async def submit_code(
         self,
         request: Judge0ExecutionRequestDTO,
@@ -104,17 +178,7 @@ class Judge0Repository:
         client = get_judge0_client()
 
         try:
-            payload = {
-                "source_code": base64.b64encode(
-                    request.source_code.encode("utf-8")
-                ).decode("utf-8"),
-                "language_id": request.language_id,
-                "stdin": base64.b64encode(stdin.encode("utf-8")).decode("utf-8"),
-            }
-            if expected_output is not None:
-                payload["expected_output"] = base64.b64encode(
-                    expected_output.encode("utf-8")
-                ).decode("utf-8")
+            payload = self._build_submission_payload(request, stdin, expected_output)
 
             # Submit to Judge0
             response = await client.post(
@@ -323,6 +387,152 @@ class Judge0Repository:
             f"Judge0 execution did not complete within {elapsed_ms}ms timeout"
         )
 
+    async def submit_batch(
+        self, submissions: list[tuple[Judge0ExecutionRequestDTO, str, str | None]]
+    ) -> list[str | None]:
+        """Submit multiple submissions in a single Judge0 batch request.
+
+        Uses the Judge0 CE ``POST /submissions/batch`` endpoint. Submissions are
+        chunked by ``config.JUDGE0_BATCH_SIZE`` to bound request size. Tokens are
+        returned positionally aligned with the input list; a position is ``None``
+        when Judge0 reported a per-item error instead of a token.
+
+        Args:
+            submissions: List of ``(request, stdin, expected_output)`` tuples. The
+                request carries source code, language, and execution limits.
+
+        Returns:
+            A list of Judge0 tokens (or ``None`` for failed items) in input order.
+
+        Raises:
+            Judge0ConnectionError: If the connection to Judge0 fails.
+            Judge0TimeoutError: If the batch request times out.
+            Judge0ClientError: For any other unexpected submission failure.
+        """
+        from app.core.config import config
+
+        if not submissions:
+            return []
+
+        client = get_judge0_client()
+        tokens: list[str | None] = []
+
+        try:
+            for start in range(0, len(submissions), config.JUDGE0_BATCH_SIZE):
+                chunk = submissions[start : start + config.JUDGE0_BATCH_SIZE]
+                payload = {
+                    "submissions": [
+                        self._build_submission_payload(req, stdin, expected)
+                        for req, stdin, expected in chunk
+                    ]
+                }
+                response = await client.post(
+                    "/submissions/batch",
+                    json=payload,
+                    params={"base64_encoded": "true"},
+                )
+                if response.status_code != 201:
+                    await self._handle_api_error(response)
+
+                # Judge0 returns a list aligned with the request; failed items are
+                # objects without a "token" (e.g. {"error": ...}).
+                for item in response.json():
+                    token = item.get("token") if isinstance(item, dict) else None
+                    tokens.append(token)
+                    if not token:
+                        logger.error(f"Judge0 batch submission item failed: {item}")
+
+            return tokens
+
+        except (
+            Judge0APIError,
+            Judge0ServiceUnavailableError,
+            Judge0ConnectionError,
+            Judge0TimeoutError,
+        ):
+            raise
+        except httpx.TimeoutException as e:
+            logger.error(f"Judge0 batch submission timeout: {str(e)}")
+            raise Judge0TimeoutError(f"Judge0 batch submission timed out: {str(e)}")
+        except httpx.ConnectError as e:
+            logger.error(f"Judge0 batch connection error: {str(e)}")
+            raise Judge0ConnectionError(f"Failed to connect to Judge0 API: {str(e)}")
+        except Exception as e:
+            logger.error(f"Judge0 batch submission error: {str(e)}", exc_info=True)
+            raise Judge0ClientError(f"Failed to submit batch to Judge0: {str(e)}")
+
+    async def get_batch_results(
+        self, tokens: list[str]
+    ) -> dict[str, Judge0SubmissionDTO]:
+        """Fetch results for many tokens via the Judge0 batch GET endpoint.
+
+        Uses ``GET /submissions/batch?tokens=...``, chunked by
+        ``config.JUDGE0_BATCH_SIZE``. Unlike :meth:`batch_get_results`, this issues
+        one HTTP request per chunk rather than one per token, which is essential at
+        scale. Missing/unknown tokens are simply absent from the returned mapping.
+
+        Args:
+            tokens: Judge0 submission tokens to look up.
+
+        Returns:
+            Mapping of ``token -> Judge0SubmissionDTO`` for every token Judge0
+            returned. Callers should treat absent tokens as "not yet available".
+
+        Raises:
+            Judge0ConnectionError: If the connection to Judge0 fails.
+            Judge0TimeoutError: If a batch request times out.
+            Judge0ClientError: For any other unexpected retrieval failure.
+        """
+        from app.core.config import config
+
+        if not tokens:
+            return {}
+
+        client = get_judge0_client()
+        results: dict[str, Judge0SubmissionDTO] = {}
+
+        try:
+            for start in range(0, len(tokens), config.JUDGE0_BATCH_SIZE):
+                chunk = tokens[start : start + config.JUDGE0_BATCH_SIZE]
+                response = await client.get(
+                    "/submissions/batch",
+                    params={
+                        "tokens": ",".join(chunk),
+                        "base64_encoded": "true",
+                    },
+                )
+                if response.status_code != 200:
+                    await self._handle_api_error(response)
+
+                for item in response.json().get("submissions", []):
+                    if not isinstance(item, dict) or not item.get("token"):
+                        continue
+                    dto = self._parse_submission_data(item)
+                    results[dto.token] = dto
+
+            return results
+
+        except (
+            Judge0APIError,
+            Judge0ServiceUnavailableError,
+            Judge0ConnectionError,
+            Judge0TimeoutError,
+        ):
+            raise
+        except httpx.TimeoutException as e:
+            logger.error(f"Judge0 batch result timeout: {str(e)}")
+            raise Judge0TimeoutError(
+                f"Judge0 batch result retrieval timed out: {str(e)}"
+            )
+        except httpx.ConnectError as e:
+            logger.error(f"Judge0 batch result connection error: {str(e)}")
+            raise Judge0ConnectionError(f"Failed to connect to Judge0 API: {str(e)}")
+        except Exception as e:
+            logger.error(f"Judge0 batch result error: {str(e)}", exc_info=True)
+            raise Judge0ClientError(
+                f"Failed to get batch results from Judge0: {str(e)}"
+            )
+
     async def batch_get_results(
         self, tokens: list[str]
     ) -> dict[str, Judge0SubmissionDTO]:
@@ -393,8 +603,17 @@ class Judge0Repository:
         except Exception:
             error_data = {}
 
+        # Judge0 returns a dict for most errors but a list of per-item errors
+        # for batch validation failures (e.g. malformed submissions array).
+        if isinstance(error_data, list):
+            detail = "; ".join(str(item) for item in error_data) or response.text
+        elif isinstance(error_data, dict):
+            detail = error_data.get("message") or response.text
+        else:
+            detail = response.text
+
         status_code = response.status_code
-        detail = error_data.get("message") or response.text or f"HTTP {status_code}"
+        detail = detail or f"HTTP {status_code}"
         request_id = response.headers.get("X-Request-ID")
 
         if status_code in (500, 502, 503, 504):

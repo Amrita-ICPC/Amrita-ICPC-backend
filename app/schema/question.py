@@ -385,6 +385,12 @@ class QuestionAndTestcasesResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    time_limit_ms: int = Field(
+        default=0, description="Per-problem CPU time limit in milliseconds"
+    )
+    memory_limit_mb: int = Field(
+        default=0, description="Per-problem memory limit in megabytes"
+    )
     templates: List[QuestionTemplateResponse] = Field(default_factory=list)
     testcases: List[QuestionTestCaseResponse] = Field(default_factory=list)
 
@@ -394,6 +400,8 @@ class QuestionAndTestcasesResponse(BaseModel):
     ) -> "QuestionAndTestcasesResponse":
         return cls(
             id=question.id,
+            time_limit_ms=getattr(question, "time_limit_ms", 0) or 0,
+            memory_limit_mb=getattr(question, "memory_limit_mb", 0) or 0,
             templates=[
                 QuestionTemplateResponse.model_validate(t)
                 for t in getattr(question, "templates", []) or []

@@ -361,8 +361,19 @@ class QuestionRepository:
     async def complete_submission(
         self, submission: Submission, result: EvaluationResult
     ) -> None:
-        """Complete a submission with the evaluation result."""
+        """Complete a submission with the evaluation result.
+
+        Marks the submission evaluated, records resource totals and stamps the
+        terminal ``evaluated_at`` time, then persists the per-testcase rows.
+
+        Args:
+            submission: The submission being finalized.
+            result: Aggregated evaluation result with testcase rows.
+        """
+        from datetime import datetime, timezone
+
         submission.is_evaluated = True
+        submission.evaluated_at = datetime.now(timezone.utc)
         submission.total_time = result.total_time
         submission.total_memory = result.total_memory
 

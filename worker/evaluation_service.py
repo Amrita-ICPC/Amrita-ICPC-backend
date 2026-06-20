@@ -1,16 +1,29 @@
-from typing import TypedDict
+import time
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.clients.database import SessionLocal
+from app.core.config import config
 from app.core.logger import logger
+from app.exceptions.judge0 import (
+    Judge0ConnectionError,
+    Judge0ServiceUnavailableError,
+    Judge0TimeoutError,
+)
 from app.models.contest import ContestSubmission, ContestTeam
 from app.models.question import Submission, SubmissionTestCase
 from app.repositories.dto.evaluation import EvaluationResult
+from app.repositories.dto.judge0 import Judge0ExecutionRequestDTO
 from app.repositories.question import QuestionRepository
-from app.schema.evaluation import ContestSubmissionContext, EvaluationPreparationDetails
+from app.schema.evaluation import (
+    ContestSubmissionContext,
+    EvalRef,
+    EvaluationPreparationDetails,
+    SubmissionPendingContext,
+    TokenEntry,
+)
 from app.schema.question import (
     QuestionAndTestcasesResponse,
     QuestionTestCaseResponse,
@@ -20,12 +33,26 @@ from app.utils.enums import SubmissionStatus
 from app.utils.evaluation import calculate_submission_score
 from app.validators.question import QuestionValidator
 from worker.judge0_service import Judge0EvaluationService
-from worker.redis_helper import is_evaluation_valid, update_evaluation_progress
+from worker.redis_helper import (
+    clear_pending,
+    get_submission_context,
+    is_evaluation_valid,
+    is_pending,
+    register_pending,
+    release_contest_slot,
+    release_inflight,
+    try_acquire_contest_slot,
+    try_acquire_inflight,
+    update_evaluation_progress,
+)
 
 
-class EvaluationContext(TypedDict):
-    contest_id: UUID
-    evaluation_id: UUID
+class BackpressureError(Exception):
+    """Raised when backpressure caps prevent admitting a submission right now.
+
+    The Celery task layer catches this and retries the SUBMIT task after a short
+    countdown, so the submission is admitted once capacity frees up.
+    """
 
 
 class EvaluationService:
@@ -156,6 +183,11 @@ class EvaluationService:
             data, submission.language_id
         )
 
+        # Compute capped execution limits from the problem definition.
+        cpu, wall, mem_kb, stack_kb = self._compute_limits(
+            data.time_limit_ms, data.memory_limit_mb
+        )
+
         if not testcases:
             logger.warning(f"No testcases found for question {data.id}")
             return EvaluationPreparationDetails(
@@ -163,6 +195,10 @@ class EvaluationService:
                 testcases=[],
                 final_source_code="",
                 max_score=0,
+                cpu_time_limit=cpu,
+                wall_time_limit=wall,
+                memory_limit=mem_kb,
+                stack_limit=stack_kb,
                 contest_submission_context=contest_submission_context,
             )
 
@@ -186,8 +222,50 @@ class EvaluationService:
             testcases=testcases,
             final_source_code=final_source_code,
             max_score=max_score,
+            cpu_time_limit=cpu,
+            wall_time_limit=wall,
+            memory_limit=mem_kb,
+            stack_limit=stack_kb,
             contest_submission_context=contest_submission_context,
         )
+
+    @staticmethod
+    def _compute_limits(
+        time_limit_ms: int, memory_limit_mb: int
+    ) -> tuple[float, float, int, int]:
+        """Derive Judge0 execution limits from a problem's configured limits.
+
+        Per-problem values are used when present, otherwise config defaults; both
+        are then clamped by the global safety caps so a misconfigured problem can
+        never request unbounded resources.
+
+        Args:
+            time_limit_ms: Problem CPU time limit in milliseconds (0 if unset).
+            memory_limit_mb: Problem memory limit in megabytes (0 if unset).
+
+        Returns:
+            Tuple of ``(cpu_time_s, wall_time_s, memory_kb, stack_kb)``.
+        """
+        cpu = (
+            time_limit_ms / 1000.0
+            if time_limit_ms and time_limit_ms > 0
+            else config.JUDGE0_DEFAULT_CPU_TIME
+        )
+        cpu = min(cpu, config.JUDGE0_MAX_CPU_TIME)
+
+        wall = min(cpu * config.JUDGE0_WALL_TIME_FACTOR, config.JUDGE0_MAX_WALL_TIME)
+
+        mem_kb = (
+            memory_limit_mb * 1024
+            if memory_limit_mb and memory_limit_mb > 0
+            else config.JUDGE0_DEFAULT_MEMORY_KB
+        )
+        mem_kb = min(mem_kb, config.JUDGE0_MAX_MEMORY_KB)
+        # Judge0 rejects memory_limit below this floor with a 422; a small
+        # per-problem memory_limit_mb (e.g. 1) must not be sent as-is.
+        mem_kb = max(mem_kb, config.JUDGE0_MIN_MEMORY_KB)
+
+        return cpu, wall, mem_kb, config.JUDGE0_STACK_LIMIT_KB
 
     async def save_result(
         self,
@@ -250,141 +328,403 @@ class EvaluationService:
                 contest_id, team_id, contest_team_member_id, event
             )
 
-    async def evaluate(
+    # ----------------------------------------------------------------- #
+    # Stage helpers                                                      #
+    # ----------------------------------------------------------------- #
+    async def _advance_progress(
+        self,
+        eval_contest_id: UUID | None,
+        evaluation_id: UUID | None,
+        submission_id: UUID,
+    ) -> None:
+        """Advance bulk-evaluation progress, if this submission belongs to one."""
+        if eval_contest_id and evaluation_id:
+            await update_evaluation_progress(
+                eval_contest_id, evaluation_id, submission_id
+            )
+
+    async def _persist_terminal_status(
+        self,
+        submission_id: UUID,
+        question_id: UUID | None,
+        status: SubmissionStatus,
+        contest_sub_ctx: ContestSubmissionContext | None,
+        publish_events: bool,
+        event_service: ContestEventService,
+    ) -> None:
+        """Write a terminal verdict with no testcase rows and publish it.
+
+        Used for early-exit cases: no testcases (AC), total submit failure or a
+        load/validation error (SYSTEM_ERROR). This is a single, terminal DB write.
+
+        Args:
+            submission_id: Submission to finalize.
+            question_id: Question id (for the SSE event payload).
+            status: Terminal verdict to record.
+            contest_sub_ctx: SSE context, or None for non-contest submissions.
+            publish_events: Whether to emit an SSE status event.
+            event_service: Publisher used for SSE events.
+        """
+        async with SessionLocal() as db:
+            repository = QuestionRepository(db)
+            sub = await repository.get_submission(submission_id)
+            if sub is None:
+                return
+            if sub.is_evaluated:
+                return  # Idempotent: already finalized by a concurrent worker.
+            result = EvaluationResult(
+                status=status,
+                passed_testcases=0,
+                total_testcases=0,
+                total_time=0,
+                total_memory=0,
+                testcase_results=[],
+            )
+            sub.score = 0
+            await repository.complete_submission(sub, result)
+            await db.commit()
+            resolved_question_id = question_id or sub.question_id
+
+        if publish_events:
+            await self._publish_student_event(
+                event_service,
+                submission_id,
+                resolved_question_id,
+                contest_sub_ctx,
+                status.value,
+            )
+
+    # ----------------------------------------------------------------- #
+    # SUBMIT stage                                                       #
+    # ----------------------------------------------------------------- #
+    async def submit(
         self,
         submission_id: UUID,
         reevaluation: bool = False,
         publish_events: bool = True,
-        evaluation_context: EvaluationContext | None = None,
+        evaluation_context: EvalRef | None = None,
     ) -> None:
-        """Unifies evaluation and re-evaluation paths for student and instructor submissions."""
+        """Submit a submission's testcases to Judge0 and register it for polling.
+
+        This is a *fast* stage: it loads the submission, batch-submits every
+        testcase to Judge0, stores the resulting token map in Redis and returns.
+        No worker is held polling — the Beat poller collects results later. All
+        transient state lives in Redis; the database is untouched until PERSIST
+        (except for the early-exit terminal cases below).
+
+        Args:
+            submission_id: Submission to evaluate.
+            reevaluation: If True, clears any prior result first.
+            publish_events: Whether to emit SSE status events (student path).
+            evaluation_context: Present for bulk contest evaluation; carries the
+                contest and evaluation ids used for supersede checks and progress.
+
+        Raises:
+            BackpressureError: If global or per-contest in-flight caps are hit; the
+                task layer retries after a short countdown.
+        """
         event_service = ContestEventService()
-        contest_id = None
-        evaluation_id = None
+        eval_contest_id = evaluation_context.contest_id if evaluation_context else None
+        evaluation_id = evaluation_context.evaluation_id if evaluation_context else None
 
-        if evaluation_context:
-            contest_id = evaluation_context.get("contest_id")
-            evaluation_id = evaluation_context.get("evaluation_id")
-
-        # Step 1: Redis validity check if contest context is present
-        if contest_id and evaluation_id:
-            if not await is_evaluation_valid(contest_id, evaluation_id, submission_id):
+        # Skip work for superseded/completed bulk evaluations.
+        if eval_contest_id and evaluation_id:
+            if not await is_evaluation_valid(
+                eval_contest_id, evaluation_id, submission_id
+            ):
                 return
 
-        # Step 2: Phase 1: DB Load, Validation, and Option Setup
+        # Idempotency guard: a redelivered task (worker crashed/killed after an
+        # earlier attempt already reached register_pending) must not re-acquire
+        # gates and re-submit to Judge0. The first attempt is already tracked in
+        # Redis and will be collected by the poller, so this redelivery is a
+        # no-op.
+        if await is_pending(submission_id):
+            logger.info(
+                f"Submission {submission_id} is already pending collection; "
+                f"skipping duplicate SUBMIT dispatch."
+            )
+            return
+
+        async def _terminal_exit(
+            question_id: UUID | None,
+            status: SubmissionStatus,
+            contest_sub_ctx: ContestSubmissionContext | None,
+        ) -> None:
+            """Record a terminal verdict and advance bulk progress, then return."""
+            await self._persist_terminal_status(
+                submission_id,
+                question_id,
+                status,
+                contest_sub_ctx,
+                publish_events,
+                event_service,
+            )
+            await self._advance_progress(eval_contest_id, evaluation_id, submission_id)
+
+        # --- Load & validate (short DB session) ---
         async with SessionLocal() as db:
             try:
                 prep = await self.prepare_evaluation(
                     db, submission_id, reevaluation=reevaluation
                 )
-                if prep is None:
-                    if contest_id and evaluation_id:
-                        await update_evaluation_progress(contest_id, evaluation_id)
-                    return
-                submission = prep.submission
-                testcases = prep.testcases
-                final_source_code = prep.final_source_code
-                max_score = prep.max_score
-                contest_submission_context = prep.contest_submission_context
-                question_id = submission.question_id
-                language_id = submission.language_id
             except Exception as e:
                 logger.error(
                     f"Validation/load failed for submission {submission_id}: {e}"
                 )
-                try:
-                    await db.rollback()
-                except Exception:
-                    pass
+                await db.rollback()
+                prep = None
+                load_failed = True
+            else:
+                load_failed = False
 
-                async with SessionLocal() as fresh_db:
-                    repository = QuestionRepository(fresh_db)
-                    sub = await repository.get_submission(submission_id)
-                    if sub:
-                        result = EvaluationResult(
-                            status=SubmissionStatus.SYSTEM_ERROR,
-                            passed_testcases=0,
-                            total_testcases=0,
-                            total_time=0,
-                            total_memory=0,
-                            testcase_results=[],
-                        )
-                        sub.score = 0
-                        await repository.complete_submission(sub, result)
-                        await fresh_db.commit()
+        if not load_failed and prep is None:
+            # Already evaluated / not found — nothing to do.
+            await self._advance_progress(eval_contest_id, evaluation_id, submission_id)
+            return
 
-                        if publish_events:
-                            contest_sub_ctx = (
-                                await self._get_contest_submission_context(
-                                    fresh_db, submission_id
-                                )
-                            )
-                            await self._publish_student_event(
-                                event_service,
-                                submission_id,
-                                sub.question_id,
-                                contest_sub_ctx,
-                                "SYSTEM_ERROR",
-                            )
-                    if contest_id and evaluation_id:
-                        await update_evaluation_progress(contest_id, evaluation_id)
-                    return
-
-            # Publish RUNNING event
-            if publish_events:
-                await self._publish_student_event(
-                    event_service,
-                    submission_id,
-                    question_id,
-                    contest_submission_context,
-                    "RUNNING",
+        # --- Load/validation error: record terminal SYSTEM_ERROR ---
+        if load_failed:
+            async with SessionLocal() as ctx_db:
+                contest_sub_ctx = await self._get_contest_submission_context(
+                    ctx_db, submission_id
                 )
+            await _terminal_exit(None, SubmissionStatus.SYSTEM_ERROR, contest_sub_ctx)
+            return
 
-            if not testcases:
-                repository = QuestionRepository(db)
-                result = EvaluationResult(
-                    status=SubmissionStatus.AC,
-                    passed_testcases=0,
-                    total_testcases=0,
-                    total_time=0,
-                    total_memory=0,
-                    testcase_results=[],
-                )
-                submission.score = 0
-                await repository.complete_submission(submission, result)
-                await db.commit()
-
-                if publish_events:
-                    await self._publish_student_event(
-                        event_service,
-                        submission_id,
-                        question_id,
-                        contest_submission_context,
-                        "AC",
-                    )
-                if contest_id and evaluation_id:
-                    await update_evaluation_progress(contest_id, evaluation_id)
-                return
-
-        # Phase 2: Run evaluation (No database session held)
-        eval_result = await self.judge0_service.run_evaluation(
-            submission_id, question_id, language_id, testcases, final_source_code
-        )
-
-        # Phase 3: Save results
-        async with SessionLocal() as db:
-            # Check again if the evaluation was completed/superseded during Phase 2
-            if contest_id and evaluation_id:
-                if not await is_evaluation_valid(
-                    contest_id, evaluation_id, submission_id
-                ):
-                    return
-
-            saved_submission = await self.save_result(
-                db, submission_id, eval_result, testcases, max_score
+        # --- No testcases: immediate terminal AC ---
+        if not prep.testcases:
+            await _terminal_exit(
+                prep.submission.question_id,
+                SubmissionStatus.AC,
+                prep.contest_submission_context,
             )
-            if saved_submission is None:
+            return
+
+        # --- Backpressure gates ---
+        if not await try_acquire_inflight(config.JUDGE0_MAX_INFLIGHT):
+            raise BackpressureError("Global Judge0 in-flight cap reached")
+
+        acquired_contest = False
+        if eval_contest_id and evaluation_id:
+            acquired_contest = await try_acquire_contest_slot(
+                eval_contest_id,
+                evaluation_id,
+                config.EVAL_MAX_ACTIVE_TASKS_PER_CONTEST,
+            )
+            if not acquired_contest:
+                await release_inflight()
+                raise BackpressureError("Per-contest active cap reached")
+
+        async def _release_gates() -> None:
+            await release_inflight()
+            if acquired_contest:
+                await release_contest_slot(eval_contest_id, evaluation_id)
+
+        # --- Batch submit to Judge0 and register for polling ---
+        # Kept in one try/except: any failure here (including a hung call hitting
+        # the Celery soft time limit) must release the gates just acquired above
+        # and record a terminal verdict, or the submission is stuck forever with
+        # leaked capacity.
+        try:
+            request_dto = Judge0ExecutionRequestDTO(
+                question_id=str(prep.submission.question_id),
+                source_code=prep.final_source_code,
+                language_id=prep.submission.language_id,
+                cpu_time_limit=prep.cpu_time_limit,
+                wall_time_limit=prep.wall_time_limit,
+                memory_limit=prep.memory_limit,
+                stack_limit=prep.stack_limit,
+            )
+            tokens = await self.judge0_service.submit_testcases(
+                request_dto, prep.testcases
+            )
+
+            if all(token is None for token in tokens):
+                raise RuntimeError("Judge0 batch submit returned no usable tokens")
+
+            deadline = time.time() + config.EVAL_SUBMISSION_DEADLINE_SECONDS
+            pending_context = SubmissionPendingContext(
+                submission_id=submission_id,
+                question_id=prep.submission.question_id,
+                max_score=prep.max_score,
+                reevaluation=reevaluation,
+                publish_events=publish_events,
+                tokens=[
+                    TokenEntry(token=token, testcase_id=testcase.id)
+                    for testcase, token in zip(prep.testcases, tokens)
+                ],
+                eval_ref=(
+                    EvalRef(contest_id=eval_contest_id, evaluation_id=evaluation_id)
+                    if eval_contest_id and evaluation_id
+                    else None
+                ),
+                sse=prep.contest_submission_context,
+                deadline=deadline,
+            )
+            await register_pending(submission_id, pending_context, deadline)
+        except (
+            Judge0TimeoutError,
+            Judge0ConnectionError,
+            Judge0ServiceUnavailableError,
+        ) as e:
+            # Transient Judge0-side failure (timeout/connection/503): release the
+            # gates just acquired and let the task layer retry with backoff,
+            # rather than permanently failing a submission over a blip.
+            logger.warning(
+                f"Transient Judge0 failure for submission {submission_id}; "
+                f"releasing gates for retry: {e}"
+            )
+            await _release_gates()
+            raise
+        except Exception as e:
+            logger.error(f"SUBMIT failed for submission {submission_id}: {e}")
+            await _release_gates()
+            # Record terminal SYSTEM_ERROR so the submission is not stuck forever.
+            await _terminal_exit(
+                prep.submission.question_id,
+                SubmissionStatus.SYSTEM_ERROR,
+                prep.contest_submission_context,
+            )
+            return
+
+        if publish_events:
+            await self._publish_student_event(
+                event_service,
+                submission_id,
+                prep.submission.question_id,
+                prep.contest_submission_context,
+                "RUNNING",
+            )
+
+    async def submit_give_up(
+        self,
+        submission_id: UUID,
+        publish_events: bool,
+        evaluation_context: EvalRef | None,
+    ) -> None:
+        """Record terminal SYSTEM_ERROR once the transient-Judge0 retry budget is spent.
+
+        Called by the task layer when ``submit`` has raised a transient Judge0
+        error (timeout/connection/503) more times than
+        ``config.JUDGE0_TRANSIENT_MAX_RETRIES``. The backpressure gates were
+        already released in ``submit`` the moment the transient error was first
+        caught, so this only needs to write the terminal verdict and advance
+        bulk progress.
+
+        Args:
+            submission_id: Submission to finalize.
+            publish_events: Whether to emit an SSE status event.
+            evaluation_context: Bulk-evaluation ids, if applicable.
+        """
+        eval_contest_id = evaluation_context.contest_id if evaluation_context else None
+        evaluation_id = evaluation_context.evaluation_id if evaluation_context else None
+        async with SessionLocal() as db:
+            contest_sub_ctx = await self._get_contest_submission_context(
+                db, submission_id
+            )
+        await self._persist_terminal_status(
+            submission_id,
+            None,
+            SubmissionStatus.SYSTEM_ERROR,
+            contest_sub_ctx,
+            publish_events,
+            ContestEventService(),
+        )
+        await self._advance_progress(eval_contest_id, evaluation_id, submission_id)
+
+    # ----------------------------------------------------------------- #
+    # PERSIST stage                                                      #
+    # ----------------------------------------------------------------- #
+    async def persist(self, submission_id: UUID, timed_out: bool = False) -> None:
+        """Collect Judge0 results for a submission and write the terminal verdict.
+
+        Re-fetches results for the submission's tokens, aggregates them, scores
+        the submission and writes the single terminal DB transition. Idempotent:
+        a second invocation (e.g. a retried poller dispatch) is a no-op once the
+        submission is evaluated. Always releases the in-flight gates and clears
+        the Redis working state.
+
+        Args:
+            submission_id: Submission to finalize.
+            timed_out: When True, unresolved testcases are recorded as TLE because
+                the submission exceeded its deadline.
+        """
+        event_service = ContestEventService()
+        context = await get_submission_context(submission_id)
+        if context is None:
+            # Nothing to persist (already finalized or context expired).
+            return
+
+        eval_contest_id = context.eval_ref.contest_id if context.eval_ref else None
+        evaluation_id = context.eval_ref.evaluation_id if context.eval_ref else None
+        publish_events = context.publish_events
+        max_score = context.max_score
+        question_id = context.question_id
+        contest_sub_ctx = context.sse
+        token_entries = context.tokens
+
+        async def _cleanup() -> None:
+            """Release gates and clear transient Redis state for this submission."""
+            await clear_pending(submission_id)
+            await release_inflight()
+            if eval_contest_id and evaluation_id:
+                await release_contest_slot(eval_contest_id, evaluation_id)
+
+        # Supersede guard for bulk evaluation.
+        if eval_contest_id and evaluation_id:
+            if not await is_evaluation_valid(
+                eval_contest_id, evaluation_id, submission_id
+            ):
+                await _cleanup()
                 return
+
+        try:
+            # Fetch all available Judge0 results for this submission's tokens.
+            tokens = [entry.token for entry in token_entries]
+            valid_tokens = [t for t in tokens if t]
+            results_by_token = await self.judge0_service.judge0_repo.get_batch_results(
+                valid_tokens
+            )
+
+            async with SessionLocal() as db:
+                repository = QuestionRepository(db)
+                submission = await repository.get_submission(submission_id)
+                if submission is None:
+                    # Stall-avoidance: cleanup/progress run in the finally block so
+                    # the bulk run can still complete. (release happens once.)
+                    logger.error(f"Submission {submission_id} missing at persist.")
+                    return
+                if submission.is_evaluated:
+                    # Idempotent: another worker already finalized this submission.
+                    # Cleanup runs in finally; progress is exactly-once via SADD.
+                    return
+
+                # Reload testcases (for weights/scoring) and align with tokens.
+                data = await self.get_question_and_testcases(db, question_id)
+                tc_by_id = {tc.id: tc for tc in data.testcases}
+                aligned_testcases = [
+                    tc_by_id[entry.testcase_id]
+                    for entry in token_entries
+                    if entry.testcase_id in tc_by_id
+                ]
+                aligned_tokens = [
+                    entry.token
+                    for entry in token_entries
+                    if entry.testcase_id in tc_by_id
+                ]
+
+                eval_result = self.judge0_service.build_evaluation_result(
+                    submission_id,
+                    aligned_testcases,
+                    aligned_tokens,
+                    results_by_token,
+                    timed_out=timed_out,
+                )
+
+                await self.save_result(
+                    db, submission_id, eval_result, data.testcases, max_score
+                )
 
             status_str = (
                 eval_result.status.value if eval_result.status else "SYSTEM_ERROR"
@@ -394,13 +734,34 @@ class EvaluationService:
                     event_service,
                     submission_id,
                     question_id,
-                    contest_submission_context,
+                    contest_sub_ctx,
                     status_str,
                 )
-
             logger.info(
-                f"Finished evaluation for submission {submission_id} with status {status_str}"
+                f"Finished evaluation for submission {submission_id} "
+                f"with status {status_str}"
             )
-
-        if contest_id and evaluation_id:
-            await update_evaluation_progress(contest_id, evaluation_id)
+        except Exception as e:
+            # Never leave a submission without a terminal verdict: a Judge0/DB
+            # failure during PERSIST is recorded as SYSTEM_ERROR so the row is
+            # final and (for bulk) the run can complete. Cleanup/progress run in
+            # the finally block.
+            logger.error(
+                f"PERSIST failed for submission {submission_id}: {e}", exc_info=True
+            )
+            try:
+                await self._persist_terminal_status(
+                    submission_id,
+                    question_id,
+                    SubmissionStatus.SYSTEM_ERROR,
+                    contest_sub_ctx,
+                    publish_events,
+                    event_service,
+                )
+            except Exception:
+                logger.error(
+                    f"Failed to record terminal SYSTEM_ERROR for {submission_id}"
+                )
+        finally:
+            await _cleanup()
+            await self._advance_progress(eval_contest_id, evaluation_id, submission_id)

@@ -161,3 +161,15 @@ class Judge0ExecutionRequestDTO:
 
     language_id: int
     """Judge0 language ID (e.g., 71 for Python 3.10)."""
+
+    cpu_time_limit: Optional[float] = None
+    """CPU time limit in seconds. When None, the Judge0 instance default applies."""
+
+    wall_time_limit: Optional[float] = None
+    """Wall-clock time limit in seconds. When None, the Judge0 instance default applies."""
+
+    memory_limit: Optional[int] = None
+    """Memory limit in kilobytes. When None, the Judge0 instance default applies."""
+
+    stack_limit: Optional[int] = None
+    """Stack size limit in kilobytes. When None, the Judge0 instance default applies."""

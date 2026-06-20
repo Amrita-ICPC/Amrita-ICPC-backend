@@ -185,6 +185,12 @@ class Submission(Base):
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
+    # Terminal fact: when the submission reached its final verdict.
+    # Transient lifecycle (queued/running) is NOT persisted here; it lives in Redis.
+    evaluated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     testcases: Mapped[list["SubmissionTestCase"]] = relationship(
         "SubmissionTestCase", back_populates="submission", cascade="all, delete-orphan"
     )
@@ -253,6 +259,11 @@ class SubmissionTestCase(Base):
     status: Mapped[SubmissionStatus | None] = mapped_column(
         SUBMISSION_STATUS_ENUM, nullable=True
     )
+
+    # Durable Judge0 token for this testcase execution. Persisted alongside the
+    # result so completed submissions retain an audit trail / recovery handle.
+    judge0_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
     stdout: Mapped[str | None] = mapped_column(Text)
     stderr: Mapped[str | None] = mapped_column(Text)
 
