@@ -135,7 +135,7 @@ services:
     build: .
     container_name: amrita_icpc_celery_beat
     restart: always
-    command: celery -A app.core.clients.celery:celery_app beat --loglevel=info
+    command: celery -A app.core.clients.celery:celery_app beat --loglevel=info --schedule=/tmp/celerybeat-schedule
     env_file:
       - .env
     depends_on:
