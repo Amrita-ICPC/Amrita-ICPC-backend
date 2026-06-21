@@ -50,9 +50,9 @@ jobs:
         run: |
           docker build -t icpc-backend:latest .
       
-      - name: Restart container
+      - name: Restart containers
         run: |
-          docker compose -f /home/amrita/Amrita-ICPC/backend/docker-compose.yml up -d --force-recreate --no-deps
+          docker compose -f /home/amrita/Amrita-ICPC/backend/docker-compose.yml up -d --force-recreate
       
       - name: Wait for API to be healthy
         # A simple health check waiting for the API to be reachable
