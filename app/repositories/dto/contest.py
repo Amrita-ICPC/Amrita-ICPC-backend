@@ -124,3 +124,14 @@ class ContestQuestionsPaginatedResult(PaginatedResult):
     easy_count: int = 0
     medium_count: int = 0
     hard_count: int = 0
+
+
+@dataclass
+class ContestsPaginatedResultWithStats(PaginatedResult):
+    """
+    Paginated result for contests with additional metadata for stats.
+    """
+
+    live_count: int = 0
+    upcoming_count: int = 0
+    completed_count: int = 0

@@ -34,7 +34,7 @@ from app.schema.contest import (
     ContestCreate,
     ContestQuestionResponse,
     ContestResponse,
-    ContestSummaryResponse,
+    ContestsListResponse,
     ContestUpdate,
     InstructorManageRequest,
     InstructorResponse,
@@ -183,7 +183,7 @@ async def create_contest(
 
 @router.get(
     "/",
-    response_model=APIResponse[list[ContestSummaryResponse]],
+    response_model=APIResponse[ContestsListResponse],
     summary="Get all contests",
     dependencies=[can_read("contests")],
 )
@@ -228,15 +228,24 @@ async def get_all_contests(
         ContestOperationError: If contest retrieval fails unexpectedly.
     """
     skip = (page - 1) * page_size
-    total, contests = await service.get_all_contests(
+    contests_data = await service.get_all_contests(
         user_id, search, contest_status, run_status, is_public, skip, page_size
     )
+
+    if run_status == ContestRunStatus.LIVE:
+        total = contests_data.live_count
+    elif run_status == ContestRunStatus.UPCOMING:
+        total = contests_data.upcoming_count
+    elif run_status == ContestRunStatus.ENDED:
+        total = contests_data.completed_count
+    else:
+        total = contests_data.total_count
 
     pagination = get_pagination(total=total, page=page, page_size=page_size)
 
     return create_api_response(
         request,
-        data=contests,
+        data=contests_data,
         message="Contests fetched successfully",
         pagination=pagination,
     )
@@ -244,7 +253,7 @@ async def get_all_contests(
 
 @router.get(
     "/deleted",
-    response_model=APIResponse[list[ContestSummaryResponse]],
+    response_model=APIResponse[ContestsListResponse],
     summary="Get soft-deleted contests",
     dependencies=[can_read("contests")],
 )
@@ -281,15 +290,17 @@ async def get_deleted_contests(
         ContestOperationError: If contest retrieval fails unexpectedly.
     """
     skip = (page - 1) * page_size
-    total, contests = await service.get_soft_deleted_contests(
+    contests_data = await service.get_soft_deleted_contests(
         user_id, search, contest_status, skip, page_size
     )
 
-    pagination = get_pagination(total=total, page=page, page_size=page_size)
+    pagination = get_pagination(
+        total=contests_data.total_count, page=page, page_size=page_size
+    )
 
     return create_api_response(
         request,
-        data=contests,
+        data=contests_data,
         message="Deleted contests fetched successfully",
         pagination=pagination,
     )

@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import AsyncGenerator, List, cast
+from typing import AsyncGenerator, cast
 from uuid import UUID, uuid4
 
 from redis.asyncio import Redis
@@ -40,7 +40,7 @@ from app.schema.contest import (
     ContestCreate,
     ContestEvent,
     ContestResponse,
-    ContestSummaryResponse,
+    ContestsListResponse,
     ContestUpdate,
     InstructorManageRequest,
     InstructorResponse,
@@ -287,7 +287,7 @@ class ContestService:
         is_public: bool | None = None,
         skip: int = 0,
         limit: int = 100,
-    ) -> tuple[int, List[ContestSummaryResponse]]:
+    ) -> ContestsListResponse:
         """
         Get all contests with pagination, search, and filtering.
 
@@ -301,7 +301,7 @@ class ContestService:
             limit: Maximum number of records to return
 
         Returns:
-            Tuple of (total count, contests list)
+            ContestsListResponse containing paginated list and summary statistics.
         """
         # Check if user is admin
         user = await self.user_repository.get_user_or_raise(user_id)
@@ -320,13 +320,23 @@ class ContestService:
             user_id, user_is_admin, filters, pagination
         )
 
-        return result.total, [
+        contests = [
             to_contest_summary_response(
                 contest,
                 run_status=compute_run_status(contest.start_time, contest.end_time),
             )
             for contest in result.items
         ]
+
+        return ContestsListResponse(
+            contests=contests,
+            total_count=result.live_count
+            + result.upcoming_count
+            + result.completed_count,
+            live_count=result.live_count,
+            upcoming_count=result.upcoming_count,
+            completed_count=result.completed_count,
+        )
 
     @cache_delete(
         key_builder=lambda self, contest_id, audience_ids, user_id: [
@@ -806,7 +816,7 @@ class ContestService:
         status: ContestStatus | None = None,
         skip: int = 0,
         limit: int = 100,
-    ) -> tuple[int, List[ContestSummaryResponse]]:
+    ) -> ContestsListResponse:
         """
         Get all soft-deleted contests with pagination, search, and filtering.
 
@@ -818,7 +828,7 @@ class ContestService:
             limit: Maximum number of records to return
 
         Returns:
-            Tuple of (total count, contests list)
+            ContestsListResponse containing soft-deleted contests and stats.
         """
         # Check if user is admin
         user = await self.user_repository.get_user_or_raise(user_id)
@@ -833,13 +843,23 @@ class ContestService:
             user_id, user_is_admin, filters, pagination
         )
 
-        return result.total, [
+        contests = [
             to_contest_summary_response(
                 contest,
                 run_status=compute_run_status(contest.start_time, contest.end_time),
             )
             for contest in result.items
         ]
+
+        return ContestsListResponse(
+            contests=contests,
+            total_count=result.live_count
+            + result.upcoming_count
+            + result.completed_count,
+            live_count=result.live_count,
+            upcoming_count=result.upcoming_count,
+            completed_count=result.completed_count,
+        )
 
     async def get_contest_audiences(
         self, contest_id: UUID, user_id: UUID

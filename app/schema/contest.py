@@ -234,6 +234,16 @@ class ContestSummaryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ContestsListResponse(BaseModel):
+    """Response model for a paginated list of contests with summary statistics."""
+
+    contests: list[ContestSummaryResponse]
+    total_count: int = Field(0, description="Total number of contests")
+    live_count: int = Field(0, description="Number of live contests")
+    upcoming_count: int = Field(0, description="Number of upcoming contests")
+    completed_count: int = Field(0, description="Number of completed contests")
+
+
 class ContestDetailResponse(ContestBase):
     """Schema for comprehensive contest response (Detail view)."""
 

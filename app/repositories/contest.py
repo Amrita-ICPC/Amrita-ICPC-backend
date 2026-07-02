@@ -32,7 +32,7 @@ from app.repositories.dto import (
     ContestFilters,
     ContestQuestionFilters,
     ContestQuestionsPaginatedResult,
-    PaginatedResult,
+    ContestsPaginatedResultWithStats,
     PaginationParams,
 )
 from app.repositories.dto.contest_question import AddContestQuestionData
@@ -294,7 +294,7 @@ class ContestRepository:
         is_admin: bool,
         filters: ContestFilters,
         pagination: PaginationParams,
-    ) -> PaginatedResult:
+    ) -> ContestsPaginatedResultWithStats:
         """
         Retrieve contests with optional filtering and pagination.
 
@@ -308,7 +308,7 @@ class ContestRepository:
             pagination: PaginationParams object containing skip and limit values
 
         Returns:
-            PaginatedResult containing total count and list of Contest objects
+            ContestsPaginatedResultWithStats containing total count, stats, and list of Contest objects
         """
         # Subqueries for counts
         question_count_sub = (
@@ -341,21 +341,74 @@ class ContestRepository:
         # Apply search and status filters
         base_query = self._apply_search_and_status_filters(base_query, filters)
 
-        # Apply run_status filter using SQL datetime comparisons
+        # Apply visibility filter
+        if filters.is_public is not None:
+            base_query = base_query.filter(Contest.is_public == filters.is_public)
+
+        # Get stats before temporal filters and pagination
         now = datetime.now(timezone.utc)
+        stats_sub = base_query.with_only_columns(
+            Contest.id,
+            Contest.start_time,
+            Contest.end_time,
+        ).subquery()
+
+        stats_query = select(
+            func.count(stats_sub.c.id).label("total_count"),
+            func.count(case((stats_sub.c.start_time > now, 1))).label("upcoming_count"),
+            func.count(
+                case(
+                    (
+                        and_(
+                            stats_sub.c.start_time <= now,
+                            or_(
+                                stats_sub.c.end_time.is_(None),
+                                stats_sub.c.end_time >= now,
+                            ),
+                        ),
+                        1,
+                    )
+                )
+            ).label("live_count"),
+            func.count(
+                case(
+                    (
+                        and_(
+                            stats_sub.c.end_time.is_not(None),
+                            stats_sub.c.end_time < now,
+                        ),
+                        1,
+                    )
+                )
+            ).label("completed_count"),
+        )
+
+        stats_result = await self.db.execute(stats_query)
+        stats_row = stats_result.fetchone()
+
+        upcoming_count = 0
+        live_count = 0
+        completed_count = 0
+        if stats_row:
+            stats_row[0] or 0
+            upcoming_count = stats_row[1] or 0
+            live_count = stats_row[2] or 0
+            completed_count = stats_row[3] or 0
+
+        # Apply run_status filter using SQL datetime comparisons
         if filters.run_status is not None:
             if filters.run_status == ContestRunStatus.UPCOMING:
                 base_query = base_query.filter(Contest.start_time > now)
             elif filters.run_status == ContestRunStatus.LIVE:
                 base_query = base_query.filter(
-                    Contest.start_time <= now, Contest.end_time >= now
+                    Contest.start_time <= now,
+                    or_(
+                        Contest.end_time.is_(None),
+                        Contest.end_time >= now,
+                    ),
                 )
             elif filters.run_status == ContestRunStatus.ENDED:
                 base_query = base_query.filter(Contest.end_time < now)
-
-        # Apply visibility filter
-        if filters.is_public is not None:
-            base_query = base_query.filter(Contest.is_public == filters.is_public)
 
         # Eager load audiences
         base_query = base_query.options(
@@ -387,7 +440,13 @@ class ContestRepository:
             contest.team_count = row[2] or 0
             contests.append(contest)
 
-        return PaginatedResult(total=total, items=contests)
+        return ContestsPaginatedResultWithStats(
+            total=total,
+            items=contests,
+            live_count=live_count,
+            upcoming_count=upcoming_count,
+            completed_count=completed_count,
+        )
 
     async def get_soft_deleted_contests(
         self,
@@ -395,7 +454,7 @@ class ContestRepository:
         is_admin: bool,
         filters: ContestFilters,
         pagination: PaginationParams,
-    ) -> PaginatedResult:
+    ) -> ContestsPaginatedResultWithStats:
         """
         Retrieve soft-deleted contests with optional filtering and pagination.
 
@@ -408,7 +467,7 @@ class ContestRepository:
             pagination: PaginationParams object containing skip and limit values
 
         Returns:
-            PaginatedResult containing total count and list of soft-deleted Contest objects
+            ContestsPaginatedResultWithStats containing total count, stats, and list of soft-deleted Contest objects
         """
         # Subqueries for counts
         question_count_sub = (
@@ -444,6 +503,56 @@ class ContestRepository:
         # Get distinct results
         base_query = base_query.distinct()
 
+        # Get stats before pagination
+        now = datetime.now(timezone.utc)
+        stats_sub = base_query.with_only_columns(
+            Contest.id,
+            Contest.start_time,
+            Contest.end_time,
+        ).subquery()
+
+        stats_query = select(
+            func.count(stats_sub.c.id).label("total_count"),
+            func.count(case((stats_sub.c.start_time > now, 1))).label("upcoming_count"),
+            func.count(
+                case(
+                    (
+                        and_(
+                            stats_sub.c.start_time <= now,
+                            or_(
+                                stats_sub.c.end_time.is_(None),
+                                stats_sub.c.end_time >= now,
+                            ),
+                        ),
+                        1,
+                    )
+                )
+            ).label("live_count"),
+            func.count(
+                case(
+                    (
+                        and_(
+                            stats_sub.c.end_time.is_not(None),
+                            stats_sub.c.end_time < now,
+                        ),
+                        1,
+                    )
+                )
+            ).label("completed_count"),
+        )
+
+        stats_result = await self.db.execute(stats_query)
+        stats_row = stats_result.fetchone()
+
+        upcoming_count = 0
+        live_count = 0
+        completed_count = 0
+        if stats_row:
+            stats_row[0] or 0
+            upcoming_count = stats_row[1] or 0
+            live_count = stats_row[2] or 0
+            completed_count = stats_row[3] or 0
+
         # Get total count before pagination
         count_query = select(func.count()).select_from(
             base_query.with_only_columns(Contest.id).subquery()
@@ -462,7 +571,13 @@ class ContestRepository:
             contest.team_count = row[2] or 0
             contests.append(contest)
 
-        return PaginatedResult(total=total, items=contests)
+        return ContestsPaginatedResultWithStats(
+            total=total,
+            items=contests,
+            live_count=live_count,
+            upcoming_count=upcoming_count,
+            completed_count=completed_count,
+        )
 
     async def create_contest(self, contest: Contest) -> Contest:
         """
