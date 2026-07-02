@@ -14,7 +14,7 @@ import pytest
 
 from app.core.permissions import PermissionDeniedError
 from app.exceptions.contest import ContestNotFoundError
-from app.schema.contest import ContestResponse
+from app.schema.contest import ContestResponse, ContestsListResponse
 from app.utils.enums import UserRole
 
 
@@ -225,10 +225,16 @@ class TestGetSoftDeletedContests:
         user_id,
     ):
         """Test that soft-deleted contests can be retrieved."""
-        from app.repositories.dto import PaginatedResult
+        from app.repositories.dto import ContestsPaginatedResultWithStats
 
         mock_contest.is_deleted = True
-        mock_result = PaginatedResult(total=1, items=[mock_contest])
+        mock_result = ContestsPaginatedResultWithStats(
+            total=1,
+            items=[mock_contest],
+            live_count=1,
+            upcoming_count=0,
+            completed_count=0,
+        )
         mock_contest_repository.get_soft_deleted_contests.return_value = mock_result
         mock_user.role = UserRole.student
         mock_user_repository.get_user_or_raise.return_value = mock_user
@@ -238,7 +244,8 @@ class TestGetSoftDeletedContests:
         with patch.object(
             ContestSummaryResponse, "model_validate", side_effect=lambda x: x
         ):
-            total, contests = await contest_service.get_soft_deleted_contests(user_id)
+            result = await contest_service.get_soft_deleted_contests(user_id)
 
-        assert total == 1
-        assert len(contests) == 1
+        assert isinstance(result, ContestsListResponse)
+        assert result.total_count == 1
+        assert len(result.contests) == 1

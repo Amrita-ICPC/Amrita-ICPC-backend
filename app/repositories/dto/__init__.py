@@ -11,6 +11,7 @@ from app.repositories.dto.contest import (
     ContestFilters,
     ContestQuestionFilters,
     ContestQuestionsPaginatedResult,
+    ContestsPaginatedResultWithStats,
     CreateContestData,
     UpdateContestData,
 )
@@ -58,6 +59,7 @@ __all__ = [
     "ContestFilters",
     "ContestQuestionFilters",
     "ContestQuestionsPaginatedResult",
+    "ContestsPaginatedResultWithStats",
     "CreateContestData",
     "UpdateContestData",
     "BankFilters",

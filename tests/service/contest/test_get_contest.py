@@ -23,8 +23,12 @@ import pytest
 
 from app.core.permissions import PermissionDeniedError
 from app.exceptions.contest import ContestNotFoundError
-from app.repositories.dto import PaginatedResult
-from app.schema.contest import ContestResponse, ContestSummaryResponse
+from app.repositories.dto import ContestsPaginatedResultWithStats
+from app.schema.contest import (
+    ContestResponse,
+    ContestsListResponse,
+    ContestSummaryResponse,
+)
 from app.utils.enums import ContestStatus, UserRole
 
 
@@ -147,8 +151,14 @@ class TestGetAllContestsSuccess:
         mock_user,
         user_id,
     ):
-        """Test that get_all_contests returns (total_count, list[ContestSummaryResponse])."""
-        mock_result = PaginatedResult(total=1, items=[mock_contest])
+        """Test that get_all_contests returns ContestsListResponse."""
+        mock_result = ContestsPaginatedResultWithStats(
+            total=1,
+            items=[mock_contest],
+            live_count=1,
+            upcoming_count=0,
+            completed_count=0,
+        )
         mock_contest_repository.get_contests_with_filters.return_value = mock_result
         mock_user_repository.get_user_or_raise.return_value = mock_user
         mock_user.role = UserRole.student
@@ -158,12 +168,16 @@ class TestGetAllContestsSuccess:
             "model_validate",
             side_effect=lambda x: x,
         ):
-            total, contests = await contest_service.get_all_contests(user_id)
+            result = await contest_service.get_all_contests(user_id)
 
-        assert total == 1
-        assert len(contests) == 1
-        assert isinstance(contests[0], ContestSummaryResponse)
-        assert contests[0].id == mock_contest.id
+        assert isinstance(result, ContestsListResponse)
+        assert result.total_count == 1
+        assert len(result.contests) == 1
+        assert result.live_count == 1
+        assert result.upcoming_count == 0
+        assert result.completed_count == 0
+        assert isinstance(result.contests[0], ContestSummaryResponse)
+        assert result.contests[0].id == mock_contest.id
 
     @pytest.mark.asyncio
     async def test_empty_results_returns_zero_count(
@@ -174,16 +188,26 @@ class TestGetAllContestsSuccess:
         mock_user,
         user_id,
     ):
-        """Test that empty results return (0, [])."""
-        mock_result = PaginatedResult(total=0, items=[])
+        """Test that empty results return empty ContestsListResponse."""
+        mock_result = ContestsPaginatedResultWithStats(
+            total=0,
+            items=[],
+            live_count=0,
+            upcoming_count=0,
+            completed_count=0,
+        )
         mock_contest_repository.get_contests_with_filters.return_value = mock_result
         mock_user_repository.get_user_or_raise.return_value = mock_user
         mock_user.role = UserRole.student
 
-        total, contests = await contest_service.get_all_contests(user_id)
+        result = await contest_service.get_all_contests(user_id)
 
-        assert total == 0
-        assert contests == []
+        assert isinstance(result, ContestsListResponse)
+        assert result.total_count == 0
+        assert result.contests == []
+        assert result.live_count == 0
+        assert result.upcoming_count == 0
+        assert result.completed_count == 0
 
     @pytest.mark.asyncio
     async def test_with_search_term_filters_correctly(
@@ -195,7 +219,13 @@ class TestGetAllContestsSuccess:
         user_id,
     ):
         """Test that search_term parameter is passed to repository."""
-        mock_result = PaginatedResult(total=0, items=[])
+        mock_result = ContestsPaginatedResultWithStats(
+            total=0,
+            items=[],
+            live_count=0,
+            upcoming_count=0,
+            completed_count=0,
+        )
         mock_contest_repository.get_contests_with_filters.return_value = mock_result
         mock_user_repository.get_user_or_raise.return_value = mock_user
         mock_user.role = UserRole.student
@@ -216,7 +246,13 @@ class TestGetAllContestsSuccess:
         user_id,
     ):
         """Test that status filter is passed to repository."""
-        mock_result = PaginatedResult(total=0, items=[])
+        mock_result = ContestsPaginatedResultWithStats(
+            total=0,
+            items=[],
+            live_count=0,
+            upcoming_count=0,
+            completed_count=0,
+        )
         mock_contest_repository.get_contests_with_filters.return_value = mock_result
         mock_user_repository.get_user_or_raise.return_value = mock_user
         mock_user.role = UserRole.student
@@ -237,7 +273,13 @@ class TestGetAllContestsSuccess:
         user_id,
     ):
         """Test that pagination parameters are passed correctly."""
-        mock_result = PaginatedResult(total=0, items=[])
+        mock_result = ContestsPaginatedResultWithStats(
+            total=0,
+            items=[],
+            live_count=0,
+            upcoming_count=0,
+            completed_count=0,
+        )
         mock_contest_repository.get_contests_with_filters.return_value = mock_result
         mock_user_repository.get_user_or_raise.return_value = mock_user
         mock_user.role = UserRole.student
@@ -263,7 +305,13 @@ class TestGetAllContestsUserRoles:
         user_id,
     ):
         """Test that admin status is passed to repository."""
-        mock_result = PaginatedResult(total=0, items=[])
+        mock_result = ContestsPaginatedResultWithStats(
+            total=0,
+            items=[],
+            live_count=0,
+            upcoming_count=0,
+            completed_count=0,
+        )
         mock_contest_repository.get_contests_with_filters.return_value = mock_result
         mock_user.role = UserRole.admin
         mock_user_repository.get_user_or_raise.return_value = mock_user
@@ -284,7 +332,13 @@ class TestGetAllContestsUserRoles:
         user_id,
     ):
         """Test that non-admin status is detected."""
-        mock_result = PaginatedResult(total=0, items=[])
+        mock_result = ContestsPaginatedResultWithStats(
+            total=0,
+            items=[],
+            live_count=0,
+            upcoming_count=0,
+            completed_count=0,
+        )
         mock_contest_repository.get_contests_with_filters.return_value = mock_result
         mock_user.role = UserRole.student
         mock_user_repository.get_user_or_raise.return_value = mock_user
@@ -309,7 +363,13 @@ class TestGetAllContestsRepositoryContract:
         user_id,
     ):
         """Test that repository is called with correct user and filters."""
-        mock_result = PaginatedResult(total=0, items=[])
+        mock_result = ContestsPaginatedResultWithStats(
+            total=0,
+            items=[],
+            live_count=0,
+            upcoming_count=0,
+            completed_count=0,
+        )
         mock_contest_repository.get_contests_with_filters.return_value = mock_result
         mock_user.role = UserRole.student
         mock_user_repository.get_user_or_raise.return_value = mock_user
@@ -347,16 +407,22 @@ class TestContestSummaryCountsMapping:
         mock_contest.question_count = 5
         mock_contest.team_count = 12
 
-        mock_result = PaginatedResult(total=1, items=[mock_contest])
+        mock_result = ContestsPaginatedResultWithStats(
+            total=1,
+            items=[mock_contest],
+            live_count=1,
+            upcoming_count=0,
+            completed_count=0,
+        )
         mock_contest_repository.get_contests_with_filters.return_value = mock_result
         mock_user_repository.get_user_or_raise.return_value = mock_user
         mock_user.role = UserRole.student
 
-        total, contests = await contest_service.get_all_contests(user_id)
+        result = await contest_service.get_all_contests(user_id)
 
-        assert total == 1
-        assert len(contests) == 1
-        summary = contests[0]
+        assert result.total_count == 1
+        assert len(result.contests) == 1
+        summary = result.contests[0]
         # Assert schema model contains mapped count values
         assert summary.question_count == 5
         assert summary.team_count == 12
