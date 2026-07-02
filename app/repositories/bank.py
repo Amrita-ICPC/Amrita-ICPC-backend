@@ -124,8 +124,15 @@ class BankRepository:
         Returns:
             PaginatedResult with total count and paginated bank records.
         """
+        # Subquery for question count
+        question_count_sub = (
+            select(func.count(BankQuestion.question_id))
+            .where(BankQuestion.bank_id == Bank.id)
+            .scalar_subquery()
+        )
+
         base_query = (
-            select(Bank)
+            select(Bank, question_count_sub.label("total_questions_count"))
             .outerjoin(BankShare)
             .filter(
                 Bank.is_deleted.is_(False),
@@ -156,7 +163,12 @@ class BankRepository:
         result = await self.db.execute(
             base_query.offset(pagination.skip).limit(pagination.limit)
         )
-        banks = list(result.unique().scalars().all())
+        rows = result.unique().all()
+        banks = []
+        for row in rows:
+            bank = row[0]
+            bank.total_questions_count = row[1] or 0
+            banks.append(bank)
 
         return PaginatedResult(total=total or 0, items=banks)
 
@@ -230,8 +242,15 @@ class BankRepository:
         Returns:
             PaginatedResult: Object containing the data slice.
         """
+        # Subquery for question count
+        question_count_sub = (
+            select(func.count(BankQuestion.question_id))
+            .where(BankQuestion.bank_id == Bank.id)
+            .scalar_subquery()
+        )
+
         base_query = (
-            select(Bank)
+            select(Bank, question_count_sub.label("total_questions_count"))
             .outerjoin(BankShare)
             .filter(
                 Bank.is_deleted.is_(True),
@@ -262,7 +281,12 @@ class BankRepository:
         result = await self.db.execute(
             base_query.offset(pagination.skip).limit(pagination.limit)
         )
-        banks = list(result.unique().scalars().all())
+        rows = result.unique().all()
+        banks = []
+        for row in rows:
+            bank = row[0]
+            bank.total_questions_count = row[1] or 0
+            banks.append(bank)
 
         return PaginatedResult(total=total, items=banks)
 

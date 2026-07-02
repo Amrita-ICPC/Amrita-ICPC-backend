@@ -58,6 +58,9 @@ class BankResponse(BankBase):
     created_by: UUID = Field(..., description="Creator user ID")
     created_at: datetime = Field(..., description="Creation time")
     updated_at: datetime = Field(..., description="Last update time")
+    total_questions_count: int = Field(
+        default=0, description="Total number of questions in the bank"
+    )
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -81,9 +84,6 @@ class BankDetailResponse(BankResponse):
     aggregated counts of associated questions and share configurations.
     """
 
-    total_questions_count: int = Field(
-        default=0, description="Total number of questions in the bank"
-    )
     easy_questions_count: int = Field(default=0, description="Number of easy questions")
     medium_questions_count: int = Field(
         default=0, description="Number of medium questions"
