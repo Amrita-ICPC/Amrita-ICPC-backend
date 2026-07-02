@@ -105,6 +105,7 @@ def existing_bank(sample_bank_data):
         created_by=creator_id,
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc),
+        total_questions_count=5,
     )
 
 
@@ -128,6 +129,7 @@ async def test_create_bank_success(
 
     assert result.id == existing_bank.id
     assert result.name == existing_bank.name
+    assert result.total_questions_count == 5
     mock_repository.add_share.assert_called_once_with(
         bank_id=existing_bank.id, user_id=user_id, permission=BankPermission.owner
     )
@@ -257,6 +259,7 @@ async def test_get_soft_deleted_banks_success(
     assert total == 1
     assert len(items) == 1
     assert items[0].id == existing_bank.id
+    assert items[0].total_questions_count == 5
     mock_repository.get_soft_deleted_banks.assert_called_once()
 
 
@@ -319,6 +322,7 @@ async def test_get_all_banks_with_search_and_sort(
     assert total == 1
     assert len(items) == 1
     assert items[0].id == existing_bank.id
+    assert items[0].total_questions_count == 5
 
     # Verify the parameters passed to get_banks_with_filters
     mock_repository.get_banks_with_filters.assert_called_once()
