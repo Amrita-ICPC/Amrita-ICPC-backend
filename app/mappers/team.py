@@ -72,11 +72,19 @@ def build_leader_update_dto(
 def to_contest_team_response(
     contest_team: "ContestTeam",
     members: list["ContestTeamMember"] | None = None,
+    score: int | None = None,
 ) -> ContestTeamResponse:
-    """Map contest team ORM object to response schema."""
+    """Map contest team ORM object to response schema.
+
+    `score` is only forwarded when explicitly given (e.g. by the team listing
+    route), so callers that don't compute it keep the prior call shape.
+    """
+    kwargs: dict[str, Any] = {}
     if members is not None:
-        return ContestTeamResponse.from_contest_team(contest_team, members=members)
-    return ContestTeamResponse.from_contest_team(contest_team)
+        kwargs["members"] = members
+    if score is not None:
+        kwargs["score"] = score
+    return ContestTeamResponse.from_contest_team(contest_team, **kwargs)
 
 
 def to_contest_team_response_list(
@@ -96,7 +104,8 @@ def to_team_list_response(
     teams_responses: list[ContestTeamResponse] = []
     for team in contest_teams:
         members = team_members_map.get(team.id) if team_members_map else None
-        teams_responses.append(to_contest_team_response(team, members))
+        score = getattr(team, "score", None)
+        teams_responses.append(to_contest_team_response(team, members, score))
     return TeamListResponse(
         total=total,
         teams=teams_responses,

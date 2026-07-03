@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import Select, and_, case, func, select
+from sqlalchemy import Select, and_, asc, case, desc, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -420,19 +420,58 @@ class ContestTeamRepository:
         contest_id: UUID,
         filters: TeamFilters,
         pagination: PaginationParams,
+        sort_by: str | None = None,
+        sort_order: str = "desc",
     ) -> PaginatedResult:
         """Retrieve paginated and filtered list of contest teams for a contest.
+
+        Each returned ``ContestTeam`` is annotated with a transient ``score``
+        attribute: the average of its accepted members' ``ContestTeamProgress.score``
+        for this contest (mirrors the leaderboard's ``get_teams_ranked_by_score``
+        aggregation). The attribute is not a mapped column, so it is never persisted.
 
         Args:
             contest_id: The ID of the contest.
             filters: TeamFilters containing search, status, and approval status filters.
             pagination: PaginationParams containing skip and limit values.
+            sort_by: Optional field to sort by. Pass "score" to sort by average
+                team score; any other value (or None) keeps the default
+                enrollment-time ordering.
+            sort_order: 'asc' or 'desc', only applied when sort_by == "score".
 
         Returns:
-            PaginatedResult: Total count and list of ContestTeam objects.
+            PaginatedResult: Total count and list of ContestTeam objects, each
+            with a transient ``.score`` attribute set.
         """
+        score_subq = (
+            select(
+                ContestTeamMember.contest_team_id.label("contest_team_id"),
+                func.coalesce(func.round(func.avg(ContestTeamProgress.score)), 0).label(
+                    "score"
+                ),
+            )
+            .select_from(ContestTeamMember)
+            .outerjoin(
+                ContestTeamProgress,
+                and_(
+                    ContestTeamProgress.contest_team_id
+                    == ContestTeamMember.contest_team_id,
+                    ContestTeamProgress.contest_team_member_id == ContestTeamMember.id,
+                    ContestTeamProgress.contest_id == contest_id,
+                ),
+            )
+            .where(ContestTeamMember.status == ContestTeamMemberStatus.ACCEPTED)
+            .group_by(ContestTeamMember.contest_team_id)
+            .subquery()
+        )
+        team_score = func.coalesce(score_subq.c.score, 0).label("team_score")
+
         # Base query
-        query = select(ContestTeam).where(ContestTeam.contest_id == contest_id)
+        query = (
+            select(ContestTeam, team_score)
+            .outerjoin(score_subq, score_subq.c.contest_team_id == ContestTeam.id)
+            .where(ContestTeam.contest_id == contest_id)
+        )
 
         query = self._apply_filters(query, filters)
 
@@ -447,10 +486,20 @@ class ContestTeamRepository:
         total_result = await self.db.execute(count_query)
         total = int(total_result.scalar_one())
 
+        # Ordering
+        if sort_by == "score":
+            order_by_score = (
+                asc(team_score) if sort_order == "asc" else desc(team_score)
+            )
+            query = query.order_by(order_by_score, ContestTeam.id.desc())
+        else:
+            query = query.order_by(
+                ContestTeam.enrolled_at.desc(), ContestTeam.id.desc()
+            )
+
         # Pagination + eager loading
         query = (
-            query.order_by(ContestTeam.enrolled_at.desc(), ContestTeam.id.desc())
-            .offset(pagination.skip)
+            query.offset(pagination.skip)
             .limit(pagination.limit)
             .options(
                 selectinload(ContestTeam.leader),
@@ -463,9 +512,13 @@ class ContestTeamRepository:
 
         # Execute query
         result = await self.db.execute(query)
-        contest_teams = result.scalars().all()
+        rows = result.all()
+        contest_teams = []
+        for team, score in rows:
+            team.score = int(score)
+            contest_teams.append(team)
 
-        return PaginatedResult(total=total, items=list(contest_teams))
+        return PaginatedResult(total=total, items=contest_teams)
 
     def _apply_filters(self, query: Select, filters: TeamFilters):
         if filters.search_term:
@@ -476,6 +529,17 @@ class ContestTeamRepository:
 
         if filters.approval_status is not None:
             query = query.where(ContestTeam.approval_status == filters.approval_status)
+
+        if filters.flagged is not None:
+            has_flagged_progress = exists(
+                select(ContestTeamProgress.id).where(
+                    ContestTeamProgress.contest_team_id == ContestTeam.id,
+                    ContestTeamProgress.flagged_at.is_not(None),
+                )
+            )
+            query = query.where(
+                has_flagged_progress if filters.flagged else ~has_flagged_progress
+            )
 
         return query
 

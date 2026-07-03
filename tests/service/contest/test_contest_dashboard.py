@@ -6,6 +6,7 @@ import pytest
 from app.core.permissions import PermissionDeniedError
 from app.exceptions.contest import ContestNotFoundError
 from app.repositories.submission import ContestSubmissionRepository
+from app.repositories.team import TeamRepository
 from app.schema.submission import ContestDashboardResponse
 from app.service.contest_dashboard_service import ContestDashboardService
 from app.utils.enums import ContestStatus
@@ -18,16 +19,24 @@ def mock_submission_repository():
 
 
 @pytest.fixture
+def mock_team_repository():
+    """Mock TeamRepository."""
+    return AsyncMock(spec=TeamRepository)
+
+
+@pytest.fixture
 def dashboard_service(
     mock_contest_repository,
     mock_submission_repository,
     mock_guard,
+    mock_team_repository,
 ):
     """Instantiate ContestDashboardService with mocked dependencies."""
     return ContestDashboardService(
         contest_repository=mock_contest_repository,
         submission_repository=mock_submission_repository,
         guard=mock_guard,
+        team_repository=mock_team_repository,
     )
 
 

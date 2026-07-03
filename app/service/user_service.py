@@ -1,7 +1,6 @@
 from typing import Any, Dict
 from uuid import UUID
 
-from keycloak import KeycloakAdmin
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -16,6 +15,7 @@ from app.repositories.dto.user import UserListFilters
 from app.repositories.user import UserRepository
 from app.schema.user import StudentUserSearchResponse, UserResponse
 from app.utils.enums import UserRole
+from keycloak import KeycloakAdmin
 
 
 class UserService:

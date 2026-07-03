@@ -270,8 +270,8 @@ class TeamService:
         return to_contest_team_response(contest_team, members=unique_members)
 
     @cache_get(
-        key_builder=lambda self, contest_id, user_id, search_term=None, status=None, approval_status=None, skip=0, limit=100: (
-            f"contest:{contest_id}:teams:user:{user_id}:search:{search_term}:status:{status}:approval:{approval_status}:skip:{skip}:limit:{limit}"
+        key_builder=lambda self, contest_id, user_id, search_term=None, status=None, approval_status=None, skip=0, limit=100, sort_by=None, sort_order="desc", flagged=None: (
+            f"contest:{contest_id}:teams:user:{user_id}:search:{search_term}:status:{status}:approval:{approval_status}:skip:{skip}:limit:{limit}:sort_by:{sort_by}:sort_order:{sort_order}:flagged:{flagged}"
         ),
         ttl=300,
     )
@@ -284,19 +284,23 @@ class TeamService:
         approval_status: TeamApprovalStatus | None = None,
         skip: int = 0,
         limit: int = 100,
+        sort_by: str | None = None,
+        sort_order: str = "desc",
+        flagged: bool | None = None,
     ) -> TeamListResponse:
         """
         Retrieve all teams in a contest with optional search and filtering.
 
         Uses repository pattern for database queries and guard pattern for
         permission validation. Supports pagination, text search by team name,
-        and status filtering (team status and approval status).
+        status filtering (team status, approval status, and flagged status), and sorting.
 
         Implementation:
         - Validates read permissions via TeamOperationGuard
-        - Delegates query execution to TeamRepository with filters and pagination
+        - Delegates query execution to TeamRepository with filters, pagination, and sorting
         - Fetches team status counts
-        - Returns TeamListResponse with paginated results and counts
+        - Returns TeamListResponse with paginated results, counts, and each
+          team's score (average of its accepted members' scores)
 
         Args:
             contest_id: UUID of the contest to get teams from
@@ -306,6 +310,10 @@ class TeamService:
             approval_status: Optional TeamApprovalStatus to filter teams (WAITING, APPROVED, REJECTED)
             skip: Number of teams to skip for pagination (default: 0)
             limit: Maximum teams to return, capped at 100 (default: 100)
+            sort_by: Optional field to sort by ("score" sorts by average team score)
+            sort_order: 'asc' or 'desc', only applied when sort_by == "score"
+            flagged: Optional filter for whether the team has any flagged progress
+                (True: only flagged teams, False: only unflagged teams)
 
         Returns:
             TeamListResponse: Paginated results and status counts
@@ -328,12 +336,13 @@ class TeamService:
             search_term=search_term,
             status=status_filter,
             approval_status=approval_status,
+            flagged=flagged,
         )
         pagination = PaginationParams(skip=skip, limit=limit)
 
         # Delegate to repository
         result = await self.contest_team_repository.get_contest_teams(
-            contest_id, filters, pagination
+            contest_id, filters, pagination, sort_by=sort_by, sort_order=sort_order
         )
 
         team_members_map = {}

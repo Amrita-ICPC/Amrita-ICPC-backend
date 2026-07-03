@@ -239,26 +239,9 @@ class ContestSubmissionRepository:
         )
         return total, list(result.all())
 
-    async def get_dashboard_analytics_raw(
-        self, contest_id: uuid.UUID
-    ) -> ContestDashboardRawData:
-        """
-        Query all raw aggregate statistics and models for the contest dashboard.
-
-        Executes efficient, database-level aggregate SQL queries (avoiding N+1 loops)
-        and transfers them to the service layer as simple repository DTOs.
-
-        Args:
-            contest_id: Unique identifier of the contest.
-
-        Returns:
-            ContestDashboardRawData: Contains raw queries results for analytics,
-            problem health, team performance, and recent submissions.
-        """
-        from app.models.question import SubmissionTestCase
-
-        # Helper subquery to compute the status of each submission dynamically
-        sub_status_subq = (
+    def _build_submission_status_subquery(self):
+        """Build the subquery that computes each submission's verdict from its testcases."""
+        return (
             select(
                 SubmissionTestCase.submission_id,
                 case(
@@ -333,7 +316,29 @@ class ContestSubmissionRepository:
             .subquery()
         )
 
-        # 1. Query Contest Analytics (Verdict breakdown counts)
+    async def get_contest_analytics_raw(
+        self, contest_id: uuid.UUID, sub_status_subq=None
+    ) -> ContestAnalyticsRaw:
+        """
+        Query the verdict breakdown (total/accepted/wrong/TLE/RE/CE/MLE/system-error)
+        for all submissions in a contest.
+
+        Shared by the contest dashboard and any other view that needs submission
+        statistics, so the aggregate SQL lives in exactly one place.
+
+        Args:
+            contest_id: Unique identifier of the contest.
+            sub_status_subq: Optional pre-built verdict subquery, passed in by
+                callers (like ``get_dashboard_analytics_raw``) that already built
+                one for other sections, to avoid compiling it twice.
+
+        Returns:
+            ContestAnalyticsRaw: Aggregate verdict counts for the contest.
+        """
+        if sub_status_subq is None:
+            sub_status_subq = self._build_submission_status_subquery()
+
+        # Query Contest Analytics (Verdict breakdown counts)
         analytics_query = (
             select(
                 func.count(Submission.id).label("total_submissions"),
@@ -461,6 +466,31 @@ class ContestSubmissionRepository:
                 memory_limit_exceeded=0,
                 system_error=0,
             )
+
+        return analytics_dto
+
+    async def get_dashboard_analytics_raw(
+        self, contest_id: uuid.UUID
+    ) -> ContestDashboardRawData:
+        """
+        Query all raw aggregate statistics and models for the contest dashboard.
+
+        Executes efficient, database-level aggregate SQL queries (avoiding N+1 loops)
+        and transfers them to the service layer as simple repository DTOs.
+
+        Args:
+            contest_id: Unique identifier of the contest.
+
+        Returns:
+            ContestDashboardRawData: Contains raw queries results for analytics,
+            problem health, team performance, and recent submissions.
+        """
+        sub_status_subq = self._build_submission_status_subquery()
+
+        # 1. Query Contest Analytics (Verdict breakdown counts)
+        analytics_dto = await self.get_contest_analytics_raw(
+            contest_id, sub_status_subq=sub_status_subq
+        )
 
         # 2. Query Problem Health
         subq_submissions = (

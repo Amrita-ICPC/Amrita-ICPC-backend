@@ -4,9 +4,11 @@ from app.core.guards.contest import ContestOperationGuard
 from app.exceptions.contest import ContestNotFoundError
 from app.repositories.contest import ContestRepository
 from app.repositories.submission import ContestSubmissionRepository
+from app.repositories.team import TeamRepository
 from app.schema.submission import (
     ContestAnalyticsSchema,
     ContestDashboardResponse,
+    ContestResultsResponse,
     NeedsAttentionSchema,
     ProblematicQuestionSchema,
     ProblemHealthSchema,
@@ -27,10 +29,12 @@ class ContestDashboardService:
         contest_repository: ContestRepository,
         submission_repository: ContestSubmissionRepository,
         guard: ContestOperationGuard,
+        team_repository: TeamRepository,
     ):
         self.contest_repository = contest_repository
         self.submission_repository = submission_repository
         self.guard = guard
+        self.team_repository = team_repository
 
     async def get_dashboard_analytics(
         self, contest_id: uuid.UUID, user_id: uuid.UUID
@@ -162,4 +166,55 @@ class ContestDashboardService:
             team_performance=team_performance,
             problem_health=problem_health,
             recent_submissions=recent_submissions,
+        )
+
+    async def get_contest_results(
+        self, contest_id: uuid.UUID, user_id: uuid.UUID
+    ) -> ContestResultsResponse:
+        """
+        Verify permission and retrieve the results-page summary for a contest.
+
+        Reuses the same submission-statistics query as the dashboard (rather than
+        issuing a separate count query) and adds the flagged-progress count.
+
+        Args:
+            contest_id: The UUID of the contest.
+            user_id: The UUID of the requesting user.
+
+        Returns:
+            ContestResultsResponse containing total responses, submission
+            statistics, and the flagged response count.
+
+        Raises:
+            ContestNotFoundError: If the contest is not found or is soft-deleted.
+            PermissionDeniedError: If the user lacks manage permissions for this contest.
+        """
+        contest = await self.contest_repository.get_contest_or_raise(contest_id)
+        if contest.status == ContestStatus.DELETED:
+            raise ContestNotFoundError(str(contest_id))
+
+        await self.guard.check_manage_contest(user_id=user_id, contest=contest)
+
+        analytics_raw = await self.submission_repository.get_contest_analytics_raw(
+            contest_id
+        )
+        flagged_count = await self.team_repository.count_flagged_progress_in_contest(
+            contest_id
+        )
+
+        submission_statistics = ContestAnalyticsSchema(
+            total_submissions=analytics_raw.total_submissions,
+            accepted=analytics_raw.accepted,
+            wrong_answer=analytics_raw.wrong_answer,
+            time_limit_exceeded=analytics_raw.time_limit_exceeded,
+            runtime_error=analytics_raw.runtime_error,
+            compilation_error=analytics_raw.compilation_error,
+            memory_limit_exceeded=analytics_raw.memory_limit_exceeded,
+            system_error=analytics_raw.system_error,
+        )
+
+        return ContestResultsResponse(
+            total_responses=analytics_raw.total_submissions,
+            submission_statistics=submission_statistics,
+            flagged_responses=flagged_count,
         )

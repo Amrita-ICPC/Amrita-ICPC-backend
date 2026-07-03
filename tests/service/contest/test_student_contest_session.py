@@ -5,13 +5,13 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
+from app.repositories.contest_runtime import ContestRuntimeRepository
 
 from app.core.guards.contest_student import ContestStudentGuard
 from app.exceptions.student.teams import (
     TeamLeaderAccessDeniedError,
 )
 from app.repositories.contest import ContestRepository
-from app.repositories.contest_runtime import ContestRuntimeRepository
 from app.repositories.contest_team_progress import ContestTeamProgressRepository
 from app.repositories.student.contest import StudentContestRepository
 from app.repositories.student.contest_team import ContestTeamRepository

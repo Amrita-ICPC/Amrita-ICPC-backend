@@ -139,6 +139,7 @@ class ContestTeamResponse(BaseModel):
         members_preview: List of first 3 members for display.
         extra_members_count: Number of members beyond the preview.
         parent_team: Basic information about the parent team.
+        score: Team score, the average of its accepted members' scores.
     """
 
     id: UUID
@@ -150,17 +151,21 @@ class ContestTeamResponse(BaseModel):
     members_preview: List[TeamMemberPreview] = Field(default_factory=list)
     extra_members_count: int = 0
     parent_team: Optional[ParentTeamInfo] = None
+    score: int = 0
 
     model_config = ConfigDict(from_attributes=True)
 
     @classmethod
-    def from_contest_team(cls, contest_team, members=None) -> "ContestTeamResponse":
+    def from_contest_team(
+        cls, contest_team, members=None, score: int = 0
+    ) -> "ContestTeamResponse":
         """
         Create ContestTeamResponse from ContestTeam ORM object.
 
         Args:
             contest_team: ContestTeam ORM object
             members: Optional custom list of ContestTeamMember objects
+            score: Team score, the average of its accepted members' scores.
 
         Returns:
             ContestTeamResponse with basic team data and member previews.
@@ -210,6 +215,7 @@ class ContestTeamResponse(BaseModel):
             members_preview=members_preview,
             extra_members_count=extra_count,
             parent_team=parent_team_info,
+            score=score,
         )
 
 

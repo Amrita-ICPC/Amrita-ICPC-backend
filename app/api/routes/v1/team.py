@@ -167,6 +167,16 @@ async def get_contest_teams(
     approval_status: TeamApprovalStatus | None = Query(
         None, description="Filter by approval status"
     ),
+    flagged: bool | None = Query(
+        None,
+        description="Filter by flagged status (true: flagged only, false: unflagged only)",
+    ),
+    sort_by: str | None = Query(
+        None, description="Field to sort by. Currently supports 'score'."
+    ),
+    sort_order: str = Query(
+        "desc", description="Sort order when sort_by is set: 'asc' or 'desc'"
+    ),
     page: int = Query(1, ge=1, description="Page number (starts from 1)"),
     page_size: int = Query(10, ge=1, le=100, description="Number of teams per page"),
     user_id: UUID = Depends(get_current_user_id),
@@ -180,6 +190,9 @@ async def get_contest_teams(
         contest_id (UUID): The unique identifier of the contest.
         search (str | None): Optional string to search team names.
         team_status (TeamStatus | None): Optional filter for team status.
+        flagged (bool | None): Optional filter for whether the team has flagged progress.
+        sort_by (str | None): Optional field to sort by ('score').
+        sort_order (str): Sort order applied when sort_by is set ('asc' or 'desc').
         page (int): Page number (starts from 1).
         page_size (int): Number of teams per page.
         user_id (UUID): Authenticated user ID.
@@ -190,7 +203,16 @@ async def get_contest_teams(
     """
     skip = (page - 1) * page_size
     team_list = await service.get_contest_teams(
-        contest_id, user_id, search, team_status, approval_status, skip, page_size
+        contest_id,
+        user_id,
+        search,
+        team_status,
+        approval_status,
+        skip,
+        page_size,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        flagged=flagged,
     )
 
     pagination = get_pagination(total=team_list.total, page=page, page_size=page_size)

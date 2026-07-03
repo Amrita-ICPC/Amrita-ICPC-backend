@@ -54,3 +54,4 @@ class TeamFilters:
     search_term: str | None = None
     status: list[TeamStatus] | None = None
     approval_status: TeamApprovalStatus | None = None
+    flagged: bool | None = None

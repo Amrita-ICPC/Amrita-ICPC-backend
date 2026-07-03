@@ -49,7 +49,7 @@ from app.schema.question import (
     QuestionResponse,
     QuestionUpdate,
 )
-from app.schema.submission import ContestDashboardResponse
+from app.schema.submission import ContestDashboardResponse, ContestResultsResponse
 from app.service.contest_dashboard_service import ContestDashboardService
 from app.service.contest_event_publish import ContestEventPublisher
 from app.service.contest_question_service import ContestQuestionService
@@ -127,11 +127,13 @@ def get_contest_dashboard_service(
     """Dependency injector for ContestDashboardService."""
     contest_repository = ContestRepository(db)
     submission_repository = ContestSubmissionRepository(db)
+    team_repository = TeamRepository(db)
     guard = ContestOperationGuard(db)
     return ContestDashboardService(
         contest_repository=contest_repository,
         submission_repository=submission_repository,
         guard=guard,
+        team_repository=team_repository,
     )
 
 
@@ -367,6 +369,33 @@ async def get_contest_dashboard(
         request,
         data=result,
         message="Contest dashboard analytics retrieved successfully",
+    )
+
+
+@router.get(
+    "/{contest_id}/results",
+    response_model=APIResponse[ContestResultsResponse],
+    summary="Get contest results summary",
+    dependencies=[can_read("contests")],
+)
+async def get_contest_results(
+    request: Request,
+    contest_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: ContestDashboardService = Depends(get_contest_dashboard_service),
+):
+    """
+    Get the contest results summary: total responses, submission statistics,
+    and flagged response count.
+
+    Only accessible by the contest creator, assigned instructors, or administrators.
+    """
+    result = await service.get_contest_results(contest_id=contest_id, user_id=user_id)
+    logger.info(f"Successfully retrieved results summary for contest: {contest_id}")
+    return create_api_response(
+        request,
+        data=result,
+        message="Contest results summary retrieved successfully",
     )
 
 
