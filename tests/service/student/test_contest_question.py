@@ -380,6 +380,7 @@ async def test_get_contest_questions_max_submission_fallback(
     cq2.max_submission = 3  # should not fallback
 
     mock_repository.get_contest_questions.return_value = [cq1, cq2]
+    mock_repository.get_question_attempt_status.return_value = {}
 
     response = await contest_question_service.get_contest_questions(contest_id, user_id)
 

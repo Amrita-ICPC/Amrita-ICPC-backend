@@ -5,6 +5,7 @@ from app.models.contest import Contest, ContestTeam, ContestTeamProgress
 from app.models.team import Team, TeamUser
 from app.repositories.dto.team import UNSET, CreateTeamData, UpdateTeamData
 from app.schema.team import (
+    ContestStudentResponse,
     ContestTeamAnalytics,
     ContestTeamMemberAnalytics,
     ContestTeamMemberDetail,
@@ -151,6 +152,22 @@ def to_contest_team_member_responses(
             is_leader=(leader_id == ctm.user.id),
         )
         for ctm in contest_team_members
+    ]
+
+
+def to_contest_student_responses(rows: list[Any]) -> list[ContestStudentResponse]:
+    """Map contest-wide student search rows to response schemas."""
+    return [
+        ContestStudentResponse(
+            contest_team_member_id=row.contest_team_member_id,
+            user_id=row.user_id,
+            name=row.name,
+            email=row.email,
+            contest_team_id=row.contest_team_id,
+            team_name=row.team_name,
+            is_leader=bool(row.is_leader),
+        )
+        for row in rows
     ]
 
 

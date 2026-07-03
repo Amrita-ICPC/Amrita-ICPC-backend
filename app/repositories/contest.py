@@ -217,20 +217,40 @@ class ContestRepository:
         )
         return int(result.scalar() or 0)
 
-    async def get_submissions_in_contest(self, contest_id: UUID) -> list[Submission]:
-        """Retrieve all submissions linked to a contest.
+    async def get_submissions_in_contest(
+        self,
+        contest_id: UUID,
+        team_ids: list[UUID] | None = None,
+        question_ids: list[UUID] | None = None,
+        student_ids: list[UUID] | None = None,
+    ) -> list[Submission]:
+        """Retrieve submissions linked to a contest, optionally narrowed to
+        specific teams, questions, and/or students (contest team members).
 
         Args:
             contest_id: Contest identifier.
+            team_ids: Optional list of contest team ids to restrict to.
+            question_ids: Optional list of question ids to restrict to.
+            student_ids: Optional list of contest team member ids to restrict to.
 
         Returns:
-            list[Submission]: List of submissions for the contest.
+            list[Submission]: List of submissions matching the filters.
         """
-        result = await self.db.execute(
+        query = (
             select(Submission)
             .join(ContestSubmission, ContestSubmission.submission_id == Submission.id)
             .where(ContestSubmission.contest_id == contest_id)
         )
+        if team_ids:
+            query = query.where(ContestSubmission.contest_team_id.in_(team_ids))
+        if question_ids:
+            query = query.where(Submission.question_id.in_(question_ids))
+        if student_ids:
+            query = query.where(
+                ContestSubmission.contest_team_member_id.in_(student_ids)
+            )
+
+        result = await self.db.execute(query)
         return list(result.scalars().all())
 
     # TODO: Update the filters with factory and builder design pattern

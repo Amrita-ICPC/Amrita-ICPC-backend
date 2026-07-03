@@ -446,3 +446,14 @@ class EvaluationStatus(str, enum.Enum):
     PENDING = "PENDING"
     RUNNING = "RUNNING"
     COMPLETED = "COMPLETED"
+
+
+class EvaluationScope(str, enum.Enum):
+    """
+    Enumeration of what a contest evaluation run should cover.
+    """
+
+    ALL = "ALL"
+    TEAMS = "TEAMS"
+    QUESTIONS = "QUESTIONS"
+    STUDENTS = "STUDENTS"

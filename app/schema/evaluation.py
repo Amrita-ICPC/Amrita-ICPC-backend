@@ -1,11 +1,47 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.question import Submission
 from app.schema.question import QuestionTestCaseResponse
-from app.utils.enums import EvaluationStatus
+from app.utils.enums import EvaluationScope, EvaluationStatus
+
+
+class EvaluationTriggerRequest(BaseModel):
+    """Request body for triggering a contest evaluation.
+
+    ``scope`` selects what gets (re-)evaluated:
+    - ALL: every submission in the contest.
+    - TEAMS: only submissions from the given ``team_ids``.
+    - QUESTIONS: only submissions for the given ``question_ids``.
+    - STUDENTS: only submissions from the given ``student_ids`` (contest team member ids).
+    """
+
+    scope: EvaluationScope = Field(
+        default=EvaluationScope.ALL,
+        description="What to evaluate: ALL/TEAMS/QUESTIONS/STUDENTS",
+    )
+    team_ids: list[UUID] | None = Field(
+        default=None, description="Contest team ids to evaluate (required for TEAMS)"
+    )
+    question_ids: list[UUID] | None = Field(
+        default=None, description="Question ids to evaluate (required for QUESTIONS)"
+    )
+    student_ids: list[UUID] | None = Field(
+        default=None,
+        description="Contest team member ids to evaluate (required for STUDENTS)",
+    )
+
+    @model_validator(mode="after")
+    def validate_scope_selection(self):
+        if self.scope == EvaluationScope.TEAMS and not self.team_ids:
+            raise ValueError("team_ids is required when scope is TEAMS")
+        if self.scope == EvaluationScope.QUESTIONS and not self.question_ids:
+            raise ValueError("question_ids is required when scope is QUESTIONS")
+        if self.scope == EvaluationScope.STUDENTS and not self.student_ids:
+            raise ValueError("student_ids is required when scope is STUDENTS")
+        return self
 
 
 class EvaluationResponse(BaseModel):
@@ -16,6 +52,19 @@ class EvaluationResponse(BaseModel):
     is_evaluated: bool = Field(..., description="Whether the evaluation is completed")
     total_submissions: int = Field(..., description="Total submissions to process")
     processed_submissions: int = Field(..., description="Processed submissions count")
+    scope: EvaluationScope = Field(
+        default=EvaluationScope.ALL, description="What this run evaluated"
+    )
+    team_ids: list[UUID] | None = Field(
+        default=None, description="Contest team ids evaluated, when scope is TEAMS"
+    )
+    question_ids: list[UUID] | None = Field(
+        default=None, description="Question ids evaluated, when scope is QUESTIONS"
+    )
+    student_ids: list[UUID] | None = Field(
+        default=None,
+        description="Contest team member ids evaluated, when scope is STUDENTS",
+    )
     created_at: datetime = Field(..., description="Creation time (UTC)")
     created_by: UUID = Field(..., description="Creator user ID")
 
@@ -33,6 +82,19 @@ class EvaluationStatusResponse(BaseModel):
     total_submissions: int = Field(..., description="Total submissions to evaluate")
     processed_submissions: int = Field(
         ..., description="Number of evaluated submissions"
+    )
+    scope: EvaluationScope = Field(
+        default=EvaluationScope.ALL, description="What this run evaluated"
+    )
+    team_ids: list[UUID] | None = Field(
+        default=None, description="Contest team ids evaluated, when scope is TEAMS"
+    )
+    question_ids: list[UUID] | None = Field(
+        default=None, description="Question ids evaluated, when scope is QUESTIONS"
+    )
+    student_ids: list[UUID] | None = Field(
+        default=None,
+        description="Contest team member ids evaluated, when scope is STUDENTS",
     )
 
     model_config = ConfigDict(from_attributes=True)
@@ -106,6 +168,19 @@ class EvaluationRecord(BaseModel):
     contest_id: UUID = Field(..., description="Contest being evaluated")
     total_submissions: int = Field(
         ..., description="Total submissions this run will process"
+    )
+    scope: EvaluationScope = Field(
+        default=EvaluationScope.ALL, description="What this run evaluates"
+    )
+    team_ids: list[UUID] | None = Field(
+        default=None, description="Contest team ids evaluated, when scope is TEAMS"
+    )
+    question_ids: list[UUID] | None = Field(
+        default=None, description="Question ids evaluated, when scope is QUESTIONS"
+    )
+    student_ids: list[UUID] | None = Field(
+        default=None,
+        description="Contest team member ids evaluated, when scope is STUDENTS",
     )
     created_at: datetime = Field(..., description="When this run was created (UTC)")
     created_by: UUID = Field(..., description="User who triggered this run")

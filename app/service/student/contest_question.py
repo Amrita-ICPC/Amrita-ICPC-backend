@@ -174,12 +174,17 @@ class StudentContestQuestionService:
         # Retrieve contest questions from repository
         questions = await self.repository.get_contest_questions(contest_id)
 
-        # Map to response schema (attempted and solved flags default to False for now)
+        # Questions with at least one submission from this team (attempted), and
+        # whether any of those submissions passed every testcase (solved).
+        solved_by_question = await self.repository.get_question_attempt_status(
+            contest_id, session_data.contest_team_id
+        )
+
         question_responses = [
             StudentContestQuestionResponse(
                 id=q.question_id,
-                attempted=False,
-                solved=False,
+                attempted=q.question_id in solved_by_question,
+                solved=solved_by_question.get(q.question_id, False),
                 max_submission=q.max_submission
                 if q.max_submission is not None
                 else session_data.max_submission_per_question,

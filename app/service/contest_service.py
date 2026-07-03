@@ -60,6 +60,7 @@ from app.utils.enums import (
     ContestRunStatus,
     ContestStatus,
     ContestTeamMemberStatus,
+    EvaluationScope,
     UserRole,
 )
 from app.validators.contest import ContestValidator
@@ -938,18 +939,30 @@ class ContestService:
             yield msg
 
     @cache_delete(
-        key_builder=lambda self, contest_id, user_id: [
+        key_builder=lambda self, contest_id, user_id, scope=EvaluationScope.ALL, team_ids=None, question_ids=None, student_ids=None: [
             f"contest:{contest_id}:leaderboard",
         ],
     )
     async def evaluate_contest(
-        self, contest_id: UUID, user_id: UUID
+        self,
+        contest_id: UUID,
+        user_id: UUID,
+        scope: EvaluationScope = EvaluationScope.ALL,
+        team_ids: list[UUID] | None = None,
+        question_ids: list[UUID] | None = None,
+        student_ids: list[UUID] | None = None,
     ) -> EvaluationResponse:
         """Trigger evaluation for a contest.
 
         Args:
             contest_id: UUID of the contest to evaluate.
             user_id: UUID of the user triggering the evaluation.
+            scope: What to evaluate - ALL submissions, only the given TEAMS'
+                submissions, only the given QUESTIONS' submissions, or only
+                the given STUDENTS' (contest team members') submissions.
+            team_ids: Contest team ids to restrict to when scope is TEAMS.
+            question_ids: Question ids to restrict to when scope is QUESTIONS.
+            student_ids: Contest team member ids to restrict to when scope is STUDENTS.
 
         Returns:
             EvaluationResponse: Details of the created evaluation record.
@@ -967,7 +980,21 @@ class ContestService:
 
         await self.guard.check_manage_contest(user_id=user_id, contest=contest)
 
-        submissions = await self.repository.get_submissions_in_contest(contest_id)
+        scoped_team_ids = team_ids if scope == EvaluationScope.TEAMS else None
+        scoped_question_ids = (
+            question_ids if scope == EvaluationScope.QUESTIONS else None
+        )
+        scoped_student_ids = student_ids if scope == EvaluationScope.STUDENTS else None
+        submission_filter_kwargs: dict[str, list[UUID]] = {}
+        if scoped_team_ids is not None:
+            submission_filter_kwargs["team_ids"] = scoped_team_ids
+        if scoped_question_ids is not None:
+            submission_filter_kwargs["question_ids"] = scoped_question_ids
+        if scoped_student_ids is not None:
+            submission_filter_kwargs["student_ids"] = scoped_student_ids
+        submissions = await self.repository.get_submissions_in_contest(
+            contest_id, **submission_filter_kwargs
+        )
         total_subs = len(submissions)
 
         evaluation_id = uuid4()
@@ -981,6 +1008,10 @@ class ContestService:
                 id=evaluation_id,
                 contest_id=contest_id,
                 total_submissions=total_subs,
+                scope=scope,
+                team_ids=scoped_team_ids,
+                question_ids=scoped_question_ids,
+                student_ids=scoped_student_ids,
                 created_at=created_at,
                 created_by=user_id,
             )
@@ -1010,6 +1041,10 @@ class ContestService:
             is_evaluated=total_subs == 0,
             total_submissions=total_subs,
             processed_submissions=0,
+            scope=scope,
+            team_ids=scoped_team_ids,
+            question_ids=scoped_question_ids,
+            student_ids=scoped_student_ids,
             created_at=created_at,
             created_by=user_id,
         )
@@ -1052,6 +1087,10 @@ class ContestService:
             status=derive_status(processed, record.total_submissions),
             total_submissions=record.total_submissions,
             processed_submissions=processed,
+            scope=record.scope,
+            team_ids=record.team_ids,
+            question_ids=record.question_ids,
+            student_ids=record.student_ids,
         )
 
     @cache_delete(
