@@ -244,6 +244,35 @@ class TeamMemberResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ContestStudentResponse(BaseModel):
+    """
+    Schema for a contest-wide student search result.
+
+    Represents one contest team member, flattened across all teams in a
+    contest. ``contest_team_member_id`` is the id used to scope per-student
+    contest evaluation (``EvaluationScope.STUDENTS``).
+
+    Attributes:
+        contest_team_member_id: Unique identifier for the contest team member.
+        user_id: Unique identifier for the underlying user.
+        name: Full name of the student.
+        email: Email address of the student.
+        contest_team_id: Unique identifier of the student's team in this contest.
+        team_name: Name of the student's team.
+        is_leader: Whether this student is the leader of their team.
+    """
+
+    contest_team_member_id: UUID
+    user_id: UUID
+    name: str
+    email: str
+    contest_team_id: UUID
+    team_name: str
+    is_leader: bool = False
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class ContestTeamDetailResponse(TeamResponse):
     """
     Detailed schema for team response within a contest context.

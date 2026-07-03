@@ -17,6 +17,7 @@ from app.repositories.student.contest_team import ContestTeamRepository
 from app.repositories.team import TeamRepository
 from app.schema.base import APIResponse
 from app.schema.team import (
+    ContestStudentResponse,
     ContestTeamAnalytics,
     ContestTeamMemberDetail,
     ContestTeamMemberQuestionAnalytics,
@@ -221,6 +222,55 @@ async def get_contest_teams(
         request,
         data=team_list,
         message="Teams fetched successfully",
+        pagination=pagination,
+    )
+
+
+@router.get(
+    "/contests/{contest_id}/students",
+    response_model=APIResponse[list[ContestStudentResponse]],
+    summary="Search students across a contest",
+    dependencies=[can_read("contests")],
+)
+async def get_contest_students(
+    request: Request,
+    contest_id: UUID,
+    search: str | None = Query(None, description="Search by student name or email"),
+    page: int = Query(1, ge=1, description="Page number (starts from 1)"),
+    page_size: int = Query(10, ge=1, le=100, description="Number of students per page"),
+    user_id: UUID = Depends(get_current_user_id),
+    service: TeamService = Depends(get_team_service),
+):
+    """
+    Get a contest-wide, searchable list of students.
+
+    Flattens accepted team members across every team in the contest into a
+    single list, keyed by contest_team_member_id — the id used for
+    scope=STUDENTS when triggering contest evaluation.
+
+    Args:
+        request (Request): Framework context.
+        contest_id (UUID): The unique identifier of the contest.
+        search (str | None): Optional string to search student names or emails.
+        page (int): Page number (starts from 1).
+        page_size (int): Number of students per page.
+        user_id (UUID): Authenticated user ID.
+        service (TeamService): Injected domain service.
+
+    Returns:
+        APIResponse: Standardized response with list of students and pagination state.
+    """
+    skip = (page - 1) * page_size
+    total, students = await service.get_contest_students(
+        contest_id, user_id, search, skip, page_size
+    )
+
+    pagination = get_pagination(total=total, page=page, page_size=page_size)
+
+    return create_api_response(
+        request,
+        data=students,
+        message="Students fetched successfully",
         pagination=pagination,
     )
 

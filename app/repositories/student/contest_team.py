@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import Select, and_, asc, case, desc, exists, func, select
+from sqlalchemy import Select, and_, asc, case, desc, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -614,3 +614,72 @@ class ContestTeamRepository:
         members = result.scalars().all()
 
         return PaginatedResult(total=total, items=list(members))
+
+    async def get_contest_students_paginated(
+        self,
+        contest_id: UUID,
+        pagination: PaginationParams,
+        search_term: str | None = None,
+        status: list[ContestTeamMemberStatus] | None = None,
+    ) -> PaginatedResult:
+        """Retrieve a paginated, contest-wide, searchable list of students.
+
+        Flattens accepted members across every team in the contest into a
+        single list keyed by ``contest_team_member_id`` — the id used to scope
+        per-student contest evaluation (``EvaluationScope.STUDENTS``).
+
+        Args:
+            contest_id: The ID of the contest.
+            pagination: PaginationParams containing skip and limit values.
+            search_term: Optional search term for student name or email.
+            status: Optional list of member statuses to filter by (default: ACCEPTED).
+
+        Returns:
+            PaginatedResult: Total count and list of raw rows with
+            contest_team_member_id, user_id, name, email, contest_team_id,
+            team_name, and is_leader.
+        """
+        status_filter = status or [ContestTeamMemberStatus.ACCEPTED]
+
+        conditions = [
+            ContestTeamMember.contest_id == contest_id,
+            ContestTeamMember.status.in_(status_filter),
+        ]
+        if search_term:
+            conditions.append(
+                or_(
+                    User.name.ilike(f"%{search_term}%"),
+                    User.email.ilike(f"%{search_term}%"),
+                )
+            )
+
+        count_query = (
+            select(func.count(ContestTeamMember.id))
+            .select_from(ContestTeamMember)
+            .join(User, ContestTeamMember.user_id == User.id)
+            .where(*conditions)
+        )
+        total = int((await self.db.execute(count_query)).scalar_one())
+
+        query = (
+            select(
+                ContestTeamMember.id.label("contest_team_member_id"),
+                User.id.label("user_id"),
+                User.name.label("name"),
+                User.email.label("email"),
+                ContestTeam.id.label("contest_team_id"),
+                ContestTeam.name.label("team_name"),
+                (ContestTeam.leader_id == User.id).label("is_leader"),
+            )
+            .select_from(ContestTeamMember)
+            .join(User, ContestTeamMember.user_id == User.id)
+            .join(ContestTeam, ContestTeamMember.contest_team_id == ContestTeam.id)
+            .where(*conditions)
+            .order_by(User.name.asc(), ContestTeamMember.id.desc())
+            .offset(pagination.skip)
+            .limit(pagination.limit)
+        )
+        result = await self.db.execute(query)
+        rows = result.all()
+
+        return PaginatedResult(total=total, items=list(rows))

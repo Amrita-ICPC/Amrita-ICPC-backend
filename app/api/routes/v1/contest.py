@@ -42,7 +42,11 @@ from app.schema.contest import (
     RemoveContestQuestionRequest,
     ReorderContestQuestionsRequest,
 )
-from app.schema.evaluation import EvaluationResponse, EvaluationStatusResponse
+from app.schema.evaluation import (
+    EvaluationResponse,
+    EvaluationStatusResponse,
+    EvaluationTriggerRequest,
+)
 from app.schema.leaderboard import LeaderboardResponse
 from app.schema.question import (
     ContestQuestionsListResponse,
@@ -1251,21 +1255,36 @@ async def cancel_contest(
 async def evaluate_contest(
     request: Request,
     contest_id: UUID,
+    payload: EvaluationTriggerRequest = EvaluationTriggerRequest(),
     user_id: UUID = Depends(get_current_user_id),
     service: ContestService = Depends(get_contest_service),
 ) -> APIResponse[EvaluationResponse]:
-    """Trigger re-evaluation of all submissions in a contest.
+    """Trigger re-evaluation of submissions in a contest.
+
+    By default (scope=ALL) every submission in the contest is re-evaluated.
+    Pass scope=TEAMS with team_ids to only re-evaluate specific teams'
+    submissions, scope=QUESTIONS with question_ids to only re-evaluate
+    specific questions' submissions, or scope=STUDENTS with student_ids
+    (contest team member ids) to only re-evaluate specific students' submissions.
 
     Args:
         request (Request): Framework context.
         contest_id (UUID): The unique identifier of the contest.
+        payload (EvaluationTriggerRequest): Evaluation scope selection.
         user_id (UUID): Authenticated user ID.
         service (ContestService): Injected domain service.
 
     Returns:
         APIResponse[EvaluationResponse]: The created evaluation process state.
     """
-    evaluation = await service.evaluate_contest(contest_id, user_id)
+    evaluation = await service.evaluate_contest(
+        contest_id,
+        user_id,
+        scope=payload.scope,
+        team_ids=payload.team_ids,
+        question_ids=payload.question_ids,
+        student_ids=payload.student_ids,
+    )
     logger.info(f"Contest evaluation triggered for {contest_id} (actor=REDACTED)")
     return create_api_response(
         request,

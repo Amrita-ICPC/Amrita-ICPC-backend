@@ -5,6 +5,7 @@ from app.core.guards.team import TeamOperationGuard
 from app.exceptions.contest import ContestTeamProgressNotFoundError
 from app.exceptions.team import ApprovalNotAllowedError
 from app.mappers.team import (
+    to_contest_student_responses,
     to_contest_team_analytics,
     to_contest_team_member_detail,
     to_contest_team_member_question_analytics,
@@ -18,6 +19,7 @@ from app.repositories.dto import PaginationParams, TeamFilters
 from app.repositories.student.contest_team import ContestTeamRepository
 from app.repositories.team import TeamRepository
 from app.schema.team import (
+    ContestStudentResponse,
     ContestTeamAnalytics,
     ContestTeamMemberDetail,
     ContestTeamMemberQuestionAnalytics,
@@ -368,6 +370,51 @@ class TeamService:
         return to_team_list_response(
             result.total, result.items, status_counts, team_members_map
         )
+
+    async def get_contest_students(
+        self,
+        contest_id: UUID,
+        user_id: UUID,
+        search_term: str | None = None,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> tuple[int, list[ContestStudentResponse]]:
+        """
+        Retrieve a contest-wide, searchable list of students.
+
+        Flattens accepted team members across every team in the contest into a
+        single searchable list, keyed by contest_team_member_id — the id used
+        to scope per-student contest evaluation (EvaluationScope.STUDENTS).
+
+        Args:
+            contest_id: UUID of the contest to search students in
+            user_id: UUID of the user requesting students (for permission validation)
+            search_term: Optional text to search in student names or emails
+            skip: Number of students to skip for pagination (default: 0)
+            limit: Maximum students to return, capped at 100 (default: 100)
+
+        Returns:
+            Tuple of (total count, list of ContestStudentResponse)
+
+        Raises:
+            ContestNotFoundError: If the contest does not exist
+            PermissionDeniedError: If user lacks read permission on contest
+        """
+        contest = await self.contest_repository.get_contest_or_raise(contest_id)
+        await self.guard.check_read_team(user_id=user_id, contest=contest)
+
+        pagination = PaginationParams(skip=skip, limit=limit)
+        paginated_result = (
+            await self.contest_team_repository.get_contest_students_paginated(
+                contest_id=contest_id,
+                pagination=pagination,
+                search_term=search_term,
+            )
+        )
+
+        students = to_contest_student_responses(paginated_result.items)
+
+        return paginated_result.total, students
 
     @cache_get(
         key_builder=lambda self, contest_id, team_id, user_id: (
