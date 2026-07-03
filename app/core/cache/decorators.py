@@ -159,6 +159,38 @@ def cache_get(
     return decorator
 
 
+async def delete_cache_keys(keys_or_pattern: str | list[str]) -> None:
+    """
+    Delete cache keys matching a specific key, list of keys, or wildcard pattern.
+    """
+    if not config.CACHE_ENABLED or not redis.redis_client:
+        return
+
+    keys = [keys_or_pattern] if isinstance(keys_or_pattern, str) else keys_or_pattern
+
+    for key_pattern in keys:
+        try:
+            if "*" in key_pattern:
+                cursor = 0
+                while True:
+                    cursor, matches = await redis.redis_client.scan(
+                        cursor, match=key_pattern, count=100
+                    )
+                    if matches:
+                        await redis.redis_client.delete(*matches)
+                        logger.info(
+                            f"Cache invalidated for pattern: {key_pattern} ({len(matches)} keys)"
+                        )
+                    if cursor == 0:
+                        break
+            else:
+                await redis.redis_client.delete(key_pattern)
+                logger.info(f"Cache invalidated for key: {key_pattern}")
+
+        except Exception as e:
+            logger.error(f"Redis delete failed for key/pattern {key_pattern}: {e}")
+
+
 def cache_delete(
     *,
     key_builder: Callable[P, str | list[str]],
@@ -172,38 +204,8 @@ def cache_delete(
         @wraps(func)
         async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             result = await func(*args, **kwargs)
-            if config.CACHE_ENABLED and redis.redis_client:
-                keys_or_key = key_builder(*args, **kwargs)
-                keys = [keys_or_key] if isinstance(keys_or_key, str) else keys_or_key
-
-                for key_pattern in keys:
-                    try:
-                        if "*" in key_pattern:
-                            # Use scan_iter for wildcard matching
-                            cursor = 0
-                            while True:
-                                cursor, matches = await redis.redis_client.scan(
-                                    cursor, match=key_pattern, count=100
-                                )
-                                if matches:
-                                    await redis.redis_client.delete(*matches)
-                                    logger.info(
-                                        f"Cache invalidated for pattern: {key_pattern} ({len(matches)} keys)"
-                                    )
-                                if cursor == 0:
-                                    break
-                        else:
-                            await redis.redis_client.delete(key_pattern)
-                            logger.info(f"Cache invalidated for key: {key_pattern}")
-
-                    except Exception as e:
-                        logger.error(
-                            f"Redis delete failed for key/pattern {key_pattern}: {e}"
-                        )
-            else:
-                logger.debug(
-                    "Cache disabled or redis unavailable, skipping invalidation"
-                )
+            keys_or_key = key_builder(*args, **kwargs)
+            await delete_cache_keys(keys_or_key)
             return result
 
         return wrapper
