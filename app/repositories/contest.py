@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import and_, asc, case, delete, desc, func, or_, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
@@ -1177,6 +1178,12 @@ class ContestRepository:
         """
         Create missing progress rows for contest team members before score updates.
 
+        Uses a single INSERT ... ON CONFLICT DO NOTHING so concurrent calls (e.g.
+        two overlapping score-recompute requests) can't both observe a row as
+        "missing" and race to insert it, which would otherwise raise an
+        IntegrityError on the unique (contest_id, contest_team_id,
+        contest_team_member_id) index.
+
         Args:
             contest_id: Contest ID
             member_team_ids: Mapping from contest_team_member_id to contest_team_id
@@ -1184,31 +1191,117 @@ class ContestRepository:
         if not member_team_ids:
             return
 
-        existing_result = await self.db.execute(
-            select(ContestTeamProgress.contest_team_member_id).where(
-                and_(
-                    ContestTeamProgress.contest_id == contest_id,
-                    ContestTeamProgress.contest_team_member_id.in_(
-                        member_team_ids.keys()
-                    ),
-                )
+        stmt = (
+            pg_insert(ContestTeamProgress)
+            .values(
+                [
+                    {
+                        "contest_id": contest_id,
+                        "contest_team_id": team_id,
+                        "contest_team_member_id": member_id,
+                        "score": 0,
+                    }
+                    for member_id, team_id in member_team_ids.items()
+                ]
+            )
+            .on_conflict_do_nothing(
+                index_elements=[
+                    "contest_id",
+                    "contest_team_id",
+                    "contest_team_member_id",
+                ]
             )
         )
-        existing_member_ids = set(existing_result.scalars().all())
-
-        for member_id, team_id in member_team_ids.items():
-            if member_id in existing_member_ids:
-                continue
-            self.db.add(
-                ContestTeamProgress(
-                    contest_id=contest_id,
-                    contest_team_id=team_id,
-                    contest_team_member_id=member_id,
-                    score=0,
-                )
-            )
-
+        await self.db.execute(stmt)
         await self.db.flush()
+
+    async def recompute_member_score(
+        self,
+        contest_id: UUID,
+        contest_team_id: UUID,
+        contest_team_member_id: UUID,
+    ) -> None:
+        """
+        Recompute and persist one contest team member's live score.
+
+        Mirrors the scoring rule used by the contest-wide recompute
+        (``update_team_member_progress_scores``): for each question, take the
+        member's best score among their evaluated submissions, then sum those
+        best-per-question scores. Unlike the contest-wide path, the aggregate
+        is computed *inside* a single ``UPDATE ... SET score = (SELECT ...)``
+        statement scoped to this one member, instead of a separate read step
+        followed by a write. That means there is no read-compute-write window
+        for two calls to race in: Postgres takes the row lock on this
+        member's ``contest_team_progress`` row when the UPDATE starts, so a
+        second concurrent call for the same member simply waits for the first
+        to commit and then computes its aggregate against the now-current
+        data - it can never overwrite a fresher result with a stale one.
+
+        Intended to be called right after a submission is scored, so the
+        leaderboard reflects every evaluation live instead of requiring a
+        manual contest-wide recompute.
+
+        Args:
+            contest_id: Contest ID.
+            contest_team_id: ContestTeam ID (not the underlying Team ID).
+            contest_team_member_id: Contest team member ID who submitted.
+        """
+        # Guarantee the row exists (e.g. this member's first evaluated
+        # submission) before updating it; upsert-safe under concurrency.
+        await self.ensure_team_member_progress_rows(
+            contest_id, {contest_team_member_id: contest_team_id}
+        )
+
+        best_per_question = (
+            select(
+                Submission.question_id,
+                func.max(Submission.score).label("best_score"),
+            )
+            .select_from(ContestSubmission)
+            .join(Submission, Submission.id == ContestSubmission.submission_id)
+            .where(
+                ContestSubmission.contest_id == contest_id,
+                ContestSubmission.contest_team_member_id == contest_team_member_id,
+                Submission.is_evaluated.is_(True),
+            )
+            .group_by(Submission.question_id)
+            .subquery()
+        )
+        total_score = (
+            select(func.coalesce(func.sum(best_per_question.c.best_score), 0))
+            .select_from(best_per_question)
+            .scalar_subquery()
+        )
+
+        await self.db.execute(
+            update(ContestTeamProgress)
+            .where(
+                ContestTeamProgress.contest_id == contest_id,
+                ContestTeamProgress.contest_team_member_id == contest_team_member_id,
+            )
+            .values(score=total_score)
+        )
+        await self.db.flush()
+
+    async def acquire_contest_score_lock(self, contest_id: UUID) -> None:
+        """
+        Serialize concurrent score recomputations for a single contest.
+
+        Takes a Postgres transaction-scoped advisory lock keyed by the contest
+        id. If a recompute for the same contest is already in flight (e.g. an
+        admin double-clicking "recompute scores", or a retried request racing
+        the original), this blocks until it finishes instead of letting two
+        full read-compute-write passes interleave and overwrite each other's
+        result with stale data. The lock is released automatically when the
+        current transaction commits or rolls back. Different contests use
+        different lock keys and never block each other.
+
+        Args:
+            contest_id: Contest ID to serialize recomputation for.
+        """
+        await self.db.execute(
+            select(func.pg_advisory_xact_lock(func.hashtext(str(contest_id))))
+        )
 
     async def add_questions_to_contest(
         self,

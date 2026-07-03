@@ -940,7 +940,7 @@ class ContestService:
 
     @cache_delete(
         key_builder=lambda self, contest_id, user_id, scope=EvaluationScope.ALL, team_ids=None, question_ids=None, student_ids=None: [
-            f"contest:{contest_id}:leaderboard",
+            f"contest:{contest_id}:leaderboard:*",
         ],
     )
     async def evaluate_contest(
@@ -1095,7 +1095,7 @@ class ContestService:
 
     @cache_delete(
         key_builder=lambda self, contest_id, user_id: [
-            f"contest:{contest_id}:leaderboard",
+            f"contest:{contest_id}:leaderboard*",
         ],
     )
     async def compute_team_scores(self, contest_id: UUID, user_id: UUID) -> None:
@@ -1123,6 +1123,12 @@ class ContestService:
             raise ContestNotFoundError(str(contest_id))
 
         await self.guard.check_manage_contest(user_id=user_id, contest=contest)
+
+        # Serialize concurrent recomputes for this contest: without this, two
+        # overlapping calls could each read a different submission snapshot and
+        # then race to write, letting the one that read a stale (smaller) set
+        # of evaluated submissions overwrite a fresher score with a lower one.
+        await self.repository.acquire_contest_score_lock(contest_id)
 
         (
             teams,

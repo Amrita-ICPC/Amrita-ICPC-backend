@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.cache.decorators import delete_cache_keys
 from app.core.clients.database import SessionLocal
 from app.core.config import config
 from app.core.logger import logger
@@ -14,6 +15,7 @@ from app.exceptions.judge0 import (
 )
 from app.models.contest import ContestSubmission, ContestTeam
 from app.models.question import Submission, SubmissionTestCase
+from app.repositories.contest import ContestRepository
 from app.repositories.dto.evaluation import EvaluationResult
 from app.repositories.dto.judge0 import Judge0ExecutionRequestDTO
 from app.repositories.question import QuestionRepository
@@ -76,6 +78,7 @@ class EvaluationService:
         stmt = (
             select(
                 ContestSubmission.contest_id,
+                ContestSubmission.contest_team_id,
                 ContestSubmission.contest_team_member_id,
                 ContestTeam.team_id,
             )
@@ -88,6 +91,7 @@ class EvaluationService:
             return ContestSubmissionContext(
                 contest_id=row.contest_id,
                 team_id=row.team_id,
+                contest_team_id=row.contest_team_id,
                 contest_team_member_id=row.contest_team_member_id,
             )
         return None
@@ -295,6 +299,61 @@ class EvaluationService:
         await repository.complete_submission(submission, eval_result)
         await db.commit()
         return submission
+
+    async def _sync_team_progress_score(
+        self,
+        db: AsyncSession,
+        contest_sub_ctx: ContestSubmissionContext,
+    ) -> None:
+        """Refresh one contest team member's live leaderboard score.
+
+        Called right after a submission's score/evaluated state is committed
+        by ``save_result``, so ``ContestTeamProgress.score`` stays live
+        without an admin needing to trigger the contest-wide "compute
+        scores" endpoint. Scoped to the single member who submitted, via
+        ``ContestRepository.recompute_member_score`` - see that method for
+        why this is safe under concurrent submissions (it's one atomic
+        UPDATE, naturally serialized by Postgres's row lock).
+
+        Best-effort: the submission itself is already durably finalized by
+        the time this runs, so a failure here (e.g. a transient DB error)
+        must not be allowed to unwind or reclassify that already-committed
+        result. Errors are logged and swallowed; the next evaluation for
+        this member (or a manual recompute) will catch the score up.
+
+        Also busts the cached leaderboard for this contest so the DB write
+        is actually visible to instructors/admins right away. Without this,
+        ``GET /contests/{id}/leaderboard`` keeps serving its cached response
+        (up to 300s old) even though the underlying row already changed -
+        which is what made bulk-evaluation score updates look like they
+        "weren't happening" while a run was still in progress.
+
+        Args:
+            db: Async session to run the sync on (reused from PERSIST).
+            contest_sub_ctx: Context identifying the contest/team/member.
+        """
+        if (
+            contest_sub_ctx.contest_team_id is None
+            or contest_sub_ctx.contest_team_member_id is None
+        ):
+            return
+        try:
+            await ContestRepository(db).recompute_member_score(
+                contest_sub_ctx.contest_id,
+                contest_sub_ctx.contest_team_id,
+                contest_sub_ctx.contest_team_member_id,
+            )
+            await db.commit()
+            await delete_cache_keys(
+                f"contest:{contest_sub_ctx.contest_id}:leaderboard*"
+            )
+        except Exception as e:
+            logger.error(
+                f"Failed to sync contest team progress score "
+                f"(contest={contest_sub_ctx.contest_id}, "
+                f"member={contest_sub_ctx.contest_team_member_id}): {e}"
+            )
+            await db.rollback()
 
     async def _publish_student_event(
         self,
@@ -725,6 +784,9 @@ class EvaluationService:
                 await self.save_result(
                     db, submission_id, eval_result, data.testcases, max_score
                 )
+
+                if contest_sub_ctx is not None:
+                    await self._sync_team_progress_score(db, contest_sub_ctx)
 
             status_str = (
                 eval_result.status.value if eval_result.status else "SYSTEM_ERROR"

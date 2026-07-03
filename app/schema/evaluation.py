@@ -105,6 +105,7 @@ class ContestSubmissionContext(BaseModel):
 
     contest_id: UUID
     team_id: UUID | None = None
+    contest_team_id: UUID | None = None
     contest_team_member_id: UUID | None = None
 
 
