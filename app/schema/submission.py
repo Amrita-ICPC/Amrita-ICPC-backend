@@ -214,6 +214,22 @@ class SubmissionTestCaseListResponse(BaseModel):
     total: int = 0
 
 
+class ContestResultsResponse(BaseModel):
+    """Summary schema for the admin/instructor contest results page."""
+
+    total_responses: int = Field(
+        ..., description="Total number of submissions (responses) in the contest"
+    )
+    submission_statistics: ContestAnalyticsSchema = Field(
+        ..., description="Verdict breakdown of submissions in the contest"
+    )
+    flagged_responses: int = Field(
+        ..., description="Number of flagged team/member progress records"
+    )
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class ContestDashboardResponse(BaseModel):
     """Comprehensive schema for the contest submission and analytics dashboard."""
 

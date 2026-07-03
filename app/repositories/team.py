@@ -308,6 +308,27 @@ class TeamRepository:
         )
         return int(result.scalar() or 0)
 
+    async def count_flagged_progress_in_contest(self, contest_id: UUID) -> int:
+        """Count flagged team/member progress records in a contest.
+
+        A progress record is flagged when `flagged_at` is set.
+
+        Args:
+            contest_id: Contest identifier.
+
+        Returns:
+            Total number of flagged progress records for the contest.
+        """
+        result = await self.db.execute(
+            select(func.count())
+            .select_from(ContestTeamProgress)
+            .where(
+                ContestTeamProgress.contest_id == contest_id,
+                ContestTeamProgress.flagged_at.is_not(None),
+            )
+        )
+        return int(result.scalar() or 0)
+
     async def get_team_status_counts(self, contest_id: UUID) -> dict[str, int]:
         """
         Get counts of teams by status and approval status in a contest.
