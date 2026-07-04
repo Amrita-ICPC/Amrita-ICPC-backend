@@ -150,6 +150,16 @@ admin_procedure = Depends(AccessControl(allowed_groups=["admin"]))
 instructor_procedure = Depends(AccessControl(allowed_groups=["instructor"]))
 student_procedure = Depends(AccessControl(allowed_groups=["student"]))
 
+# Combined wrapper for staff-facing endpoints (e.g. the instructor dashboard)
+# that any instructor, manager, or admin may reach. Group-based (not
+# permission-based via can_read/etc.) because the "manager" Keycloak group
+# currently carries no client roles of its own, and because students also
+# hold some of the same resource:read permissions (e.g. "contests:read") --
+# a permission check alone would not exclude them here.
+instructor_manager_admin_procedure = Depends(
+    AccessControl(allowed_groups=["admin", "instructor", "manager"])
+)
+
 
 # Role Primitive
 def has_role(roles: List[str]):

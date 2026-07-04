@@ -270,12 +270,26 @@ class ContestTeamProgress(Base):
 
     __tablename__ = "contest_team_progress"
     __table_args__ = (
+        # LEADER_ONLY contests store one team-level row with
+        # contest_team_member_id = NULL. Postgres unique indexes treat NULLs
+        # as distinct, so the plain (contest_id, contest_team_id,
+        # contest_team_member_id) index below does NOT stop two team-level
+        # rows from being created by a concurrent double-start -- this
+        # partial index closes that gap explicitly.
         Index(
-            "uq_contest_team_progress",
+            "uq_contest_team_progress_team_level",
+            "contest_id",
+            "contest_team_id",
+            unique=True,
+            postgresql_where=text("contest_team_member_id IS NULL"),
+        ),
+        Index(
+            "uq_contest_team_progress_member",
             "contest_id",
             "contest_team_id",
             "contest_team_member_id",
             unique=True,
+            postgresql_where=text("contest_team_member_id IS NOT NULL"),
         ),
     )
 
@@ -291,8 +305,8 @@ class ContestTeamProgress(Base):
         ForeignKey("contest_team.id", ondelete="CASCADE"), nullable=False
     )
 
-    contest_team_member_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("contest_team_member.id", ondelete="CASCADE"), nullable=False
+    contest_team_member_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("contest_team_member.id", ondelete="CASCADE"), nullable=True
     )
 
     score: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

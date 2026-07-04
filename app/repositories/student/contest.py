@@ -124,6 +124,15 @@ class StudentContestRepository:
             else:
                 base_query = base_query.filter(~registered_condition)
 
+        # Results published filter
+        if filters.results_published is not None:
+            if filters.results_published:
+                base_query = base_query.filter(
+                    Contest.results_published_at.is_not(None)
+                )
+            else:
+                base_query = base_query.filter(Contest.results_published_at.is_(None))
+
         # Get total count
         count_query = select(func.count()).select_from(
             base_query.with_only_columns(Contest.id).subquery()

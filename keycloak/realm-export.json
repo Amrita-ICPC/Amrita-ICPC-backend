@@ -797,7 +797,15 @@
           "contests:update",
           "questions:delete",
           "banks:read",
-          "questions:update"
+          "questions:update",
+          "banks:questions:create",
+          "banks:questions:read",
+          "banks:questions:update",
+          "banks:questions:delete",
+          "contests:questions:create",
+          "contests:questions:read",
+          "contests:questions:update",
+          "contests:questions:delete"
         ]
       }
     },

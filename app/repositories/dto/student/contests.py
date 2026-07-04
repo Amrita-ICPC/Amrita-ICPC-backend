@@ -19,6 +19,7 @@ class StudentContestFilters:
     status: ContestStatus | None = None
     run_statuses: list[ContestRunStatus] | None = None
     registered: bool | None = None
+    results_published: bool | None = None
     is_public: bool | None = None
     only_registered: bool = (
         False  # If True, only show contests student is registered in

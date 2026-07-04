@@ -135,3 +135,32 @@ class ContestsPaginatedResultWithStats(PaginatedResult):
     live_count: int = 0
     upcoming_count: int = 0
     completed_count: int = 0
+
+
+@dataclass
+class InstructorDashboardContestRow:
+    """
+    Raw per-contest data for the instructor dashboard.
+
+    One row per contest accessible to the requesting user (see
+    ``ContestRepository._apply_permission_filter``), merged from a handful of
+    grouped aggregate queries rather than a per-contest lookup. Run status is
+    intentionally not included here -- it's derived at read time via
+    ``compute_run_status``, the same utility used everywhere else, so there is
+    a single source of truth for LIVE/UPCOMING/ENDED classification.
+    """
+
+    id: UUID
+    name: str
+    image: str | None
+    start_time: datetime
+    end_time: datetime | None
+    status: ContestStatus
+    contest_mode: ContestMode
+    created_by: UUID | None
+    results_published_at: datetime | None
+    question_count: int = 0
+    registered_teams_count: int = 0
+    pending_team_approvals: int = 0
+    total_submissions: int = 0
+    pending_evaluations: int = 0

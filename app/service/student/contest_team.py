@@ -378,6 +378,12 @@ class ContestTeamService:
             contest_team_id
         )
 
+        # A contest_team_id is only meaningful within its own contest; without
+        # this check a leader could confirm their team using another contest's
+        # min/max team size and approval mode by passing a mismatched contest_id.
+        if contest_team.contest_id != contest_id:
+            raise ContestTeamNotFoundException(str(contest_team_id))
+
         ContestTeamValidator.validate_team_status(contest_team.team_status)
 
         TeamValidator.validate_allowed_student_team_status(contest_team.team_status)
@@ -390,9 +396,13 @@ class ContestTeamService:
         # Status(Confirmed) check the required thisngs before the update
         if contest_team_status == TeamStatus.CONFIRMED:
             contest = await self.contest_repository.get_contest_or_raise(contest_id)
-            # check if team has required number of members
+            # Count only ACCEPTED members: REJECTED/LEFT/REMOVED members aren't
+            # actually on the team, and INVITED members can no longer accept once
+            # the team is CONFIRMED (accepting requires team_status == DRAFT), so
+            # counting them would let a team confirm with invitees who can never
+            # join.
             team_member_count = await self.repository.count_contest_team_members(
-                contest_team_id, None
+                contest_team_id, ContestTeamMemberStatus.ACCEPTED
             )
             if contest.min_team_size <= team_member_count <= contest.max_team_size:
                 contest_team.team_status = contest_team_status

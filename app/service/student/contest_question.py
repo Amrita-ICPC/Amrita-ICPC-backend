@@ -57,6 +57,7 @@ from app.utils.enums import (
     TeamStatus,
 )
 from app.utils.key_builder import build_workspace_key, get_contest_channel_key
+from app.validators.contest import ContestValidator
 from app.validators.contest_team import ContestTeamValidator
 
 
@@ -94,6 +95,12 @@ class StudentContestQuestionService:
             user_id=user_id,
         )
 
+        # A team/member that explicitly finished their session must not be able
+        # to keep submitting/running code just because the raw timer hasn't
+        # expired yet.
+        if session_data.ended_at is not None:
+            raise ContestSessionEndedError()
+
         # Only the remaining time is intentionally recalculated on every validation.
         _, remaining_seconds = calculate_effective_times(
             base_end_time=session_data.base_end_time,
@@ -116,6 +123,7 @@ class StudentContestQuestionService:
     ) -> ContestSessionValidationData:
         # 1. Get the contest or raise
         contest = await self.contest_repository.get_contest_or_raise(contest_id)
+        ContestValidator.validate_contest_is_published(contest.status, contest_id)
 
         # 2. Get the contest_team_member by accepted status and contest ID
         contest_team_member = (
@@ -159,6 +167,7 @@ class StudentContestQuestionService:
             evaluate_on_submit=contest.evaluate_on_submit,
             base_end_time=team_progress.end_time,
             extra_time_seconds=team_progress.extra_time_seconds,
+            ended_at=team_progress.ended_at,
         )
 
     async def get_contest_questions(

@@ -34,6 +34,7 @@ from app.repositories.dto import (
     ContestQuestionFilters,
     ContestQuestionsPaginatedResult,
     ContestsPaginatedResultWithStats,
+    InstructorDashboardContestRow,
     PaginationParams,
 )
 from app.repositories.dto.contest_question import AddContestQuestionData
@@ -599,6 +600,138 @@ class ContestRepository:
             upcoming_count=upcoming_count,
             completed_count=completed_count,
         )
+
+    async def get_instructor_dashboard_contests(
+        self, user_id: UUID, is_admin: bool
+    ) -> list[InstructorDashboardContestRow]:
+        """
+        Fetch every non-deleted contest accessible to the user, with the
+        question/team/submission breakdowns the instructor dashboard needs.
+
+        Reuses ``_apply_permission_filter`` -- the exact same rule already
+        enforced for the main contest listing (creator/assigned-instructor for
+        non-admins, everything for admins) -- so contest visibility here can
+        never drift from the rest of the API.
+
+        Runs a small, fixed number of queries (contest metadata + three
+        grouped aggregates) regardless of how many contests are accessible,
+        instead of looking up counts per contest in a loop.
+
+        Args:
+            user_id: ID of the requesting user.
+            is_admin: Whether the user has admin privileges.
+
+        Returns:
+            One InstructorDashboardContestRow per accessible contest (run
+            status is not included; callers derive it via compute_run_status).
+        """
+        base_query = select(
+            Contest.id,
+            Contest.name,
+            Contest.image,
+            Contest.start_time,
+            Contest.end_time,
+            Contest.status,
+            Contest.contest_mode,
+            Contest.created_by,
+            Contest.results_published_at,
+        ).filter(Contest.status != ContestStatus.DELETED)
+
+        base_query = self._apply_permission_filter(base_query, user_id, is_admin)
+
+        contest_rows = (await self.db.execute(base_query)).all()
+        if not contest_rows:
+            return []
+
+        contest_ids = [row.id for row in contest_rows]
+
+        # Question counts, grouped by contest.
+        question_counts_result = await self.db.execute(
+            select(
+                ContestQuestion.contest_id,
+                func.count().label("question_count"),
+            )
+            .where(ContestQuestion.contest_id.in_(contest_ids))
+            .group_by(ContestQuestion.contest_id)
+        )
+        question_counts = {
+            row.contest_id: row.question_count for row in question_counts_result.all()
+        }
+
+        # Team registration/approval counts, grouped by contest.
+        team_counts_result = await self.db.execute(
+            select(
+                ContestTeam.contest_id,
+                func.count(
+                    case(
+                        (
+                            and_(
+                                ContestTeam.team_status == TeamStatus.CONFIRMED,
+                                ContestTeam.approval_status
+                                == TeamApprovalStatus.APPROVED,
+                            ),
+                            1,
+                        )
+                    )
+                ).label("registered_teams_count"),
+                func.count(
+                    case((ContestTeam.approval_status == TeamApprovalStatus.WAITING, 1))
+                ).label("pending_team_approvals"),
+            )
+            .where(ContestTeam.contest_id.in_(contest_ids))
+            .group_by(ContestTeam.contest_id)
+        )
+        team_counts = {
+            row.contest_id: (row.registered_teams_count, row.pending_team_approvals)
+            for row in team_counts_result.all()
+        }
+
+        # Submission totals and unevaluated (pending) counts, grouped by contest.
+        submission_counts_result = await self.db.execute(
+            select(
+                ContestSubmission.contest_id,
+                func.count().label("total_submissions"),
+                func.count(case((Submission.is_evaluated.is_(False), 1))).label(
+                    "pending_evaluations"
+                ),
+            )
+            .select_from(ContestSubmission)
+            .join(Submission, Submission.id == ContestSubmission.submission_id)
+            .where(ContestSubmission.contest_id.in_(contest_ids))
+            .group_by(ContestSubmission.contest_id)
+        )
+        submission_counts = {
+            row.contest_id: (row.total_submissions, row.pending_evaluations)
+            for row in submission_counts_result.all()
+        }
+
+        rows: list[InstructorDashboardContestRow] = []
+        for row in contest_rows:
+            registered_teams_count, pending_team_approvals = team_counts.get(
+                row.id, (0, 0)
+            )
+            total_submissions, pending_evaluations = submission_counts.get(
+                row.id, (0, 0)
+            )
+            rows.append(
+                InstructorDashboardContestRow(
+                    id=row.id,
+                    name=row.name,
+                    image=row.image,
+                    start_time=row.start_time,
+                    end_time=row.end_time,
+                    status=row.status,
+                    contest_mode=row.contest_mode,
+                    created_by=row.created_by,
+                    results_published_at=row.results_published_at,
+                    question_count=question_counts.get(row.id, 0),
+                    registered_teams_count=registered_teams_count,
+                    pending_team_approvals=pending_team_approvals,
+                    total_submissions=total_submissions,
+                    pending_evaluations=pending_evaluations,
+                )
+            )
+        return rows
 
     async def create_contest(self, contest: Contest) -> Contest:
         """
@@ -1246,11 +1379,36 @@ class ContestRepository:
             contest_team_id: ContestTeam ID (not the underlying Team ID).
             contest_team_member_id: Contest team member ID who submitted.
         """
-        # Guarantee the row exists (e.g. this member's first evaluated
-        # submission) before updating it; upsert-safe under concurrency.
-        await self.ensure_team_member_progress_rows(
-            contest_id, {contest_team_member_id: contest_team_id}
+        from app.models.contest import ContestTeamMember
+
+        # Materialize a progress row for every ACCEPTED member of this team,
+        # not just the one who submitted. The team's leaderboard score is an
+        # AVG over ContestTeamProgress rows (see get_teams_ranked_by_score),
+        # so if only submitting members ever get a row, the denominator of
+        # that AVG depends on which members happened to submit -- and
+        # disagrees with the contest-wide recompute in ContestService.
+        # compute_team_scores, which always creates rows for every accepted
+        # member up front. Keeping both paths create the same row set means
+        # the team's score no longer changes depending on which recompute
+        # path last ran.
+        accepted_member_ids = (
+            (
+                await self.db.execute(
+                    select(ContestTeamMember.id).where(
+                        ContestTeamMember.contest_team_id == contest_team_id,
+                        ContestTeamMember.status == ContestTeamMemberStatus.ACCEPTED,
+                    )
+                )
+            )
+            .scalars()
+            .all()
         )
+        team_member_ids = {
+            member_id: contest_team_id for member_id in accepted_member_ids
+        }
+        team_member_ids.setdefault(contest_team_member_id, contest_team_id)
+
+        await self.ensure_team_member_progress_rows(contest_id, team_member_ids)
 
         best_per_question = (
             select(

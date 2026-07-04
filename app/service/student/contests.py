@@ -7,7 +7,7 @@ from fastapi import status
 from fastapi.sse import ServerSentEvent
 from redis.asyncio import Redis
 
-from app.core.cache.decorators import cache_get
+from app.core.cache.decorators import cache_delete, cache_get
 from app.core.guards.contest_student import ContestStudentGuard
 from app.core.logger import logger
 from app.exceptions.base import AppBaseException
@@ -64,6 +64,7 @@ from app.utils.enums import (
     TeamStatus,
 )
 from app.utils.key_builder import get_contest_channel_key
+from app.validators.contest import ContestValidator
 from app.validators.contest_team import ContestTeamValidator
 
 
@@ -103,7 +104,7 @@ class StudentContestService:
 
     @cache_get(
         key_builder=lambda self, user_id, request, search, pagination: (
-            f"student:contests:user:{user_id}:reg:{request.registered}:status:{','.join(request.status) if request.status else 'any'}:search:{search or 'none'}:skip:{pagination.skip}:limit:{pagination.limit}:min_team:{request.min_team_size}:max_team:{request.max_team_size}"
+            f"student:contests:user:{user_id}:reg:{request.registered}:results_published:{request.results_published}:status:{','.join(request.status) if request.status else 'any'}:search:{search or 'none'}:skip:{pagination.skip}:limit:{pagination.limit}:min_team:{request.min_team_size}:max_team:{request.max_team_size}"
         ),
         ttl=300,
     )
@@ -128,6 +129,7 @@ class StudentContestService:
         filters = StudentContestFilters(
             search_term=search,
             registered=request.registered,
+            results_published=request.results_published,
             run_statuses=request.status,
             min_team_size=request.min_team_size,
             max_team_size=request.max_team_size,
@@ -374,6 +376,7 @@ class StudentContestService:
     ) -> ContestTeamProgressResponse:
         # Get the contest
         contest = await self.contest_repository.get_contest_or_raise(contest_id)
+        ContestValidator.validate_contest_is_published(contest.status, contest_id)
 
         # Get the contest_team_member by accepted status and contest ID
         contest_team_member = (
@@ -417,18 +420,43 @@ class StudentContestService:
                 user_id=user_id, contest_team=contest_team
             )
 
-        # Check start permissions
-        if contest_team_progress is None and not is_start:
-            raise ContestSessionNotStartedError()
-
         now_utc = datetime.now(timezone.utc)
+
+        # Check start permissions
         session_end_time = None
         if contest_team_progress is None:
+            if not is_start:
+                raise ContestSessionNotStartedError()
+
+            # A brand-new session must not be opened before the contest
+            # starts.
+            if compute_run_status(contest.start_time, contest.end_time) == (
+                ContestRunStatus.UPCOMING
+            ):
+                raise ContestSessionNotStartedError("Contest has not started yet.")
+
             session_end_time = calculate_base_end_time(
                 start_time=now_utc,
                 end_time=contest.end_time,
                 duration=contest.duration,
             )
+
+            # Whether there is still time to open a *new* session is judged
+            # against this team's own allotted end time (``session_end_time``,
+            # the exact value about to be persisted as this session's
+            # ``end_time``) rather than the raw contest window -- the same
+            # calculate_base_end_time/calculate_effective_times pair used to
+            # judge an already-started session below, so there is only one
+            # source of truth for "has this team's window ended". A fresh
+            # start has no extra time grant yet (that only ever lives on an
+            # existing ContestTeamProgress row), so extra_time_seconds=0
+            # here.
+            _, prospective_remaining_seconds = calculate_effective_times(
+                base_end_time=session_end_time,
+                extra_time_seconds=0,
+            )
+            if prospective_remaining_seconds <= 0:
+                raise ContestSessionEndedError("Contest has already ended.")
 
         already_started = True
         if contest_team_progress is None:
@@ -534,6 +562,11 @@ class StudentContestService:
     ) -> ContestTeamProgressResponse:
         return await self.get_contest_session(contest_id, user_id, is_start=False)
 
+    @cache_delete(
+        key_builder=lambda self, contest_id, user_id: [
+            f"contests:{contest_id}:users:*:session-validation",
+        ],
+    )
     async def finish_contest_session(
         self, contest_id: UUID, user_id: UUID
     ) -> ContestTeamProgressResponse:

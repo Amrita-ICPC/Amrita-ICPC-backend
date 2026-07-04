@@ -13,6 +13,7 @@ from app.repositories.dto.contest import (
     ContestQuestionsPaginatedResult,
     ContestsPaginatedResultWithStats,
     CreateContestData,
+    InstructorDashboardContestRow,
     UpdateContestData,
 )
 from app.repositories.dto.pagination import PaginatedResult, PaginationParams
@@ -62,6 +63,7 @@ __all__ = [
     "ContestsPaginatedResultWithStats",
     "CreateContestData",
     "UpdateContestData",
+    "InstructorDashboardContestRow",
     "BankFilters",
     "BankQuestionFilters",
     # Question DTOs

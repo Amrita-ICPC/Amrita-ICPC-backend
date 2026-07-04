@@ -476,3 +476,4 @@ class ContestSessionValidationData(BaseModel):
     evaluate_on_submit: bool
     base_end_time: datetime | None
     extra_time_seconds: int | None
+    ended_at: datetime | None = None

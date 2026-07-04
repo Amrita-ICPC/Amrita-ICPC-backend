@@ -192,7 +192,7 @@ async def create_platform_language(
     "/languages/platform",
     response_model=APIResponse[PlatformLanguageListResponse],
     status_code=status.HTTP_200_OK,
-    dependencies=[Depends(require_admin)],
+    dependencies=[],
 )
 async def get_platform_languages(
     request: Request,

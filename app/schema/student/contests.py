@@ -26,6 +26,7 @@ from app.schema.tag import TagResponse
 
 class StudentContestRegistrationRequest(BaseModel):
     registered: bool | None = None
+    results_published: bool | None = None
     status: list[ContestRunStatus] | None = None
     min_team_size: int | None = Field(None, ge=1)
     max_team_size: int | None = Field(None, ge=1)
