@@ -137,6 +137,7 @@ class StudentContestQuestionResponse(BaseModel):
     """Schema for a contest question in student view."""
 
     id: UUID = Field(..., description="The ID of the question")
+    title: str = Field(..., description="The title of the question")
     attempted: bool = Field(
         ..., description="Whether the student has attempted the question"
     )

@@ -21,6 +21,7 @@ from app.schema.student.submission import StudentSubmissionResponse
 from app.service.student.contest_question import StudentContestQuestionService
 from app.service.student.workspace import WorkspaceService
 from app.utils.enums import (
+    ContestStatus,
     ContestTeamParticipationType,
     TeamApprovalStatus,
     TeamStatus,
@@ -116,6 +117,7 @@ async def test_submit_code_success(
     # Mock contest
     contest = MagicMock(spec=Contest)
     contest.id = contest_id
+    contest.status = ContestStatus.PUBLISHED
     contest.participation_type = ContestTeamParticipationType.INDIVIDUAL_WORKSPACE
     contest.max_submission_per_question = None
     mock_contest_repository.get_contest_or_raise.return_value = contest
@@ -125,6 +127,7 @@ async def test_submit_code_success(
     team_member.id = uuid4()
     contest_team = MagicMock(spec=ContestTeam)
     contest_team.id = uuid4()
+    contest_team.team_id = uuid4()
     contest_team.contest_id = contest_id
     contest_team.team_status = TeamStatus.CONFIRMED
     contest_team.approval_status = TeamApprovalStatus.APPROVED
@@ -137,6 +140,7 @@ async def test_submit_code_success(
     progress = MagicMock(spec=ContestTeamProgress)
     progress.end_time = datetime.now(timezone.utc).replace(year=2030)  # far in future
     progress.extra_time_seconds = 0
+    progress.ended_at = None
     mock_contest_team_progress_repository.get_contest_team_progress_by_id.return_value = progress
 
     # Mock question existence in contest
@@ -214,6 +218,7 @@ async def test_submit_code_question_not_in_contest(
     # Mock contest, member and progress to bypass session validation
     contest = MagicMock(spec=Contest)
     contest.id = contest_id
+    contest.status = ContestStatus.PUBLISHED
     contest.participation_type = ContestTeamParticipationType.INDIVIDUAL_WORKSPACE
     contest.max_submission_per_question = None
     mock_contest_repository.get_contest_or_raise.return_value = contest
@@ -222,6 +227,7 @@ async def test_submit_code_question_not_in_contest(
     team_member.id = uuid4()
     contest_team = MagicMock(spec=ContestTeam)
     contest_team.id = uuid4()
+    contest_team.team_id = uuid4()
     contest_team.contest_id = contest_id
     contest_team.team_status = TeamStatus.CONFIRMED
     contest_team.approval_status = TeamApprovalStatus.APPROVED
@@ -233,6 +239,7 @@ async def test_submit_code_question_not_in_contest(
     progress = MagicMock(spec=ContestTeamProgress)
     progress.end_time = datetime.now(timezone.utc).replace(year=2030)
     progress.extra_time_seconds = 0
+    progress.ended_at = None
     mock_contest_team_progress_repository.get_contest_team_progress_by_id.return_value = progress
 
     # Question is NOT in contest
@@ -262,6 +269,7 @@ async def test_submit_code_session_not_started(
     # Mock contest and team member
     contest = MagicMock(spec=Contest)
     contest.id = contest_id
+    contest.status = ContestStatus.PUBLISHED
     contest.participation_type = ContestTeamParticipationType.INDIVIDUAL_WORKSPACE
     mock_contest_repository.get_contest_or_raise.return_value = contest
 
@@ -304,6 +312,7 @@ async def test_submit_code_session_ended(
     # Mock contest and team member
     contest = MagicMock(spec=Contest)
     contest.id = contest_id
+    contest.status = ContestStatus.PUBLISHED
     contest.participation_type = ContestTeamParticipationType.INDIVIDUAL_WORKSPACE
     mock_contest_repository.get_contest_or_raise.return_value = contest
 
@@ -311,6 +320,7 @@ async def test_submit_code_session_ended(
     team_member.id = uuid4()
     contest_team = MagicMock(spec=ContestTeam)
     contest_team.id = uuid4()
+    contest_team.team_id = uuid4()
     contest_team.contest_id = contest_id
     contest_team.team_status = TeamStatus.CONFIRMED
     contest_team.approval_status = TeamApprovalStatus.APPROVED
@@ -323,6 +333,7 @@ async def test_submit_code_session_ended(
     progress = MagicMock(spec=ContestTeamProgress)
     progress.end_time = datetime.now(timezone.utc).replace(year=2020)
     progress.extra_time_seconds = 0
+    progress.ended_at = None
     mock_contest_team_progress_repository.get_contest_team_progress_by_id.return_value = progress
 
     with pytest.raises(ContestSessionEndedError):
@@ -349,14 +360,17 @@ async def test_get_contest_questions_max_submission_fallback(
     # Mock contest
     contest = MagicMock(spec=Contest)
     contest.id = contest_id
+    contest.status = ContestStatus.PUBLISHED
     contest.participation_type = ContestTeamParticipationType.INDIVIDUAL_WORKSPACE
     contest.max_submission_per_question = 5
     mock_contest_repository.get_contest_or_raise.return_value = contest
 
     # Mock team member and progress to pass validation
     team_member = MagicMock(spec=ContestTeamMember)
+    team_member.id = uuid4()
     contest_team = MagicMock(spec=ContestTeam)
     contest_team.id = uuid4()
+    contest_team.team_id = uuid4()
     contest_team.contest_id = contest_id
     contest_team.team_status = TeamStatus.CONFIRMED
     contest_team.approval_status = TeamApprovalStatus.APPROVED
@@ -368,15 +382,18 @@ async def test_get_contest_questions_max_submission_fallback(
     progress = MagicMock(spec=ContestTeamProgress)
     progress.end_time = datetime.now(timezone.utc).replace(year=2030)
     progress.extra_time_seconds = 0
+    progress.ended_at = None
     mock_contest_team_progress_repository.get_contest_team_progress_by_id.return_value = progress
 
     # Mock contest questions
     cq1 = MagicMock()
     cq1.question_id = uuid4()
+    cq1.question.title = "Question 1"
     cq1.max_submission = None  # should fallback
 
     cq2 = MagicMock()
     cq2.question_id = uuid4()
+    cq2.question.title = "Question 2"
     cq2.max_submission = 3  # should not fallback
 
     mock_repository.get_contest_questions.return_value = [cq1, cq2]
@@ -406,14 +423,17 @@ async def test_get_contest_question_details_max_submission_fallback(
     # Mock contest
     contest = MagicMock(spec=Contest)
     contest.id = contest_id
+    contest.status = ContestStatus.PUBLISHED
     contest.participation_type = ContestTeamParticipationType.INDIVIDUAL_WORKSPACE
     contest.max_submission_per_question = 5
     mock_contest_repository.get_contest_or_raise.return_value = contest
 
     # Mock team member and progress to pass validation
     team_member = MagicMock(spec=ContestTeamMember)
+    team_member.id = uuid4()
     contest_team = MagicMock(spec=ContestTeam)
     contest_team.id = uuid4()
+    contest_team.team_id = uuid4()
     contest_team.contest_id = contest_id
     contest_team.team_status = TeamStatus.CONFIRMED
     contest_team.approval_status = TeamApprovalStatus.APPROVED
@@ -425,6 +445,7 @@ async def test_get_contest_question_details_max_submission_fallback(
     progress = MagicMock(spec=ContestTeamProgress)
     progress.end_time = datetime.now(timezone.utc).replace(year=2030)
     progress.extra_time_seconds = 0
+    progress.ended_at = None
     mock_contest_team_progress_repository.get_contest_team_progress_by_id.return_value = progress
 
     # Mock question details

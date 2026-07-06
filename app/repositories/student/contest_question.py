@@ -19,6 +19,7 @@ class StudentContestQuestionRepository:
         """
         query = (
             select(ContestQuestion)
+            .options(selectinload(ContestQuestion.question))
             .where(ContestQuestion.contest_id == contest_id)
             .order_by(ContestQuestion.order.asc())
         )

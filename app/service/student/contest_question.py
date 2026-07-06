@@ -192,6 +192,7 @@ class StudentContestQuestionService:
         question_responses = [
             StudentContestQuestionResponse(
                 id=q.question_id,
+                title=q.question.title if q.question else "Untitled Question",
                 attempted=q.question_id in solved_by_question,
                 solved=solved_by_question.get(q.question_id, False),
                 max_submission=q.max_submission

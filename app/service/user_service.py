@@ -150,6 +150,7 @@ class UserService:
             )
 
             keycloak_admin = KeycloakAdmin(
+                grant_type="client_credentials",
                 server_url=config.KEYCLOAK_SERVER_URL,
                 realm_name=config.KEYCLOAK_REALM,
                 user_realm_name=config.KEYCLOAK_REALM,
