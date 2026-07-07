@@ -20,17 +20,24 @@ def build_bank_query_params(
     )
 
 
-def to_bank_response(bank: "Bank") -> BankResponse:
+def to_bank_response(bank: "Bank", current_user_id: UUID | None = None) -> BankResponse:
     """Map bank ORM object to response schema."""
-    return BankResponse.model_validate(bank)
+    response = BankResponse.model_validate(bank)
+    if current_user_id is not None:
+        response.is_owner = bank.created_by == current_user_id
+    return response
 
 
-def to_bank_response_list(banks: list["Bank"]) -> list[BankResponse]:
+def to_bank_response_list(
+    banks: list["Bank"], current_user_id: UUID | None = None
+) -> list[BankResponse]:
     """Map bank ORM list to response schema list."""
-    return [to_bank_response(bank) for bank in banks]
+    return [to_bank_response(bank, current_user_id) for bank in banks]
 
 
-def to_bank_detail_response(bank: "Bank") -> BankDetailResponse:
+def to_bank_detail_response(
+    bank: "Bank", current_user_id: UUID | None = None
+) -> BankDetailResponse:
     """Map bank ORM object to detail response schema."""
     questions = bank.questions or []
 
@@ -55,6 +62,9 @@ def to_bank_detail_response(bank: "Bank") -> BankDetailResponse:
         name=bank.name,
         description=bank.description,
         created_by=bank.created_by,
+        is_owner=bank.created_by == current_user_id
+        if current_user_id is not None
+        else False,
         created_at=bank.created_at,
         updated_at=bank.updated_at,
         total_questions_count=total_count,

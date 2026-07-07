@@ -332,3 +332,48 @@ async def test_get_all_banks_with_search_and_sort(
     assert kwargs["filters"].sort_by == BankSortBy.NAME
     assert kwargs["pagination"].skip == 0
     assert kwargs["pagination"].limit == 10
+
+
+@pytest.mark.asyncio
+async def test_is_owner_field_population_get_bank_by_id(
+    bank_service, mock_repository, existing_bank
+):
+    """Test get_bank_by_id sets is_owner correctly for creator vs guest users."""
+    mock_repository.get_bank_or_raise.return_value = existing_bank
+
+    # 1. When creator fetches the bank, is_owner must be True
+    response_creator = await bank_service.get_bank_by_id(
+        bank_id=existing_bank.id, user_id=existing_bank.created_by
+    )
+    assert response_creator.is_owner is True
+
+    # 2. When a guest user fetches the bank, is_owner must be False
+    guest_user_id = uuid4()
+    response_guest = await bank_service.get_bank_by_id(
+        bank_id=existing_bank.id, user_id=guest_user_id
+    )
+    assert response_guest.is_owner is False
+
+
+@pytest.mark.asyncio
+async def test_is_owner_field_population_get_all_banks(
+    bank_service, mock_repository, existing_bank
+):
+    """Test get_all_banks sets is_owner correctly for creator vs guest users."""
+    from app.repositories.dto import PaginatedResult
+
+    mock_paginated = PaginatedResult(total=1, items=[existing_bank])
+    mock_repository.get_banks_with_filters.return_value = mock_paginated
+
+    # 1. When creator fetches all banks, is_owner must be True
+    _, creator_items = await bank_service.get_all_banks(
+        user_id=existing_bank.created_by, skip=0, limit=10
+    )
+    assert creator_items[0].is_owner is True
+
+    # 2. When a guest user fetches all banks, is_owner must be False
+    guest_user_id = uuid4()
+    _, guest_items = await bank_service.get_all_banks(
+        user_id=guest_user_id, skip=0, limit=10
+    )
+    assert guest_items[0].is_owner is False

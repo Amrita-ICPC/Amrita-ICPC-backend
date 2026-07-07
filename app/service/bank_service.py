@@ -86,7 +86,7 @@ class BankService:
             bank_id=db_bank.id, user_id=user_id, permission=BankPermission.owner
         )
 
-        return to_bank_response(db_bank)
+        return to_bank_response(db_bank, current_user_id=user_id)
 
     # @cache_get(
     #     key_builder=lambda self, bank_id: f"bank:{bank_id}",
@@ -122,7 +122,7 @@ class BankService:
         """
         bank = await self.repository.get_bank_or_raise(bank_id, load_relations=True)
         self.validator.check_read_bank(user_id=user_id, bank=bank)
-        return to_bank_detail_response(bank)
+        return to_bank_detail_response(bank, current_user_id=user_id)
 
     @cache_get(
         key_builder=lambda self, user_id, skip=0, limit=100, search_term=None, sort_by=None: (
@@ -160,7 +160,7 @@ class BankService:
             user_id=user_id, filters=filters, pagination=pagination
         )
 
-        responses = to_bank_response_list(result.items)
+        responses = to_bank_response_list(result.items, current_user_id=user_id)
         return result.total, responses
 
     @cache_delete(
@@ -200,7 +200,7 @@ class BankService:
             setattr(bank, field, value)
 
         updated_bank = await self.repository.update_bank(bank)
-        return to_bank_response(updated_bank)
+        return to_bank_response(updated_bank, current_user_id=user_id)
 
     @cache_delete(
         key_builder=lambda self, bank_id, user_id: [
@@ -244,7 +244,7 @@ class BankService:
             user_id=user_id, filters=filters, pagination=pagination
         )
 
-        responses = to_bank_response_list(result.items)
+        responses = to_bank_response_list(result.items, current_user_id=user_id)
         return result.total, responses
 
     @cache_delete(
@@ -290,7 +290,7 @@ class BankService:
         bank = await self.repository.get_deleted_bank_or_raise(bank_id)
         self.validator.check_manage_bank(user_id=user_id, bank=bank)
         restored_bank = await self.repository.restore_bank(bank)
-        return to_bank_response(restored_bank)
+        return to_bank_response(restored_bank, current_user_id=user_id)
 
     @cache_delete(
         key_builder=lambda self, bank_id, shares, current_user_id, allow_ownership_transfer=False: [

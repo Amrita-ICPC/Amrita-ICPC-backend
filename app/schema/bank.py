@@ -56,6 +56,9 @@ class BankResponse(BankBase):
 
     id: UUID = Field(..., description="Bank ID")
     created_by: UUID = Field(..., description="Creator user ID")
+    is_owner: bool = Field(
+        False, description="Whether the current user is the owner of the bank"
+    )
     created_at: datetime = Field(..., description="Creation time")
     updated_at: datetime = Field(..., description="Last update time")
     total_questions_count: int = Field(
