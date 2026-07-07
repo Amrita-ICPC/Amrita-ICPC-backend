@@ -65,6 +65,16 @@ class LanguageConflictError(AppBaseException):
         )
 
 
+class LanguageNotFoundError(AppBaseException):
+    """Exception raised when a requested platform language doesn't exist."""
+
+    def __init__(self, language_id: int):
+        super().__init__(
+            message=f"Language with ID {language_id} not found.",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+
 class TemplateAlreadyExistsError(AppBaseException):
     """Exception raised when a template for a language already exists in a question."""
 

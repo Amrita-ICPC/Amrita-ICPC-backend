@@ -4,6 +4,7 @@ from uuid import UUID
 
 from app.utils.enums import (
     ContestMode,
+    ContestQuestionStatus,
     ContestRunStatus,
     ContestStatus,
     ContestTeamParticipationType,
@@ -138,10 +139,9 @@ class StudentContestQuestionResponse(BaseModel):
 
     id: UUID = Field(..., description="The ID of the question")
     title: str = Field(..., description="The title of the question")
-    attempted: bool = Field(
-        ..., description="Whether the student has attempted the question"
+    status: ContestQuestionStatus = Field(
+        ..., description="The status of the question (unviewed, viewed, submitted)"
     )
-    solved: bool = Field(..., description="Whether the student has solved the question")
     max_submission: int | None = Field(
         None, description="Maximum submissions allowed for this question"
     )

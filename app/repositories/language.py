@@ -60,3 +60,7 @@ class LanguageRepository:
     async def list_languages(self) -> list[Language]:
         result = await self.db.execute(select(Language).order_by(Language.name.asc()))
         return list(result.scalars().all())
+
+    async def delete_language(self, language: Language) -> None:
+        await self.db.delete(language)
+        await self.db.flush()

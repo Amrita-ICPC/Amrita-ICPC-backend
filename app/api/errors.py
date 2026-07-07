@@ -59,6 +59,8 @@ from app.exceptions.image import (
 )
 from app.exceptions.judge0 import Judge0NotInitializedError
 from app.exceptions.question import (
+    LanguageConflictError,
+    LanguageNotFoundError,
     QuestionNotFoundError,
     TagAlreadyExistsError,
     TagNotFoundError,
@@ -893,6 +895,28 @@ def setup_exception_handlers(app: FastAPI) -> None:
             status_code=exc.status_code,
             message=exc.message,
             error_code="TAG_ALREADY_EXISTS",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(LanguageNotFoundError)
+    async def language_not_found_handler(request: Request, exc: LanguageNotFoundError):
+        logger.warning(f"Language not found: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="LANGUAGE_NOT_FOUND",
+            details=[exc.detail] if exc.detail else None,
+        )
+
+    @app.exception_handler(LanguageConflictError)
+    async def language_conflict_handler(request: Request, exc: LanguageConflictError):
+        logger.warning(f"Language conflict error: {exc.message}")
+        return _create_error_response(
+            request=request,
+            status_code=exc.status_code,
+            message=exc.message,
+            error_code="LANGUAGE_CONFLICT",
             details=[exc.detail] if exc.detail else None,
         )
 

@@ -39,6 +39,16 @@ class QuestionDifficulty(str, enum.Enum):
     HARD = "HARD"
 
 
+class ContestQuestionStatus(str, enum.Enum):
+    """
+    Enumeration of student question statuses in a contest.
+    """
+
+    unviewed = "unviewed"
+    viewed = "viewed"
+    submitted = "submitted"
+
+
 class BankPermission(str, enum.Enum):
     """
     Enumeration of permissions for question banks.

@@ -137,7 +137,7 @@ async def get_judge0_languages(
     Raises:
         Judge0ServiceError: If Judge0 request fails.
     """
-    languages = await service.get_judge0_languages()
+    languages = await service.get_unmapped_judge0_languages()
     logger.info("Fetched %d Judge0 languages", len(languages))
     return create_api_response(
         request,
@@ -214,6 +214,46 @@ async def get_platform_languages(
         request,
         data=response,
         message="Platform languages fetched successfully",
+    )
+
+
+@router.delete(
+    "/languages/platform/{language_id}",
+    response_model=APIResponse,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_admin)],
+)
+async def delete_platform_language(
+    request: Request,
+    language_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    service: QuestionService = Depends(get_question_service),
+):
+    """Delete a platform language mapping.
+
+    Args:
+        request: FastAPI request object.
+        language_id: The ID of the platform language to delete.
+        current_user: Authenticated admin claims.
+        service: Injected QuestionService.
+
+    Returns:
+        API response indicating successful deletion.
+
+    Raises:
+        LanguageNotFoundError: If the language does not exist.
+        InvalidQuestionError: If the language is in use and cannot be deleted.
+    """
+    await service.delete_platform_language(language_id)
+    logger.info(
+        "Platform language %d deleted by admin %s",
+        language_id,
+        current_user.get("sub"),
+    )
+    return create_api_response(
+        request,
+        data=None,
+        message="Platform language deleted successfully",
     )
 
 

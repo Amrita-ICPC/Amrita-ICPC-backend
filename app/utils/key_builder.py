@@ -11,6 +11,14 @@ def build_workspace_key(
     )
 
 
+def build_question_view_key(
+    contest_id: UUID,
+    contest_team_member_id: UUID,
+    question_id: UUID,
+) -> str:
+    return f"contests:{contest_id}:members:{contest_team_member_id}:questions:{question_id}:status"
+
+
 def get_contest_channel_key(
     contest_id: UUID,
     team_id: UUID | None = None,

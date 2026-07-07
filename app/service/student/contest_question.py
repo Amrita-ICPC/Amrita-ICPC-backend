@@ -51,12 +51,17 @@ from app.service.contest_event_service import ContestEventService
 from app.service.student.workspace import WorkspaceService
 from app.utils.contest import calculate_effective_times
 from app.utils.enums import (
+    ContestQuestionStatus,
     ContestTeamMemberStatus,
     ContestTeamParticipationType,
     TeamApprovalStatus,
     TeamStatus,
 )
-from app.utils.key_builder import build_workspace_key, get_contest_channel_key
+from app.utils.key_builder import (
+    build_question_view_key,
+    build_workspace_key,
+    get_contest_channel_key,
+)
 from app.validators.contest import ContestValidator
 from app.validators.contest_team import ContestTeamValidator
 
@@ -174,7 +179,7 @@ class StudentContestQuestionService:
         self, contest_id: UUID, user_id: UUID
     ) -> StudentContestQuestionsListResponse:
         """
-        Get the list of questions for a contest with attempted/solved status.
+        Get the list of questions for a contest with viewed/submitted/unviewed status.
         Validates eligibility (user is accepted member of confirmed team)
         and if the session is started and live.
         """
@@ -189,18 +194,42 @@ class StudentContestQuestionService:
             contest_id, session_data.contest_team_id
         )
 
-        question_responses = [
-            StudentContestQuestionResponse(
-                id=q.question_id,
-                title=q.question.title if q.question else "Untitled Question",
-                attempted=q.question_id in solved_by_question,
-                solved=solved_by_question.get(q.question_id, False),
-                max_submission=q.max_submission
-                if q.max_submission is not None
-                else session_data.max_submission_per_question,
+        # Retrieve viewed status per question from Redis
+        view_keys = [
+            build_question_view_key(
+                contest_id, session_data.contest_team_member_id, q.question_id
             )
             for q in questions
         ]
+        viewed_flags = await self.redis.mget(view_keys) if view_keys else []
+        viewed_question_ids = {
+            q.question_id
+            for q, flag in zip(questions, viewed_flags)
+            if flag is not None
+        }
+
+        question_responses = []
+        for q in questions:
+            is_submitted = q.question_id in solved_by_question
+            is_viewed = q.question_id in viewed_question_ids
+
+            if is_submitted:
+                status = ContestQuestionStatus.submitted
+            elif is_viewed:
+                status = ContestQuestionStatus.viewed
+            else:
+                status = ContestQuestionStatus.unviewed
+
+            question_responses.append(
+                StudentContestQuestionResponse(
+                    id=q.question_id,
+                    title=q.question.title if q.question else "Untitled Question",
+                    status=status,
+                    max_submission=q.max_submission
+                    if q.max_submission is not None
+                    else session_data.max_submission_per_question,
+                )
+            )
 
         return StudentContestQuestionsListResponse(questions=question_responses)
 
@@ -213,6 +242,12 @@ class StudentContestQuestionService:
         and fetches question preview info (title, statement, limits, languages, tags, public testcases, starter templates).
         """
         session_data = await self._validate_session_and_get_contest(contest_id, user_id)
+
+        # Mark question as viewed in Redis for this student team member
+        view_key = build_question_view_key(
+            contest_id, session_data.contest_team_member_id, question_id
+        )
+        await self.redis.set(view_key, "1", ex=60 * 60 * 24 * 30)  # 30 days
 
         return await self._get_cached_contest_question_details(
             contest_id=contest_id,

@@ -486,3 +486,158 @@ async def test_get_contest_question_details_max_submission_fallback(
         contest_id, question_id, user_id
     )
     assert response.max_submission == 3
+
+
+@pytest.mark.asyncio
+async def test_get_contest_questions_status(
+    contest_question_service,
+    mock_contest_repository,
+    mock_repository,
+    mock_contest_team_repository,
+    mock_contest_team_progress_repository,
+    mock_redis,
+):
+    contest_id = uuid4()
+    user_id = uuid4()
+
+    # Mock contest
+    contest = MagicMock(spec=Contest)
+    contest.id = contest_id
+    contest.status = ContestStatus.PUBLISHED
+    contest.participation_type = ContestTeamParticipationType.INDIVIDUAL_WORKSPACE
+    contest.max_submission_per_question = 5
+    mock_contest_repository.get_contest_or_raise.return_value = contest
+
+    # Mock team member and progress to pass validation
+    team_member = MagicMock(spec=ContestTeamMember)
+    team_member.id = uuid4()
+    contest_team = MagicMock(spec=ContestTeam)
+    contest_team.id = uuid4()
+    contest_team.team_id = uuid4()
+    contest_team.contest_id = contest_id
+    contest_team.team_status = TeamStatus.CONFIRMED
+    contest_team.approval_status = TeamApprovalStatus.APPROVED
+    team_member.contest_team = contest_team
+    mock_contest_team_repository.get_contest_team_member_by_user_id.return_value = (
+        team_member
+    )
+
+    progress = MagicMock(spec=ContestTeamProgress)
+    progress.end_time = datetime.now(timezone.utc).replace(year=2030)
+    progress.extra_time_seconds = 0
+    progress.ended_at = None
+    mock_contest_team_progress_repository.get_contest_team_progress_by_id.return_value = progress
+
+    # Mock 3 contest questions
+    cq1_id = uuid4()
+    cq2_id = uuid4()
+    cq3_id = uuid4()
+
+    cq1 = MagicMock()
+    cq1.question_id = cq1_id
+    cq1.question.title = "Q1 (Submitted)"
+    cq1.max_submission = None
+
+    cq2 = MagicMock()
+    cq2.question_id = cq2_id
+    cq2.question.title = "Q2 (Viewed)"
+    cq2.max_submission = None
+
+    cq3 = MagicMock()
+    cq3.question_id = cq3_id
+    cq3.question.title = "Q3 (Unviewed)"
+    cq3.max_submission = None
+
+    mock_repository.get_contest_questions.return_value = [cq1, cq2, cq3]
+
+    # Q1 is submitted (solved_by_question)
+    mock_repository.get_question_attempt_status.return_value = {cq1_id: True}
+
+    # Q2 is viewed in Redis
+    mock_redis.mget.return_value = [None, "1", None]
+
+    response = await contest_question_service.get_contest_questions(contest_id, user_id)
+
+    assert len(response.questions) == 3
+    # Q1 should be submitted
+    assert response.questions[0].id == cq1_id
+    assert response.questions[0].status == "submitted"
+    # Q2 should be viewed
+    assert response.questions[1].id == cq2_id
+    assert response.questions[1].status == "viewed"
+    # Q3 should be unviewed
+    assert response.questions[2].id == cq3_id
+    assert response.questions[2].status == "unviewed"
+
+
+@pytest.mark.asyncio
+async def test_get_contest_question_details_marks_viewed(
+    contest_question_service,
+    mock_contest_repository,
+    mock_repository,
+    mock_contest_team_repository,
+    mock_contest_team_progress_repository,
+    mock_redis,
+):
+    contest_id = uuid4()
+    question_id = uuid4()
+    user_id = uuid4()
+
+    # Mock contest
+    contest = MagicMock(spec=Contest)
+    contest.id = contest_id
+    contest.status = ContestStatus.PUBLISHED
+    contest.participation_type = ContestTeamParticipationType.INDIVIDUAL_WORKSPACE
+    contest.max_submission_per_question = 5
+    mock_contest_repository.get_contest_or_raise.return_value = contest
+
+    # Mock team member and progress to pass validation
+    team_member = MagicMock(spec=ContestTeamMember)
+    team_member.id = uuid4()
+    contest_team = MagicMock(spec=ContestTeam)
+    contest_team.id = uuid4()
+    contest_team.team_id = uuid4()
+    contest_team.contest_id = contest_id
+    contest_team.team_status = TeamStatus.CONFIRMED
+    contest_team.approval_status = TeamApprovalStatus.APPROVED
+    team_member.contest_team = contest_team
+    mock_contest_team_repository.get_contest_team_member_by_user_id.return_value = (
+        team_member
+    )
+
+    progress = MagicMock(spec=ContestTeamProgress)
+    progress.end_time = datetime.now(timezone.utc).replace(year=2030)
+    progress.extra_time_seconds = 0
+    progress.ended_at = None
+    mock_contest_team_progress_repository.get_contest_team_progress_by_id.return_value = progress
+
+    # Mock question details
+    question = MagicMock()
+    question.id = question_id
+    question.title = "Test Question"
+    question.question_text = "Statement"
+    question.difficulty = "EASY"
+    question.time_limit_ms = 1000
+    question.memory_limit_mb = 256
+    question.languages = []
+    question.templates = []
+    question.tags = []
+    mock_repository.get_contest_question_details.return_value = question
+
+    # Mock get_contest_question
+    cq = MagicMock()
+    cq.max_submission = None
+    mock_contest_repository.get_contest_question.return_value = cq
+
+    response = await contest_question_service.get_contest_question_details(
+        contest_id, question_id, user_id
+    )
+
+    # Verify response
+    assert response.id == question_id
+
+    # Verify Redis interaction
+    view_key = (
+        f"contests:{contest_id}:members:{team_member.id}:questions:{question_id}:status"
+    )
+    mock_redis.set.assert_called_once_with(view_key, "1", ex=60 * 60 * 24 * 30)

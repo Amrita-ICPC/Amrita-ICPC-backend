@@ -97,7 +97,7 @@ class Judge0EvaluationService:
         Returns:
             The aggregated EvaluationResult, ready to persist.
         """
-        total_time = 0.0
+        max_time = 0.0
         max_memory = 0
         passed_cases = 0
         testcase_results: list[SubmissionTestCase] = []
@@ -136,7 +136,7 @@ class Judge0EvaluationService:
                 # status_id missing/unknown -> treat as a system error for this case.
                 status = SubmissionStatus.SYSTEM_ERROR
             if result.time is not None:
-                total_time += result.time
+                max_time = max(max_time, result.time)
             if result.memory is not None:
                 max_memory = max(max_memory, result.memory)
 
@@ -155,7 +155,7 @@ class Judge0EvaluationService:
             status=final_status,
             passed_testcases=passed_cases,
             total_testcases=len(testcases),
-            total_time=int(total_time * 1000),
+            total_time=int(max_time * 1000),
             total_memory=max_memory,
             testcase_results=testcase_results,
         )

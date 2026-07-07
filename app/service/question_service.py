@@ -12,6 +12,7 @@ from app.exceptions.question import (
     CodeStorageError,
     InvalidQuestionError,
     Judge0ServiceError,
+    LanguageNotFoundError,
 )
 from app.mappers.question import (
     apply_question_updates,
@@ -178,7 +179,9 @@ class QuestionService:
         if not base_url:
             raise Judge0ServiceError("JUDGE0_API_URL is not configured")
         endpoint = (
-            base_url if base_url.endswith("/languages") else f"{base_url}/languages"
+            base_url
+            if base_url.endswith("/languages/all")
+            else f"{base_url}/languages/all"
         )
 
         headers: dict[str, str] = {"Accept": "application/json"}
@@ -210,6 +213,13 @@ class QuestionService:
                 )
 
         return languages
+
+    async def get_unmapped_judge0_languages(self) -> list[Judge0LanguageResponse]:
+        """Fetch all available Judge0 languages and filter out those already mapped in the platform."""
+        judge0_languages = await self.get_judge0_languages()
+        platform_languages = await self.get_platform_languages()
+        mapped_ids = {lang.id for lang in platform_languages}
+        return [lang for lang in judge0_languages if lang.id not in mapped_ids]
 
     @cache_delete(
         key_builder=lambda self, payload: "platform:languages",
@@ -280,6 +290,32 @@ class QuestionService:
         return [
             PlatformLanguageResponse.model_validate(language) for language in languages
         ]
+
+    @cache_delete(
+        key_builder=lambda self, language_id: "platform:languages",
+    )
+    async def delete_platform_language(self, language_id: int) -> None:
+        """Delete a platform language mapping.
+
+        Args:
+            language_id: The ID of the platform language to delete.
+
+        Raises:
+            LanguageNotFoundError: If the language does not exist.
+            InvalidQuestionError: If the language is currently in use.
+        """
+        from sqlalchemy.exc import IntegrityError
+
+        language = await self.language_repository.get_by_id(language_id)
+        if language is None:
+            raise LanguageNotFoundError(language_id)
+
+        try:
+            await self.language_repository.delete_language(language)
+        except IntegrityError as error:
+            raise InvalidQuestionError(
+                f"Language with ID {language_id} cannot be deleted because it is currently in use by questions, templates, or submissions."
+            ) from error
 
     @cache_set(
         key_builder=lambda result: f"question:{result.id}:user:{result.created_by}",
