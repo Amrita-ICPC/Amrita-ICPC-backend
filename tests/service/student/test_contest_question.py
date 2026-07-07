@@ -65,7 +65,9 @@ def mock_judge0_repository():
 
 @pytest.fixture
 def mock_question_repository():
-    return AsyncMock(spec=QuestionRepository)
+    mock = AsyncMock(spec=QuestionRepository)
+    mock.db = AsyncMock()
+    return mock
 
 
 @pytest.fixture
@@ -198,8 +200,13 @@ async def test_submit_code_success(
         assert mock_submission.source_code == code
         mock_question_repository.create_submission.assert_called_once()
         mock_send_task.assert_called_once_with(
-            "worker.evaluation.evaluate_submission",
-            args=[str(mock_submission.id)],
+            "worker.evaluation.submit_evaluation",
+            kwargs={
+                "submission_id": str(mock_submission.id),
+                "reevaluation": False,
+                "publish_events": True,
+            },
+            queue="student_submit",
         )
         mock_event_service.publish_event.assert_called_once()
 

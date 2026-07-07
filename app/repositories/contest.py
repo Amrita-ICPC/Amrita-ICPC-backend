@@ -26,7 +26,12 @@ from app.models.contest import (
     ContestTeam,
     ContestTeamProgress,
 )
-from app.models.question import Question, QuestionLanguage, Submission
+from app.models.question import (
+    Question,
+    QuestionLanguage,
+    Submission,
+    SubmissionTestCase,
+)
 from app.models.tag import QuestionTag, Tag
 from app.models.user import User
 from app.repositories.dto import (
@@ -240,6 +245,7 @@ class ContestRepository:
         """
         query = (
             select(Submission)
+            .options(selectinload(Submission.testcases))
             .join(ContestSubmission, ContestSubmission.submission_id == Submission.id)
             .where(ContestSubmission.contest_id == contest_id)
         )
@@ -254,6 +260,42 @@ class ContestRepository:
 
         result = await self.db.execute(query)
         return list(result.scalars().all())
+
+    async def reset_submissions_for_reevaluation(
+        self, submission_ids: list[UUID]
+    ) -> None:
+        """Reset submissions back to an unevaluated state (override re-evaluation).
+
+        Clears ``is_evaluated``/score/timing on the submission and deletes its
+        per-testcase rows (status/stdout/stderr/output all go away with them),
+        so ``Submission.status`` reads back as ``None``. Committed immediately
+        so the reset is durable before any evaluation task is dispatched to a
+        worker - otherwise a worker could race ahead of an uncommitted reset
+        and see stale, still-evaluated state.
+
+        Args:
+            submission_ids: Submission ids to reset. No-op if empty.
+        """
+        if not submission_ids:
+            return
+
+        await self.db.execute(
+            delete(SubmissionTestCase).where(
+                SubmissionTestCase.submission_id.in_(submission_ids)
+            )
+        )
+        await self.db.execute(
+            update(Submission)
+            .where(Submission.id.in_(submission_ids))
+            .values(
+                is_evaluated=False,
+                score=0,
+                total_time=None,
+                total_memory=None,
+                evaluated_at=None,
+            )
+        )
+        await self.db.commit()
 
     # TODO: Update the filters with factory and builder design pattern
 

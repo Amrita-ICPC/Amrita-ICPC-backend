@@ -32,6 +32,15 @@ class EvaluationTriggerRequest(BaseModel):
         default=None,
         description="Contest team member ids to evaluate (required for STUDENTS)",
     )
+    is_override: bool = Field(
+        default=False,
+        description=(
+            "If True, submissions already evaluated within scope are reset "
+            "(status and per-testcase output/error cleared) before evaluation, "
+            "so every submission in scope is re-run. If False, only submissions "
+            "that have never been evaluated (status is None) are evaluated."
+        ),
+    )
 
     @model_validator(mode="after")
     def validate_scope_selection(self):

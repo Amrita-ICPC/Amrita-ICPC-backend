@@ -1261,11 +1261,17 @@ async def evaluate_contest(
 ) -> APIResponse[EvaluationResponse]:
     """Trigger re-evaluation of submissions in a contest.
 
-    By default (scope=ALL) every submission in the contest is re-evaluated.
-    Pass scope=TEAMS with team_ids to only re-evaluate specific teams'
-    submissions, scope=QUESTIONS with question_ids to only re-evaluate
-    specific questions' submissions, or scope=STUDENTS with student_ids
-    (contest team member ids) to only re-evaluate specific students' submissions.
+    By default (scope=ALL) only submissions that have never been evaluated
+    (status is None) are evaluated. Pass scope=TEAMS with team_ids to only
+    evaluate specific teams' submissions, scope=QUESTIONS with question_ids
+    to only evaluate specific questions' submissions, or scope=STUDENTS with
+    student_ids (contest team member ids) to only evaluate specific students'
+    submissions.
+
+    Pass is_override=True to force every submission in scope to be re-run,
+    including ones that already have a verdict - their status and per-testcase
+    output/error are reset to None (committed before dispatch) and then
+    evaluated fresh.
 
     Args:
         request (Request): Framework context.
@@ -1284,6 +1290,7 @@ async def evaluate_contest(
         team_ids=payload.team_ids,
         question_ids=payload.question_ids,
         student_ids=payload.student_ids,
+        is_override=payload.is_override,
     )
     logger.info(f"Contest evaluation triggered for {contest_id} (actor=REDACTED)")
     return create_api_response(

@@ -939,7 +939,7 @@ class ContestService:
             yield msg
 
     @cache_delete(
-        key_builder=lambda self, contest_id, user_id, scope=EvaluationScope.ALL, team_ids=None, question_ids=None, student_ids=None: [
+        key_builder=lambda self, contest_id, user_id, scope=EvaluationScope.ALL, team_ids=None, question_ids=None, student_ids=None, is_override=False: [
             f"contest:{contest_id}:leaderboard:*",
         ],
     )
@@ -951,6 +951,7 @@ class ContestService:
         team_ids: list[UUID] | None = None,
         question_ids: list[UUID] | None = None,
         student_ids: list[UUID] | None = None,
+        is_override: bool = False,
     ) -> EvaluationResponse:
         """Trigger evaluation for a contest.
 
@@ -963,6 +964,12 @@ class ContestService:
             team_ids: Contest team ids to restrict to when scope is TEAMS.
             question_ids: Question ids to restrict to when scope is QUESTIONS.
             student_ids: Contest team member ids to restrict to when scope is STUDENTS.
+            is_override: If True, submissions in scope that already have a
+                verdict (status is not None) are reset to unevaluated - status,
+                and per-testcase output/error, all cleared to None - before
+                dispatch, so every submission in scope gets re-run. If False,
+                only submissions that have never been evaluated (status is
+                None) are dispatched.
 
         Returns:
             EvaluationResponse: Details of the created evaluation record.
@@ -995,7 +1002,23 @@ class ContestService:
         submissions = await self.repository.get_submissions_in_contest(
             contest_id, **submission_filter_kwargs
         )
-        total_subs = len(submissions)
+
+        # Override: wipe status/output/error back to None for submissions that
+        # already have a verdict, committing before anything is dispatched so no
+        # worker can ever pick up a submission mid-reset. Once committed, every
+        # submission in scope reads back as unevaluated (status is None).
+        if is_override:
+            already_evaluated_ids = [
+                sub.id for sub in submissions if sub.status is not None
+            ]
+            if already_evaluated_ids:
+                await self.repository.reset_submissions_for_reevaluation(
+                    already_evaluated_ids
+                )
+            submissions_to_evaluate = submissions
+        else:
+            submissions_to_evaluate = [sub for sub in submissions if sub.status is None]
+        total_subs = len(submissions_to_evaluate)
 
         evaluation_id = uuid4()
         created_at = datetime.now(timezone.utc)
@@ -1022,7 +1045,7 @@ class ContestService:
         # concurrency bound how many are in Judge0 at once. Backpressured tasks
         # retry themselves; superseded runs short-circuit via is_evaluation_valid.
         if total_subs > 0:
-            for sub in submissions:
+            for sub in submissions_to_evaluate:
                 celery_app.send_task(
                     "worker.evaluation.submit_evaluation",
                     kwargs={
