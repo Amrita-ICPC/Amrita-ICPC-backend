@@ -5,7 +5,7 @@ from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models import Contest, ContestTeam, TeamUser
+from app.models import Contest, ContestTeam
 from app.models.contest import ContestTeamMember
 from app.repositories.dto import PaginatedResult, PaginationParams
 from app.repositories.dto.student.contests import StudentContestFilters
@@ -104,17 +104,21 @@ class StudentContestRepository:
                 base_query = base_query.filter(or_(*run_status_conditions))
 
         # Registered filter
-        # To filter registered, we need to check if user is in ContestTeam for the contest
+        # A student is "registered" if they have an accepted ContestTeamMember
+        # row for the contest. This covers both contest teams created directly
+        # (ContestTeam.team_id is None - see create_contest_team) and teams
+        # imported from a standard Team, since ContestTeamMember rows are
+        # created in both flows. Checking ContestTeam.team_id against the
+        # student's standard Team memberships (the previous approach) misses
+        # every directly-created contest team, since those always have
+        # team_id=None.
         if filters.registered is not None:
-            team_user_subquery = select(TeamUser.team_id).filter(
-                TeamUser.user_id == user_id
-            )
-
             registered_condition = (
-                select(ContestTeam)
+                select(ContestTeamMember)
                 .filter(
-                    ContestTeam.contest_id == Contest.id,
-                    ContestTeam.team_id.in_(team_user_subquery),
+                    ContestTeamMember.contest_id == Contest.id,
+                    ContestTeamMember.user_id == user_id,
+                    ContestTeamMember.status == ContestTeamMemberStatus.ACCEPTED,
                 )
                 .exists()
             )
@@ -157,9 +161,14 @@ class StudentContestRepository:
         teams_count_dict = {}
 
         if contest_ids:
-            # Count registered teams
+            # Count registered teams. Count ContestTeam.id (never null), not
+            # ContestTeam.team_id - contest teams created directly (see
+            # create_contest_team) have team_id=None, and SQL COUNT(column)
+            # skips NULLs, so counting team_id silently dropped every
+            # directly-created team from this total (shown as available
+            # capacity/teams registered on the student contest cards).
             count_result = await self.db.execute(
-                select(ContestTeam.contest_id, func.count(ContestTeam.team_id))
+                select(ContestTeam.contest_id, func.count(ContestTeam.id))
                 .filter(
                     ContestTeam.contest_id.in_(contest_ids),
                     ContestTeam.approval_status == TeamApprovalStatus.APPROVED,

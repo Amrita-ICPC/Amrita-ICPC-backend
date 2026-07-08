@@ -1,7 +1,10 @@
 # app/core/cache/decorators.py
+import contextvars
+from contextlib import asynccontextmanager
 from functools import wraps
 from typing import (
     Any,
+    AsyncIterator,
     Awaitable,
     Callable,
     Optional,
@@ -21,6 +24,14 @@ from app.core.logger import logger
 
 P = ParamSpec("P")
 R = TypeVar("R")
+
+# Keys queued by @cache_delete while inside a defer_cache_invalidation() scope,
+# instead of being deleted immediately. None means "no active scope" - i.e.
+# delete immediately, the historical behavior (used by workers/scripts that
+# manage their own commit timing).
+_pending_invalidations: contextvars.ContextVar[Optional[list[str]]] = (
+    contextvars.ContextVar("_pending_invalidations", default=None)
+)
 
 
 def get_type_adapter(func: Callable[..., Any]) -> Optional[TypeAdapter[Any]]:
@@ -191,6 +202,52 @@ async def delete_cache_keys(keys_or_pattern: str | list[str]) -> None:
             logger.error(f"Redis delete failed for key/pattern {key_pattern}: {e}")
 
 
+@asynccontextmanager
+async def defer_cache_invalidation() -> AsyncIterator[None]:
+    """
+    Collect cache_delete invocations made within this scope and flush them
+    once on clean exit, instead of deleting immediately as each decorated
+    service method returns.
+
+    Why this exists: the request-scoped DB session (see get_db) commits the
+    transaction *after* the endpoint/service call returns. @cache_delete used
+    to delete cache keys immediately on return, i.e. before that commit ran.
+    A concurrent request landing in that window would see the old row,
+    repopulate the cache with pre-commit (stale) data, and that data would
+    then sit there for the full TTL. Wrapping the request in this scope (see
+    get_db) and flushing only after the commit succeeds closes that window.
+
+    Nesting-safe: an inner scope reuses the outer one's pending list rather
+    than shadowing it, so a nested "async with defer_cache_invalidation()"
+    still flushes at the outermost exit, not the inner one.
+    """
+    outer_pending = _pending_invalidations.get()
+    if outer_pending is not None:
+        # Already inside a scope (e.g. nested get_db) - just participate in it.
+        yield
+        return
+
+    token = _pending_invalidations.set([])
+    try:
+        yield
+        pending = _pending_invalidations.get()
+        if pending:
+            await delete_cache_keys(pending)
+    finally:
+        _pending_invalidations.reset(token)
+
+
+async def _invalidate_or_defer(keys_or_pattern: str | list[str]) -> None:
+    """Queue for post-commit flush if inside defer_cache_invalidation(),
+    otherwise delete immediately (the historical, pre-deferral behavior)."""
+    pending = _pending_invalidations.get()
+    if pending is None:
+        await delete_cache_keys(keys_or_pattern)
+        return
+    keys = [keys_or_pattern] if isinstance(keys_or_pattern, str) else keys_or_pattern
+    pending.extend(keys)
+
+
 def cache_delete(
     *,
     key_builder: Callable[P, str | list[str]],
@@ -198,6 +255,10 @@ def cache_delete(
     """
     Decorator to delete cache entries after function execution.
     Supports single keys, list of keys, and wildcard patterns (e.g., "users:*").
+
+    If called from within a defer_cache_invalidation() scope (the normal case
+    for HTTP requests - see get_db), the actual delete is queued and only runs
+    after that scope's DB transaction commits.
     """
 
     def decorator(func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
@@ -205,7 +266,7 @@ def cache_delete(
         async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             result = await func(*args, **kwargs)
             keys_or_key = key_builder(*args, **kwargs)
-            await delete_cache_keys(keys_or_key)
+            await _invalidate_or_defer(keys_or_key)
             return result
 
         return wrapper

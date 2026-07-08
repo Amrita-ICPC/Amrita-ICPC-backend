@@ -2,6 +2,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import app.models  # noqa: F401
+from app.core.cache.decorators import defer_cache_invalidation
 from app.core.config import config
 from app.core.logger import logger
 
@@ -44,11 +45,18 @@ async def init_db():
 async def get_db():
     """
     Dependency to get a database session.
+
+    Wraps the request in defer_cache_invalidation() so that any @cache_delete
+    invalidation triggered by this request's service calls is queued and only
+    flushed after the commit below succeeds - not immediately when each
+    service method returns, which used to race the commit (see
+    defer_cache_invalidation's docstring).
     """
     async with SessionLocal() as db:
         try:
-            yield db
-            await db.commit()
+            async with defer_cache_invalidation():
+                yield db
+                await db.commit()
         except Exception:
             await db.rollback()
             raise
