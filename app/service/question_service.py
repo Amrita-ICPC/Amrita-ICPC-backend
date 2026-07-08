@@ -4,6 +4,7 @@ from uuid import UUID
 
 import httpx
 
+from app.core.cache import keys as cache_keys
 from app.core.cache.decorators import cache_delete, cache_get, cache_set
 from app.core.config import config
 from app.core.guards.question import QuestionOperationGuard
@@ -82,26 +83,6 @@ class QuestionService:
         self.validator = validator
         self.code_storage_service = code_storage_service
 
-    def _get_question_cache_keys(self, question_id: UUID) -> list[str]:
-        """Build cache patterns to invalidate for question mutations.
-
-        Args:
-            question_id: Question identifier whose cached views must be invalidated.
-
-        Returns:
-            Cache key/pattern list covering direct and user-scoped entries.
-        """
-        return [
-            f"question:{question_id}",
-            f"question:{question_id}:*",
-            f"bank:question:*:{question_id}:*",
-            "banks:questions:*",
-            f"contest:*:questions:item:{question_id}:*",
-            "contest:*:questions:user:*",
-            "student:contest:*",
-            "student:contests:*",
-        ]
-
     @staticmethod
     def _is_storage_object_key(value: str | None) -> bool:
         """Check whether a value looks like a storage object key.
@@ -162,7 +143,7 @@ class QuestionService:
         return question_response
 
     @cache_get(
-        key_builder=lambda self: "judge0:languages",
+        key_builder=lambda self: cache_keys.JUDGE0_LANGUAGES_KEY,
         ttl=300,
     )
     async def get_judge0_languages(self) -> list[Judge0LanguageResponse]:
@@ -222,7 +203,7 @@ class QuestionService:
         return [lang for lang in judge0_languages if lang.id not in mapped_ids]
 
     @cache_delete(
-        key_builder=lambda self, payload: "platform:languages",
+        key_builder=lambda self, payload: cache_keys.PLATFORM_LANGUAGES_KEY,
     )
     async def create_platform_language(
         self, payload: PlatformLanguageCreateRequest
@@ -277,7 +258,7 @@ class QuestionService:
         return PlatformLanguageResponse.model_validate(created)
 
     @cache_get(
-        key_builder=lambda self: "platform:languages",
+        key_builder=lambda self: cache_keys.PLATFORM_LANGUAGES_KEY,
         ttl=300,
     )
     async def get_platform_languages(self) -> list[PlatformLanguageResponse]:
@@ -292,7 +273,7 @@ class QuestionService:
         ]
 
     @cache_delete(
-        key_builder=lambda self, language_id: "platform:languages",
+        key_builder=lambda self, language_id: cache_keys.PLATFORM_LANGUAGES_KEY,
     )
     async def delete_platform_language(self, language_id: int) -> None:
         """Delete a platform language mapping.
@@ -318,7 +299,9 @@ class QuestionService:
             ) from error
 
     @cache_set(
-        key_builder=lambda result: f"question:{result.id}:user:{result.created_by}",
+        key_builder=lambda result: cache_keys.question_detail_key(
+            result.id, result.created_by
+        ),
         ttl=300,
         from_result=True,
     )
@@ -382,8 +365,8 @@ class QuestionService:
             raise
 
     @cache_get(
-        key_builder=lambda self, question_id, user_id: (
-            f"question:{question_id}:user:{user_id}"
+        key_builder=lambda self, question_id, user_id: cache_keys.question_detail_key(
+            question_id, user_id
         ),
         ttl=300,
     )
@@ -411,13 +394,13 @@ class QuestionService:
 
     @cache_set(
         key_builder=lambda self, question_id, update_data, user_id, *args, **kwargs: (
-            f"question:{question_id}:user:{user_id}"
+            cache_keys.question_detail_key(question_id, user_id)
         ),
         ttl=300,
     )
     @cache_delete(
         key_builder=lambda self, question_id, update_data, user_id, *args, **kwargs: (
-            self._get_question_cache_keys(question_id)
+            cache_keys.question_bust(question_id)
         )
     )
     async def update_question(
@@ -510,7 +493,7 @@ class QuestionService:
 
     @cache_delete(
         key_builder=lambda self, question_id, payload, user_id, *args, **kwargs: (
-            self._get_question_cache_keys(question_id)
+            cache_keys.question_bust(question_id)
         )
     )
     async def add_testcases_to_question(
@@ -552,7 +535,7 @@ class QuestionService:
 
     @cache_delete(
         key_builder=lambda self, question_id, payload, user_id, *args, **kwargs: (
-            self._get_question_cache_keys(question_id)
+            cache_keys.question_bust(question_id)
         )
     )
     async def remove_testcases_from_question(
@@ -595,7 +578,7 @@ class QuestionService:
 
     @cache_delete(
         key_builder=lambda self, question_id, payload, user_id, *args, **kwargs: (
-            self._get_question_cache_keys(question_id)
+            cache_keys.question_bust(question_id)
         )
     )
     async def remove_templates_from_question(
@@ -643,7 +626,7 @@ class QuestionService:
 
     @cache_delete(
         key_builder=lambda self, question_id, user_id, *args, **kwargs: (
-            self._get_question_cache_keys(question_id)
+            cache_keys.question_bust(question_id)
         )
     )
     async def delete_question(self, question_id: UUID, user_id: UUID) -> None:

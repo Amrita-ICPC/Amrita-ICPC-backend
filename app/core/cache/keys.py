@@ -300,7 +300,16 @@ def question_detail_key(question_id: UUID, user_id: UUID) -> str:
 def question_bust(question_id: UUID) -> list[str]:
     """Bust every cache that can hold this question: the question detail
     itself, its bank-question associations, and any contest question view
-    (instructor list/item + student eval detail) across all contests."""
+    (instructor list/item + student eval detail) across all contests.
+
+    Questions added to a contest via add_questions_to_contest are linked
+    by reference (no deep copy), so editing the question through the
+    generic question or bank-question endpoints must also reach the
+    student-facing per-contest eval detail key
+    (student_question_eval_key: "contests:{contest_id}:questions:{question_id}"),
+    which lives under the plural "contests:" namespace with no
+    "student:" prefix - distinct from every other pattern below.
+    """
     return [
         f"question:{question_id}",
         f"question:{question_id}:*",
@@ -308,7 +317,9 @@ def question_bust(question_id: UUID) -> list[str]:
         "banks:questions:*",
         f"contest:*:questions:item:{question_id}:*",
         "contest:*:questions:user:*",
+        f"contests:*:questions:{question_id}",
         "student:contest:*",
+        "student:contests:*",
     ]
 
 
