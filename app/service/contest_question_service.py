@@ -2,6 +2,7 @@ import uuid
 from typing import Literal, Optional
 from uuid import UUID
 
+from app.core.cache import keys as cache_keys
 from app.core.cache.decorators import cache_delete, cache_get
 from app.core.guards.contest import ContestOperationGuard
 from app.core.logger import logger
@@ -139,7 +140,19 @@ class ContestQuestionService:
 
     @cache_get(
         key_builder=lambda self, contest_id, user_id, search_term=None, difficulty=None, language_id=None, tag_id=None, tag_name=None, sort_by=None, sort_order="asc", skip=0, limit=20: (
-            f"contest:{contest_id}:questions:user:{user_id}:search:{search_term}:difficulty:{difficulty}:language:{language_id}:tag_id:{tag_id}:tag_name:{tag_name}:sort_by:{sort_by}:sort_order:{sort_order}:skip:{skip}:limit:{limit}"
+            cache_keys.contest_questions_list_key(
+                contest_id,
+                user_id,
+                search_term=search_term,
+                difficulty=difficulty,
+                language_id=language_id,
+                tag_id=tag_id,
+                tag_name=tag_name,
+                sort_by=sort_by,
+                sort_order=sort_order,
+                skip=skip,
+                limit=limit,
+            )
         ),
         ttl=300,
     )
@@ -206,7 +219,7 @@ class ContestQuestionService:
 
     @cache_get(
         key_builder=lambda self, contest_id, question_id, user_id: (
-            f"contest:{contest_id}:questions:item:{question_id}:user:{user_id}"
+            cache_keys.contest_question_item_key(contest_id, question_id, user_id)
         ),
         ttl=300,
     )
@@ -236,11 +249,9 @@ class ContestQuestionService:
         return QuestionResponse.from_question(question)
 
     @cache_delete(
-        key_builder=lambda self, contest_id, request, user_id: [
-            f"contest:{contest_id}*",
-            "contests:*",
-            f"contests:{contest_id}:questions:*",
-        ]
+        key_builder=lambda self, contest_id, request, user_id: (
+            cache_keys.contest_questions_bust(contest_id)
+        )
     )
     async def add_questions_to_contest(
         self,
@@ -336,11 +347,9 @@ class ContestQuestionService:
         return [to_contest_question_response(cq) for cq in results]
 
     @cache_delete(
-        key_builder=lambda self, contest_id, request, user_id: [
-            f"contest:{contest_id}*",
-            "contests:*",
-            f"contests:{contest_id}:questions:*",
-        ]
+        key_builder=lambda self, contest_id, request, user_id: (
+            cache_keys.contest_questions_bust(contest_id)
+        )
     )
     async def remove_questions_from_contest(
         self,
@@ -408,11 +417,9 @@ class ContestQuestionService:
 
     @cache_delete(
         key_builder=lambda self, contest_id, question_id, update_data, user_id: [
-            f"contest:{contest_id}*",
-            "contests:*",
+            *cache_keys.contest_questions_bust(contest_id),
             f"student:contest:{contest_id}*",
             "student:contests:*",
-            f"contests:{contest_id}:questions:{question_id}",
         ]
     )
     async def update_contest_question(
@@ -514,11 +521,9 @@ class ContestQuestionService:
         return QuestionResponse.from_question(updated_question)
 
     @cache_delete(
-        key_builder=lambda self, contest_id, request, user_id: [
-            f"contest:{contest_id}*",
-            "contests:*",
-            f"contests:{contest_id}:questions:*",
-        ]
+        key_builder=lambda self, contest_id, request, user_id: (
+            cache_keys.contest_questions_bust(contest_id)
+        )
     )
     async def reorder_contest_questions(
         self,
@@ -581,11 +586,9 @@ class ContestQuestionService:
         logger.info(f"User {user_id} reordered questions in contest {contest_id}")
 
     @cache_delete(
-        key_builder=lambda self, contest_id, request, user_id: [
-            f"contest:{contest_id}*",
-            "contests:*",
-            f"contests:{contest_id}:questions:*",
-        ]
+        key_builder=lambda self, contest_id, request, user_id: (
+            cache_keys.contest_questions_bust(contest_id)
+        )
     )
     async def clone_questions_from_bank(
         self,
