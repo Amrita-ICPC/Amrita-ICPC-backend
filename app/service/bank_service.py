@@ -1,6 +1,7 @@
 from typing import List
 from uuid import UUID
 
+from app.core.cache import keys as cache_keys
 from app.core.cache.decorators import cache_delete, cache_get, cache_set
 from app.exceptions.bank import BankOwnerUnshareError
 from app.mappers.bank import (
@@ -49,10 +50,12 @@ class BankService:
         self.validator = validator
 
     @cache_delete(
-        key_builder=lambda self, bank, user_id: f"banks:user:{user_id}:*",
+        key_builder=lambda self, bank, user_id: cache_keys.banks_list_bust_pattern(
+            user_id
+        ),
     )
     @cache_set(
-        key_builder=lambda result: f"bank:{result.id}",
+        key_builder=lambda result: cache_keys.bank_key(result.id),
         ttl=300,
         from_result=True,
     )
@@ -88,24 +91,6 @@ class BankService:
 
         return to_bank_response(db_bank, current_user_id=user_id)
 
-    # @cache_get(
-    #     key_builder=lambda self, bank_id: f"bank:{bank_id}",
-    #     ttl=300,
-    # )
-    # async def _get_bank_from_cache(self, bank_id: UUID) -> BankDetailResponse:
-    #     """Internal helper handling explicit cache access for bank structure.
-
-    #     WARNING: This skips access checks intentionally to load entities uniformly.
-
-    #     Args:
-    #         bank_id (UUID): Fetching by database ID.
-
-    #     Returns:
-    #         BankDetailResponse: Serialized data representation from DB.
-    #     """
-    #     bank = await self.repository.get_bank_or_raise(bank_id, load_relations=True)
-    #     return to_bank_detail_response(bank)
-
     async def get_bank_by_id(self, bank_id: UUID, user_id: UUID) -> BankDetailResponse:
         """Fetch bank details with full relationships and access validation.
 
@@ -126,7 +111,13 @@ class BankService:
 
     @cache_get(
         key_builder=lambda self, user_id, skip=0, limit=100, search_term=None, sort_by=None: (
-            f"banks:user:{user_id}:skip:{skip}:limit:{limit}:search:{search_term or ''}:sort:{sort_by.value if sort_by else ''}"
+            cache_keys.banks_list_key(
+                user_id,
+                skip=skip,
+                limit=limit,
+                search_term=search_term,
+                sort_by=sort_by,
+            )
         ),
         ttl=300,
     )
@@ -165,11 +156,11 @@ class BankService:
 
     @cache_delete(
         key_builder=lambda self, bank_id, bank_update, user_id: (
-            f"banks:user:{user_id}:*"
+            cache_keys.banks_list_bust_pattern(user_id)
         ),
     )
     @cache_set(
-        key_builder=lambda result: f"bank:{result.id}",
+        key_builder=lambda result: cache_keys.bank_key(result.id),
         ttl=300,
         from_result=True,
     )
@@ -203,10 +194,9 @@ class BankService:
         return to_bank_response(updated_bank, current_user_id=user_id)
 
     @cache_delete(
-        key_builder=lambda self, bank_id, user_id: [
-            f"bank:{bank_id}",
-            f"banks:user:{user_id}:*",
-        ]
+        key_builder=lambda self, bank_id, user_id: cache_keys.bank_bust(
+            bank_id, user_id
+        ),
     )
     async def delete_bank(self, bank_id: UUID, user_id: UUID) -> None:
         """Force erase an entire bank node including associative metadata.
@@ -221,7 +211,7 @@ class BankService:
 
     @cache_get(
         key_builder=lambda self, user_id, skip=0, limit=100: (
-            f"banks:deleted:user:{user_id}:skip:{skip}:limit:{limit}"
+            cache_keys.banks_deleted_list_key(user_id, skip=skip, limit=limit)
         ),
         ttl=300,
     )
@@ -248,11 +238,9 @@ class BankService:
         return result.total, responses
 
     @cache_delete(
-        key_builder=lambda self, bank_id, user_id: [
-            f"bank:{bank_id}",
-            f"banks:user:{user_id}:*",
-            f"banks:deleted:user:{user_id}:*",
-        ]
+        key_builder=lambda self, bank_id, user_id: cache_keys.bank_bust(
+            bank_id, user_id
+        ),
     )
     async def soft_delete_bank(self, bank_id: UUID, user_id: UUID) -> None:
         """Soft delete an entire bank node.
@@ -266,14 +254,12 @@ class BankService:
         await self.repository.soft_delete_bank(bank, user_id)
 
     @cache_delete(
-        key_builder=lambda self, bank_id, user_id: [
-            f"bank:{bank_id}",
-            f"banks:user:{user_id}:*",
-            f"banks:deleted:user:{user_id}:*",
-        ]
+        key_builder=lambda self, bank_id, user_id: cache_keys.bank_bust(
+            bank_id, user_id
+        ),
     )
     @cache_set(
-        key_builder=lambda result: f"bank:{result.id}",
+        key_builder=lambda result: cache_keys.bank_key(result.id),
         ttl=300,
         from_result=True,
     )
@@ -293,12 +279,9 @@ class BankService:
         return to_bank_response(restored_bank, current_user_id=user_id)
 
     @cache_delete(
-        key_builder=lambda self, bank_id, shares, current_user_id, allow_ownership_transfer=False: [
-            f"bank:{bank_id}",
-            f"banks:user:{current_user_id}:*",
-            # Invalidate cache for all users being shared with
-            *[f"banks:user:{s.user_id}:*" for s in shares],
-        ]
+        key_builder=lambda self, bank_id, shares, current_user_id, allow_ownership_transfer=False: (
+            cache_keys.bank_bust(bank_id, current_user_id, *[s.user_id for s in shares])
+        )
     )
     async def manage_bank_shares(
         self,
@@ -382,11 +365,9 @@ class BankService:
         )
 
     @cache_delete(
-        key_builder=lambda self, bank_id, target_user_id, current_user_id: [
-            f"bank:{bank_id}",
-            f"banks:user:{current_user_id}:*",
-            f"banks:user:{target_user_id}:*",
-        ]
+        key_builder=lambda self, bank_id, target_user_id, current_user_id: (
+            cache_keys.bank_bust(bank_id, current_user_id, target_user_id)
+        )
     )
     async def unshare_bank(
         self, bank_id: UUID, target_user_id: UUID, current_user_id: UUID
