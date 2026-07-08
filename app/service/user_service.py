@@ -15,7 +15,7 @@ from app.repositories.dto.user import UserListFilters
 from app.repositories.user import UserRepository
 from app.schema.user import StudentUserSearchResponse, UserResponse
 from app.utils.enums import UserRole
-from keycloak import KeycloakAdmin
+from keycloak import KeycloakAdmin, KeycloakOpenIDConnection
 
 
 class UserService:
@@ -144,27 +144,23 @@ class UserService:
                 "KEYCLOAK USERS SYNC CLIENT ID: %s",
                 config.KEYCLOAK_USERS_SYNC_CLIENT_ID,
             )
-            logger.info(
-                "KEYCLOAK USERS SYNC CLIENT SECRET: %s",
-                config.KEYCLOAK_USERS_SYNC_CLIENT_SECRET,
-            )
-
-            keycloak_admin = KeycloakAdmin(
-                grant_type="client_credentials",
+            # DO NOT log KEYCLOAK_USERS_SYNC_CLIENT_SECRET or keycloak_admin.connection.token as they are secrets/tokens.
+            conn = KeycloakOpenIDConnection(
                 server_url=config.KEYCLOAK_SERVER_URL,
                 realm_name=config.KEYCLOAK_REALM,
-                user_realm_name=config.KEYCLOAK_REALM,
                 client_id=config.KEYCLOAK_USERS_SYNC_CLIENT_ID,
                 client_secret_key=config.KEYCLOAK_USERS_SYNC_CLIENT_SECRET,
                 verify=True,
             )
+            keycloak_admin = KeycloakAdmin(connection=conn)
             logger.info("Starting Keycloak user synchronization")
-            token = keycloak_admin.connection.token
-            logger.info(
-                "Successfully authenticated with Keycloak for user sync: %s", token
-            )
+
             # Fetch all users from Keycloak
-            keycloak_users = keycloak_admin.get_users()
+            try:
+                keycloak_users = keycloak_admin.get_users()
+            except Exception as e:
+                raise KeycloakSyncError(f"Failed to fetch users from Keycloak: {e}")
+
             users_synced = 0
             skipped_users = []
 
@@ -183,9 +179,7 @@ class UserService:
                 name = f"{kc_user.get('firstName', '')} {kc_user.get('lastName', '')}".strip()
 
                 if not email:
-                    logger.warning(
-                        f"Skipping user {name} (ID: {user_id}) - Missing email"
-                    )
+                    logger.warning(f"Skipping user (ID: {user_id}) - Missing email")
                     skipped_users.append(
                         {"user_id": user_id, "name": name, "reason": "Missing email"}
                     )
@@ -199,8 +193,21 @@ class UserService:
                 )
                 existing_user = result.scalars().first()
 
+                if existing_user:
+                    # User already exists - skip without writing to the database
+                    logger.info(f"Skipping user (ID: {user_id}) - Already exists")
+                    skipped_users.append(
+                        {"user_id": user_id, "name": name, "reason": "Already exists"}
+                    )
+                    continue
+
                 # Fetch user's groups from Keycloak
-                user_groups = keycloak_admin.get_user_groups(user_id)
+                try:
+                    user_groups = keycloak_admin.get_user_groups(user_id)
+                except Exception as e:
+                    raise KeycloakSyncError(
+                        f"Failed to fetch groups for user {user_id}: {e}"
+                    )
 
                 # Determine user role from groups, default to student
                 user_role = UserRole.student
@@ -210,23 +217,15 @@ class UserService:
 
                 phone_no = kc_user.get("attributes", {}).get("phone_no", [None])[0]
 
-                if existing_user:
-                    # Update existing user
-                    existing_user.user_id = user_id  # Ensure ID matches Keycloak
-                    existing_user.name = name
-                    existing_user.email = email
-                    existing_user.phone_no = phone_no
-                    existing_user.role = user_role
-                else:
-                    # Create new user record
-                    new_user = User(
-                        user_id=user_id,
-                        email=email,
-                        name=name,
-                        phone_no=phone_no,
-                        role=user_role,
-                    )
-                    db.add(new_user)
+                # Create new user record
+                new_user = User(
+                    user_id=user_id,
+                    email=email,
+                    name=name,
+                    phone_no=phone_no,
+                    role=user_role,
+                )
+                db.add(new_user)
 
                 users_synced += 1
 
@@ -240,13 +239,13 @@ class UserService:
                 "skipped_users": skipped_users,
             }
 
-        except KeycloakSyncError:
+        except KeycloakSyncError as e:
             await db.rollback()
-            logger.error("Failed to sync Keycloak users")
+            logger.error(str(e))
             raise
         except Exception as e:
             await db.rollback()
-            error_message = f"Failed to sync Keycloak users: {str(e)}"
+            error_message = f"Unexpected error during Keycloak sync: {e}"
             logger.error(error_message)
             raise KeycloakSyncError(error_message)
 
