@@ -1,9 +1,9 @@
 import asyncio
-import json
 import uuid
 from typing import List
 from uuid import UUID
 
+from app.core.cache import keys as cache_keys
 from app.core.cache.decorators import cache_delete, cache_get
 from app.core.storage import CodeStorageService
 from app.exceptions.bank import (
@@ -77,23 +77,6 @@ class BankQuestionService:
         self.code_storage_service = code_storage_service
         self.language_repo = language_repo
 
-    def _get_bank_question_cache_keys(self, bank_id: UUID) -> list[str]:
-        """Build cache keys and patterns for bank-question invalidation.
-
-        Args:
-            bank_id: Target bank ID.
-
-        Returns:
-            List of key patterns affected by association mutations.
-        """
-        return [
-            f"bank:{bank_id}",
-            f"banks:questions:v2:{bank_id}:*",
-            f"bank:question:v2:{bank_id}:*",
-            f"banks:questions:{bank_id}:*",
-            f"bank:question:{bank_id}:*",
-        ]
-
     @staticmethod
     def _is_storage_object_key(value: str | None) -> bool:
         """Check whether a value is a storage object key."""
@@ -148,7 +131,7 @@ class BankQuestionService:
 
     @cache_delete(
         key_builder=lambda self, bank_id, question_ids, user_id: (
-            self._get_bank_question_cache_keys(bank_id)
+            cache_keys.bank_question_bust(bank_id)
         )
     )
     async def add_questions_to_bank(
@@ -185,8 +168,8 @@ class BankQuestionService:
 
     @cache_delete(
         key_builder=lambda self, source_bank_id, target_bank_id, user_id, copy_all, question_ids: (
-            self._get_bank_question_cache_keys(source_bank_id)
-            + self._get_bank_question_cache_keys(target_bank_id)
+            cache_keys.bank_question_bust(source_bank_id)
+            + cache_keys.bank_question_bust(target_bank_id)
         )
     )
     async def clone_questions_between_banks(
@@ -261,7 +244,7 @@ class BankQuestionService:
 
     @cache_delete(
         key_builder=lambda self, bank_id, question_ids, user_id: (
-            self._get_bank_question_cache_keys(bank_id)
+            cache_keys.bank_question_bust(bank_id)
         )
     )
     async def remove_questions_from_bank(
@@ -293,7 +276,9 @@ class BankQuestionService:
 
     @cache_get(
         key_builder=lambda self, bank_id, user_id, skip=0, limit=100, filters=None: (
-            f"banks:questions:v2:{bank_id}:user:{user_id}:skip:{skip}:limit:{limit}:filters:{json.dumps(filters, sort_keys=True, separators=(',', ':'), default=str) if filters is not None else 'null'}"
+            cache_keys.bank_questions_list_key(
+                bank_id, user_id, skip=skip, limit=limit, filters=filters
+            )
         ),
         ttl=300,
     )
@@ -333,7 +318,7 @@ class BankQuestionService:
 
     @cache_get(
         key_builder=lambda self, bank_id, question_id, user_id: (
-            f"bank:question:v2:{bank_id}:{question_id}:user:{user_id}"
+            cache_keys.bank_question_item_key(bank_id, question_id, user_id)
         ),
         ttl=300,
     )
@@ -371,13 +356,9 @@ class BankQuestionService:
         return await self._hydrate_question_template_codes(response)
 
     @cache_delete(
-        key_builder=lambda self, bank_id, question_id, update_data, user_id: [
-            f"question:{question_id}",
-            f"question:{question_id}:*",
-            f"bank:question:{bank_id}:{question_id}:*",
-            f"bank:question:*:{question_id}:*",
-            "banks:questions:*",
-        ]
+        key_builder=lambda self, bank_id, question_id, update_data, user_id: (
+            cache_keys.question_bust(question_id)
+        )
     )
     async def update_bank_question(
         self,
