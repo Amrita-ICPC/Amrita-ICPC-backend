@@ -1,5 +1,6 @@
 from uuid import UUID
 
+from app.core.cache import keys as cache_keys
 from app.core.cache.decorators import cache_delete, cache_get
 from app.core.guards.team import TeamOperationGuard
 from app.exceptions.contest import ContestTeamProgressNotFoundError
@@ -104,6 +105,7 @@ class TeamService:
             f"contest:{contest_id}:team:{contest_team_id}:*",
             f"contest:{contest_id}:teams:*",
             f"team:{contest_team_id}:members:*",
+            *cache_keys.student_contests_bust(),
         ]
     )
     async def approve_team(
@@ -176,6 +178,7 @@ class TeamService:
             f"contest:{contest_id}:team:{contest_team_id}:*",
             f"contest:{contest_id}:teams:*",
             f"team:{contest_team_id}:members:*",
+            *cache_keys.student_contests_bust(),
         ]
     )
     async def reject_team(
@@ -229,6 +232,7 @@ class TeamService:
             f"contest:{contest_id}:team:{contest_team_id}:*",
             f"contest:{contest_id}:teams:*",
             f"team:{contest_team_id}:members:*",
+            *cache_keys.student_contests_bust(),
         ]
     )
     async def disqualify_team(

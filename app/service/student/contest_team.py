@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
+from app.core.cache import keys as cache_keys
 from app.core.cache.decorators import cache_delete
 from app.core.guards.contest_student import ContestStudentGuard
 from app.core.guards.team_student import TeamStudentGuard
@@ -96,11 +97,7 @@ class ContestTeamService:
 
     @cache_delete(
         key_builder=lambda self, contest_id, contest_team_import, user_id: (
-            [f"student:contests:user:{uid}:*" for uid in contest_team_import.member_ids]
-            + [
-                f"student:contest:user:{uid}:contest:{contest_id}"
-                for uid in contest_team_import.member_ids
-            ]
+            cache_keys.student_contests_bust()
         )
     )
     async def import_team(
@@ -203,9 +200,9 @@ class ContestTeamService:
         return None
 
     @cache_delete(
-        key_builder=lambda self, contest_id, contest_team_create, user_id: [
-            f"student:contest:user:{user_id}:contest:{contest_id}"
-        ]
+        key_builder=lambda self, contest_id, contest_team_create, user_id: (
+            cache_keys.student_contests_bust()
+        )
     )
     async def create_contest_team(
         self,
@@ -364,6 +361,11 @@ class ContestTeamService:
 
         return None
 
+    @cache_delete(
+        key_builder=lambda self, contest_id, contest_team_id, user_id, contest_team_status: (
+            cache_keys.student_contests_bust()
+        )
+    )
     async def update_contest_team_status(
         self,
         contest_id: UUID,
@@ -426,6 +428,11 @@ class ContestTeamService:
 
         return None
 
+    @cache_delete(
+        key_builder=lambda self, user_id, contest_id, contest_team_id, contest_team_member_id, contest_team_member_status: (
+            cache_keys.student_contests_bust()
+        )
+    )
     async def update_contest_team_member_status(
         self,
         user_id: UUID,
