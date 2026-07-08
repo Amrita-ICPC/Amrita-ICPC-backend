@@ -4,6 +4,7 @@ from uuid import UUID, uuid4
 
 from redis.asyncio import Redis
 
+from app.core.cache import keys as cache_keys
 from app.core.cache.decorators import cache_delete, cache_get
 from app.core.clients.celery import celery_app
 from app.core.guards.contest import ContestOperationGuard
@@ -158,8 +159,8 @@ class ContestService:
 
     @cache_delete(
         key_builder=lambda self, contest, created_by: [
-            "contests:*",
-            "student:contests:user:*",
+            cache_keys.CONTESTS_LIST_BUST_PATTERN,
+            *cache_keys.student_contests_bust(),
         ],
     )
     async def create_contest(
@@ -221,8 +222,8 @@ class ContestService:
         )
 
     @cache_get(
-        key_builder=lambda self, contest_id, user_id: (
-            f"contest:{contest_id}:user:{user_id}"
+        key_builder=lambda self, contest_id, user_id: cache_keys.contest_detail_key(
+            contest_id, user_id
         ),
         ttl=300,
     )
@@ -275,7 +276,15 @@ class ContestService:
 
     @cache_get(
         key_builder=lambda self, user_id, search_term=None, status=None, run_status=None, is_public=None, skip=0, limit=100: (
-            f"contests:user:{user_id}:search:{search_term}:status:{status}:run_status:{run_status}:public:{is_public}:skip:{skip}:limit:{limit}"
+            cache_keys.contests_list_key(
+                user_id,
+                search_term=search_term,
+                status=status,
+                run_status=run_status,
+                is_public=is_public,
+                skip=skip,
+                limit=limit,
+            )
         ),
         ttl=300,
     )
@@ -340,12 +349,9 @@ class ContestService:
         )
 
     @cache_delete(
-        key_builder=lambda self, contest_id, audience_ids, user_id: [
-            f"contest:{contest_id}*",
-            "contests:*",
-            "student:contests:user:*",
-            "student:contest:user:*",
-        ],
+        key_builder=lambda self, contest_id, audience_ids, user_id: (
+            cache_keys.contest_full_bust(contest_id)
+        ),
     )
     async def assign_audiences_to_contest(
         self, contest_id: UUID, audience_ids: list[UUID], user_id: UUID
@@ -388,11 +394,9 @@ class ContestService:
         await self.repository.link_audiences_to_contest(contest_id, audience_ids)
 
     @cache_delete(
-        key_builder=lambda self, contest_id, audience_ids, user_id: [
-            "contests:*",
-            "student:contests:user:*",
-            "student:contest:user:*",
-        ],
+        key_builder=lambda self, contest_id, audience_ids, user_id: (
+            cache_keys.contest_full_bust(contest_id)
+        ),
     )
     async def remove_audiences_from_contest(
         self, contest_id: UUID, audience_ids: list[UUID], user_id: UUID
@@ -430,12 +434,9 @@ class ContestService:
         await self.repository.unlink_audiences_from_contest(contest_id, audience_ids)
 
     @cache_delete(
-        key_builder=lambda self, contest_id, contest_data, user_id: [
-            f"contest:{contest_id}*",
-            "contests:*",
-            "student:contests:user:*",
-            "student:contest:user:*",
-        ],
+        key_builder=lambda self, contest_id, contest_data, user_id: (
+            cache_keys.contest_full_bust(contest_id)
+        ),
     )
     async def update_contest(
         self, contest_id: UUID, contest_data: ContestUpdate, user_id: UUID
@@ -529,12 +530,9 @@ class ContestService:
         )
 
     @cache_delete(
-        key_builder=lambda self, contest_id, user_id: [
-            f"contest:{contest_id}*",
-            "contests:*",
-            "student:contests:user:*",
-            "student:contest:user:*",
-        ],
+        key_builder=lambda self, contest_id, user_id: cache_keys.contest_full_bust(
+            contest_id
+        ),
     )
     async def delete_contest(self, contest_id: UUID, user_id: UUID) -> ContestResponse:
         """
@@ -566,8 +564,8 @@ class ContestService:
 
     @cache_delete(
         key_builder=lambda self, contest_id, request, user_id: [
-            f"contest:{contest_id}:instructors:*",
-            "contests:*",
+            cache_keys.contest_instructors_bust_pattern(contest_id),
+            cache_keys.CONTESTS_LIST_BUST_PATTERN,
         ]
     )
     async def assign_instructors_to_contest(
@@ -612,8 +610,8 @@ class ContestService:
 
     @cache_delete(
         key_builder=lambda self, contest_id, request, user_id: [
-            f"contest:{contest_id}:instructors:*",
-            "contests:*",
+            cache_keys.contest_instructors_bust_pattern(contest_id),
+            cache_keys.CONTESTS_LIST_BUST_PATTERN,
         ]
     )
     async def remove_instructors_from_contest(
@@ -657,7 +655,9 @@ class ContestService:
 
     @cache_get(
         key_builder=lambda self, contest_id, user_id, skip=0, limit=100: (
-            f"contest:{contest_id}:instructors:user:{user_id}:skip:{skip}:limit:{limit}"
+            cache_keys.contest_instructors_list_key(
+                contest_id, user_id, skip=skip, limit=limit
+            )
         ),
         ttl=300,
     )
@@ -700,12 +700,9 @@ class ContestService:
         return total, instructor_responses
 
     @cache_delete(
-        key_builder=lambda self, contest_id, user_id: [
-            f"contest:{contest_id}*",
-            "contests:*",
-            "student:contests:user:*",
-            "student:contest:user:*",
-        ],
+        key_builder=lambda self, contest_id, user_id: cache_keys.contest_full_bust(
+            contest_id
+        ),
     )
     async def publish_contest(self, contest_id: UUID, user_id: UUID) -> None:
         """
@@ -737,12 +734,9 @@ class ContestService:
         logger.info(f"Contest {contest_id} published ")
 
     @cache_delete(
-        key_builder=lambda self, contest_id, user_id: [
-            f"contest:{contest_id}*",
-            "contests:*",
-            "student:contests:user:*",
-            "student:contest:user:*",
-        ],
+        key_builder=lambda self, contest_id, user_id: cache_keys.contest_full_bust(
+            contest_id
+        ),
     )
     async def soft_delete_contest(self, contest_id: UUID, user_id: UUID) -> None:
         """
@@ -770,12 +764,9 @@ class ContestService:
         logger.info(f"Contest {contest_id} soft deleted")
 
     @cache_delete(
-        key_builder=lambda self, contest_id, user_id: [
-            f"contest:{contest_id}*",
-            "contests:*",
-            "student:contests:user:*",
-            "student:contest:user:*",
-        ],
+        key_builder=lambda self, contest_id, user_id: cache_keys.contest_full_bust(
+            contest_id
+        ),
     )
     async def restore_contest(self, contest_id: UUID, user_id: UUID) -> ContestResponse:
         """
@@ -813,7 +804,9 @@ class ContestService:
 
     @cache_get(
         key_builder=lambda self, user_id, search_term=None, status=None, skip=0, limit=100: (
-            f"contests:deleted:user:{user_id}:search:{search_term}:status:{status}:skip:{skip}:limit:{limit}"
+            cache_keys.contests_deleted_list_key(
+                user_id, search_term=search_term, status=status, skip=skip, limit=limit
+            )
         ),
         ttl=300,
     )
@@ -891,12 +884,9 @@ class ContestService:
         return [ContestAudienceResponse.model_validate(a) for a in audiences]
 
     @cache_delete(
-        key_builder=lambda self, contest_id, user_id: [
-            f"contest:{contest_id}*",
-            "contests:*",
-            "student:contests:user:*",
-            "student:contest:user:*",
-        ],
+        key_builder=lambda self, contest_id, user_id: cache_keys.contest_full_bust(
+            contest_id
+        ),
     )
     async def cancel_contest(self, contest_id: UUID, user_id: UUID) -> None:
         """
@@ -948,7 +938,7 @@ class ContestService:
 
     @cache_delete(
         key_builder=lambda self, contest_id, user_id, scope=EvaluationScope.ALL, team_ids=None, question_ids=None, student_ids=None, is_override=False: [
-            f"contest:{contest_id}:leaderboard:*",
+            cache_keys.contest_leaderboard_bust_pattern(contest_id),
         ],
     )
     async def evaluate_contest(
@@ -1126,7 +1116,7 @@ class ContestService:
 
     @cache_delete(
         key_builder=lambda self, contest_id, user_id: [
-            f"contest:{contest_id}:leaderboard*",
+            cache_keys.contest_leaderboard_bust_pattern(contest_id),
         ],
     )
     async def compute_team_scores(self, contest_id: UUID, user_id: UUID) -> None:
@@ -1215,7 +1205,13 @@ class ContestService:
     @staticmethod
     @cache_get(
         key_builder=lambda repository, contest_id, search_term=None, sort_order="desc", skip=0, limit=50: (
-            f"contest:{contest_id}:leaderboard:search:{search_term}:sort:{sort_order}:skip:{skip}:limit:{limit}"
+            cache_keys.contest_leaderboard_key(
+                contest_id,
+                search_term=search_term,
+                sort_order=sort_order,
+                skip=skip,
+                limit=limit,
+            )
         ),
         ttl=300,
     )
@@ -1303,12 +1299,9 @@ class ContestService:
         )
 
     @cache_delete(
-        key_builder=lambda self, contest_id, publish, user_id: [
-            f"contest:{contest_id}*",
-            "contests:*",
-            "student:contest:user:*",
-            "student:contests:user:*",
-        ]
+        key_builder=lambda self, contest_id, publish, user_id: (
+            cache_keys.contest_full_bust(contest_id)
+        ),
     )
     async def publish_results(
         self, contest_id: UUID, publish: bool, user_id: UUID
