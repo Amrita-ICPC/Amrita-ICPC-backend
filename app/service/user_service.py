@@ -16,6 +16,7 @@ from app.repositories.user import UserRepository
 from app.schema.user import (
     StudentUserSearchResponse,
     UserResponse,
+    UserSettingsResponse,
     UserSettingsUpdate,
 )
 from app.utils.enums import UserRole
@@ -254,9 +255,33 @@ class UserService:
             raise KeycloakSyncError(error_message)
 
     @staticmethod
+    @cache_get(
+        key_builder=lambda db, user_id: f"user:settings:{user_id}",
+        ttl=300,
+    )
+    async def get_settings(db: AsyncSession, user_id: UUID) -> UserSettingsResponse:
+        """
+        Get the current user's settings (e.g. theme preference).
+
+        Args:
+            db: Database session.
+            user_id: ID of the user whose settings to fetch.
+
+        Returns:
+            UserSettingsResponse: The user's settings.
+
+        Raises:
+            UserNotFoundError: If the user does not exist.
+        """
+        user_repo = UserRepository(db)
+        user = await user_repo.get_user_or_raise(user_id)
+        return UserSettingsResponse.model_validate(user)
+
+    @staticmethod
     @cache_delete(
         key_builder=lambda db, user_id, settings_update: [
             f"user:id:{user_id}",
+            f"user:settings:{user_id}",
             "user:keycloak:*",
         ]
     )

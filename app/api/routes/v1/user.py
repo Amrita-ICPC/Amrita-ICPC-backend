@@ -75,6 +75,27 @@ async def get_my_team_invitations(
     )
 
 
+@router.get(
+    "/me/settings",
+    response_model=APIResponse[UserSettingsResponse],
+    summary="Get current user's settings",
+)
+async def get_my_settings(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: UUID = Depends(get_current_user_id),
+):
+    """
+    Get settings/preferences (e.g. theme) for the currently authenticated user.
+    """
+    user_settings = await UserService.get_settings(db, current_user_id)
+    return create_api_response(
+        request,
+        data=user_settings,
+        message="Settings fetched successfully",
+    )
+
+
 @router.patch(
     "/me/settings",
     response_model=APIResponse[UserSettingsResponse],
