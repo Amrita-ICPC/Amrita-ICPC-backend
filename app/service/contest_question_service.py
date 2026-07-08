@@ -239,6 +239,7 @@ class ContestQuestionService:
         key_builder=lambda self, contest_id, request, user_id: [
             f"contest:{contest_id}*",
             "contests:*",
+            f"contests:{contest_id}:questions:*",
         ]
     )
     async def add_questions_to_contest(
@@ -338,6 +339,7 @@ class ContestQuestionService:
         key_builder=lambda self, contest_id, request, user_id: [
             f"contest:{contest_id}*",
             "contests:*",
+            f"contests:{contest_id}:questions:*",
         ]
     )
     async def remove_questions_from_contest(
@@ -408,7 +410,9 @@ class ContestQuestionService:
         key_builder=lambda self, contest_id, question_id, update_data, user_id: [
             f"contest:{contest_id}*",
             "contests:*",
-            f"student:contest:{contest_id}*student:contests:*",
+            f"student:contest:{contest_id}*",
+            "student:contests:*",
+            f"contests:{contest_id}:questions:{question_id}",
         ]
     )
     async def update_contest_question(
@@ -513,6 +517,7 @@ class ContestQuestionService:
         key_builder=lambda self, contest_id, request, user_id: [
             f"contest:{contest_id}*",
             "contests:*",
+            f"contests:{contest_id}:questions:*",
         ]
     )
     async def reorder_contest_questions(
@@ -579,6 +584,7 @@ class ContestQuestionService:
         key_builder=lambda self, contest_id, request, user_id: [
             f"contest:{contest_id}*",
             "contests:*",
+            f"contests:{contest_id}:questions:*",
         ]
     )
     async def clone_questions_from_bank(

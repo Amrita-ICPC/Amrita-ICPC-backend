@@ -255,7 +255,10 @@ class UserService:
 
     @staticmethod
     @cache_delete(
-        key_builder=lambda db, user_id, settings_update: [f"user:id:{user_id}"]
+        key_builder=lambda db, user_id, settings_update: [
+            f"user:id:{user_id}",
+            "user:keycloak:*",
+        ]
     )
     async def update_settings(
         db: AsyncSession, user_id: UUID, settings_update: UserSettingsUpdate

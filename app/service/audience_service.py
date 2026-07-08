@@ -58,6 +58,7 @@ class AudienceService:
     @cache_delete(
         key_builder=lambda self, payload: [
             "audiences:user:*",
+            "audiences:brief:*",
         ],
     )
     @cache_set(
@@ -194,6 +195,7 @@ class AudienceService:
     @cache_delete(
         key_builder=lambda self, audience_id, payload: [
             "audiences:user:*",
+            "audiences:brief:*",
         ],
     )
     @cache_set(
@@ -244,6 +246,7 @@ class AudienceService:
     @cache_delete(
         key_builder=lambda self, audience_id: [
             "audiences:user:*",
+            "audiences:brief:*",
             f"audience:{audience_id}",
             f"audience_users:user:*:{audience_id}:*",
         ],

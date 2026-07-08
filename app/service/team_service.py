@@ -103,6 +103,7 @@ class TeamService:
         key_builder=lambda self, contest_id, contest_team_id, approved_by: [
             f"contest:{contest_id}:team:{contest_team_id}:*",
             f"contest:{contest_id}:teams:*",
+            f"team:{contest_team_id}:members:*",
         ]
     )
     async def approve_team(
@@ -174,6 +175,7 @@ class TeamService:
         key_builder=lambda self, contest_id, contest_team_id, rejected_by: [
             f"contest:{contest_id}:team:{contest_team_id}:*",
             f"contest:{contest_id}:teams:*",
+            f"team:{contest_team_id}:members:*",
         ]
     )
     async def reject_team(
@@ -226,6 +228,7 @@ class TeamService:
         key_builder=lambda self, contest_id, contest_team_id, disqualified_by: [
             f"contest:{contest_id}:team:{contest_team_id}:*",
             f"contest:{contest_id}:teams:*",
+            f"team:{contest_team_id}:members:*",
         ]
     )
     async def disqualify_team(

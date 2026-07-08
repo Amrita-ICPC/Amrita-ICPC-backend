@@ -344,6 +344,7 @@ class ContestService:
             f"contest:{contest_id}*",
             "contests:*",
             "student:contests:user:*",
+            "student:contest:user:*",
         ],
     )
     async def assign_audiences_to_contest(
@@ -390,6 +391,7 @@ class ContestService:
         key_builder=lambda self, contest_id, audience_ids, user_id: [
             "contests:*",
             "student:contests:user:*",
+            "student:contest:user:*",
         ],
     )
     async def remove_audiences_from_contest(
@@ -432,6 +434,7 @@ class ContestService:
             f"contest:{contest_id}*",
             "contests:*",
             "student:contests:user:*",
+            "student:contest:user:*",
         ],
     )
     async def update_contest(
@@ -530,6 +533,7 @@ class ContestService:
             f"contest:{contest_id}*",
             "contests:*",
             "student:contests:user:*",
+            "student:contest:user:*",
         ],
     )
     async def delete_contest(self, contest_id: UUID, user_id: UUID) -> ContestResponse:
@@ -700,6 +704,7 @@ class ContestService:
             f"contest:{contest_id}*",
             "contests:*",
             "student:contests:user:*",
+            "student:contest:user:*",
         ],
     )
     async def publish_contest(self, contest_id: UUID, user_id: UUID) -> None:
@@ -736,6 +741,7 @@ class ContestService:
             f"contest:{contest_id}*",
             "contests:*",
             "student:contests:user:*",
+            "student:contest:user:*",
         ],
     )
     async def soft_delete_contest(self, contest_id: UUID, user_id: UUID) -> None:
@@ -768,6 +774,7 @@ class ContestService:
             f"contest:{contest_id}*",
             "contests:*",
             "student:contests:user:*",
+            "student:contest:user:*",
         ],
     )
     async def restore_contest(self, contest_id: UUID, user_id: UUID) -> ContestResponse:
@@ -888,6 +895,7 @@ class ContestService:
             f"contest:{contest_id}*",
             "contests:*",
             "student:contests:user:*",
+            "student:contest:user:*",
         ],
     )
     async def cancel_contest(self, contest_id: UUID, user_id: UUID) -> None:
@@ -1299,6 +1307,7 @@ class ContestService:
             f"contest:{contest_id}*",
             "contests:*",
             "student:contest:user:*",
+            "student:contests:user:*",
         ]
     )
     async def publish_results(
