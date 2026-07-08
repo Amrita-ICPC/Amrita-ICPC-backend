@@ -13,7 +13,11 @@ from app.models.audience import UserAudience
 from app.models.user import User
 from app.repositories.dto.user import UserListFilters
 from app.repositories.user import UserRepository
-from app.schema.user import StudentUserSearchResponse, UserResponse
+from app.schema.user import (
+    StudentUserSearchResponse,
+    UserResponse,
+    UserSettingsUpdate,
+)
 from app.utils.enums import UserRole
 from keycloak import KeycloakAdmin, KeycloakOpenIDConnection
 
@@ -248,6 +252,32 @@ class UserService:
             error_message = f"Unexpected error during Keycloak sync: {e}"
             logger.error(error_message)
             raise KeycloakSyncError(error_message)
+
+    @staticmethod
+    @cache_delete(
+        key_builder=lambda db, user_id, settings_update: [f"user:id:{user_id}"]
+    )
+    async def update_settings(
+        db: AsyncSession, user_id: UUID, settings_update: UserSettingsUpdate
+    ) -> UserResponse:
+        """
+        Update the current user's settings (e.g. theme preference).
+
+        Args:
+            db: Database session.
+            user_id: ID of the user whose settings to update.
+            settings_update: Settings fields to update.
+
+        Returns:
+            The updated user response.
+
+        Raises:
+            UserNotFoundError: If the user does not exist.
+        """
+        user_repo = UserRepository(db)
+        update_data = settings_update.model_dump(exclude_unset=True)
+        user = await user_repo.update_settings(user_id, update_data)
+        return UserResponse.model_validate(user)
 
     @staticmethod
     async def list_students_with_team_check(

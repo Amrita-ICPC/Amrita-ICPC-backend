@@ -117,6 +117,25 @@ class UserRepository:
         result = await self.db.execute(stmt)
         return result.scalars().first()
 
+    async def update_settings(self, user_id: UUID, update_data: dict[str, Any]) -> User:
+        """
+        Update a user's settings (e.g. theme preference).
+
+        Args:
+            user_id: ID of the user whose settings to update.
+            update_data: Mapping of settings fields to their new values.
+        Returns:
+            The updated User object.
+        Raises:
+            UserNotFoundError: If the user with the given ID does not exist.
+        """
+        user = await self.get_user_or_raise(user_id)
+        for field, value in update_data.items():
+            setattr(user, field, value)
+        await self.db.commit()
+        await self.db.refresh(user)
+        return user
+
     async def get_users_by_emails(self, emails: list[str]) -> list[User]:
         """
         Retrieve users by their email addresses.

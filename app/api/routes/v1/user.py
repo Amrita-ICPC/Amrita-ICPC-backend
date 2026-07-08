@@ -16,6 +16,8 @@ from app.schema.user import (
     UserInvitationResponse,
     UserProfile,
     UserResponse,
+    UserSettingsResponse,
+    UserSettingsUpdate,
     UserSyncResponse,
 )
 from app.service.student.student_service import StudentService
@@ -70,6 +72,30 @@ async def get_my_team_invitations(
         request,
         data=invitations,
         message="User invitations fetched successfully",
+    )
+
+
+@router.patch(
+    "/me/settings",
+    response_model=APIResponse[UserSettingsResponse],
+    summary="Update current user's settings",
+)
+async def update_my_settings(
+    request: Request,
+    settings_update: UserSettingsUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: UUID = Depends(get_current_user_id),
+):
+    """
+    Update settings/preferences (e.g. theme) for the currently authenticated user.
+    """
+    updated_user = await UserService.update_settings(
+        db, current_user_id, settings_update
+    )
+    return create_api_response(
+        request,
+        data=updated_user,
+        message="Settings updated successfully",
     )
 
 

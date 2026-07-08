@@ -33,6 +33,19 @@ class UserProfile(UserBase):
         from_attributes = True
 
 
+class UserSettingsUpdate(BaseModel):
+    """Fields a user can modify about their own settings/preferences."""
+
+    theme: Optional[str] = None
+
+
+class UserSettingsResponse(BaseModel):
+    theme: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
 class UserSyncSkipped(BaseModel):
     user_id: str
     name: Optional[str] = None
@@ -65,6 +78,7 @@ class UserResponse(BaseModel):
     role: UserRole
     gender: Optional[str] = None
     dob: Optional[date] = None
+    theme: Optional[str] = None
     created_at: datetime
     last_updated: datetime
     audience_links: List[AudienceBasicInfo] = []
