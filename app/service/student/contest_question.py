@@ -170,6 +170,7 @@ class StudentContestQuestionService:
             contest_team_member_id=contest_team_member.id,
             max_submission_per_question=contest.max_submission_per_question,
             evaluate_on_submit=contest.evaluate_on_submit,
+            shuffle_questions=contest.shuffle_questions,
             base_end_time=team_progress.end_time,
             extra_time_seconds=team_progress.extra_time_seconds,
             ended_at=team_progress.ended_at,
@@ -185,8 +186,21 @@ class StudentContestQuestionService:
         """
         session_data = await self._validate_session_and_get_contest(contest_id, user_id)
 
-        # Retrieve contest questions from repository
+        # Retrieve contest questions from repository (in the instructor's
+        # canonical order).
         questions = await self.repository.get_contest_questions(contest_id)
+
+        # When shuffle is enabled, present the questions in a per-student
+        # randomized order. The order is derived deterministically from the
+        # contest and this student's user id, so it is preserved across page
+        # refreshes, re-logins, and different devices without any stored state
+        # (and survives leaving/rejoining the contest).
+        if session_data.shuffle_questions:
+            questions = self._shuffle_questions_for_member(
+                questions,
+                contest_id=contest_id,
+                user_id=user_id,
+            )
 
         # Questions with at least one submission from this team (attempted), and
         # whether any of those submissions passed every testcase (solved).
@@ -232,6 +246,33 @@ class StudentContestQuestionService:
             )
 
         return StudentContestQuestionsListResponse(questions=question_responses)
+
+    @staticmethod
+    def _shuffle_questions_for_member(
+        questions: list,
+        contest_id: UUID,
+        user_id: UUID,
+    ) -> list:
+        """
+        Return the questions in a deterministic, per-student randomized order.
+
+        The order is a stable function of (contest_id, user_id), so the same
+        student always sees the same sequence across refreshes, re-logins, and
+        different devices, while different students get different orders. Since
+        it is keyed on the account (user_id) rather than the membership row, the
+        order also survives a student leaving and rejoining the contest. No
+        order is persisted -- it is recomputed identically on every request.
+
+        The list is first sorted by the canonical `order` so the shuffle input
+        is deterministic regardless of the DB row ordering.
+        """
+        import random
+
+        ordered = sorted(questions, key=lambda q: q.order)
+        seed = f"{contest_id}:{user_id}"
+        rng = random.Random(seed)
+        rng.shuffle(ordered)
+        return ordered
 
     async def get_contest_question_details(
         self, contest_id: UUID, question_id: UUID, user_id: UUID

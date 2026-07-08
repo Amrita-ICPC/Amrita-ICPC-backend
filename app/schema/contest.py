@@ -71,6 +71,10 @@ class ContestBase(BaseModel):
         default=False,
         description="Whether a team's own submissions are visible once results are published",
     )
+    shuffle_questions: bool = Field(
+        default=False,
+        description="Whether each student sees the contest questions in a randomized order",
+    )
 
     @model_validator(mode="after")
     def validate_dates(self):
@@ -154,6 +158,10 @@ class ContestUpdate(BaseModel):
         None,
         description="Whether a team's own submissions are visible once results are published",
     )
+    shuffle_questions: Optional[bool] = Field(
+        None,
+        description="Whether each student sees the contest questions in a randomized order",
+    )
 
     @model_validator(mode="after")
     def validate_dates(self):
@@ -229,6 +237,10 @@ class ContestSummaryResponse(BaseModel):
     show_team_submissions: bool = Field(
         ...,
         description="Whether a team's own submissions are visible once results are published",
+    )
+    shuffle_questions: bool = Field(
+        ...,
+        description="Whether each student sees the contest questions in a randomized order",
     )
 
     model_config = ConfigDict(from_attributes=True)
@@ -474,6 +486,7 @@ class ContestSessionValidationData(BaseModel):
     contest_team_member_id: UUID
     max_submission_per_question: int | None
     evaluate_on_submit: bool
+    shuffle_questions: bool = False
     base_end_time: datetime | None
     extra_time_seconds: int | None
     ended_at: datetime | None = None

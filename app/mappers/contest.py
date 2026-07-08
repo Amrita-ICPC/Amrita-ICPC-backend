@@ -43,6 +43,7 @@ def build_create_contest_dto(
         max_submission_per_question=contest.max_submission_per_question,
         show_leaderboard=contest.show_leaderboard,
         show_team_submissions=contest.show_team_submissions,
+        shuffle_questions=contest.shuffle_questions,
     )
 
 
@@ -112,6 +113,11 @@ def build_update_contest_dto(contest_data: ContestUpdate) -> UpdateContestData:
             if "show_team_submissions" in fields_set
             else UNSET
         ),
+        shuffle_questions=(
+            contest_data.shuffle_questions
+            if "shuffle_questions" in fields_set
+            else UNSET
+        ),
     )
 
 
@@ -177,6 +183,7 @@ def to_contest_response(
         results_published_at=contest.results_published_at,
         show_leaderboard=contest.show_leaderboard,
         show_team_submissions=contest.show_team_submissions,
+        shuffle_questions=contest.shuffle_questions,
     )
 
     return response
@@ -209,6 +216,7 @@ def to_contest_summary_response(
         max_submission_per_question=contest.max_submission_per_question,
         show_leaderboard=contest.show_leaderboard,
         show_team_submissions=contest.show_team_submissions,
+        shuffle_questions=contest.shuffle_questions,
         audiences=[
             ContestAudienceResponse.model_validate(link.audience)
             for link in contest.audience_links
@@ -248,6 +256,7 @@ def build_contest_entity(contest_data: CreateContestData) -> Contest:
         max_submission_per_question=contest_data.max_submission_per_question,
         show_leaderboard=contest_data.show_leaderboard,
         show_team_submissions=contest_data.show_team_submissions,
+        shuffle_questions=contest_data.shuffle_questions,
     )
 
 

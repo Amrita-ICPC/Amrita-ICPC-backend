@@ -79,6 +79,7 @@ class CreateContestData:
     max_submission_per_question: int | None
     show_leaderboard: bool
     show_team_submissions: bool
+    shuffle_questions: bool
 
 
 @dataclass
@@ -113,6 +114,7 @@ class UpdateContestData:
     max_submission_per_question: int | None | _UnsetType = UNSET
     show_leaderboard: bool | None | _UnsetType = UNSET
     show_team_submissions: bool | None | _UnsetType = UNSET
+    shuffle_questions: bool | None | _UnsetType = UNSET
 
 
 @dataclass

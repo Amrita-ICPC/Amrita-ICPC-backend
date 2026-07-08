@@ -182,14 +182,69 @@ async def get_languages(session: AsyncSession) -> list[Language]:
     return languages
 
 
-async def create_contests(
-    session: AsyncSession, instructor: User, count: int = 100
+async def create_live_contests(
+    session: AsyncSession, instructor: User
 ) -> list[Contest]:
-    """Create multiple contests."""
+    """Create 3 live contests with durations of 1, 2, and 3 days."""
     contests = []
     now = datetime.now(timezone.utc)
 
-    print(f"  Creating {count} contests...")
+    print("  Creating 3 live contests...")
+    for day_duration in [1, 2, 3]:
+        # Contest started a bit in the past to be "live"
+        contest_start = now - timedelta(hours=1)
+        contest_end = contest_start + timedelta(days=day_duration)
+
+        contest = Contest(
+            id=uuid.uuid4(),
+            name=f"Live Contest: {day_duration}-Day Challenge",
+            description=f"Live programming contest with {day_duration} day(s) duration. Registration open until contest ends.",
+            image=None,
+            is_public=True,
+            max_teams=100,
+            min_team_size=1,
+            max_team_size=5,
+            rules="Standard programming contest rules apply",
+            registration_start=now - timedelta(days=7),
+            registration_end=contest_end,  # Registration open until contest ends
+            scoring_type=ScoringType.AUTO,
+            team_approval_mode=TeamApprovalMode.AUTO_APPROVE,
+            contest_mode=ContestMode.TEAM,
+            status=ContestStatus.PUBLISHED,  # Live/published status
+            published_at=now,
+            published_by=instructor.id,
+            deleted_at=None,
+            deleted_by=None,
+            created_by=instructor.id,
+            created_at=now,
+            updated_at=now,
+            updated_by=None,
+            start_time=contest_start,
+            end_time=contest_end,
+            duration=None,
+            show_leaderboard_during_contest=True,
+            evaluate_on_submit=True,
+            participation_type="LEADER_ONLY",
+            max_submission_per_question=5,
+            shuffle_questions=False,
+        )
+        session.add(contest)
+        contests.append(contest)
+        print(f"    ✓ Created {day_duration}-day live contest")
+
+    await session.flush()
+    print("  ✓ All 3 live contests created")
+    return contests
+
+
+async def create_contests(
+    session: AsyncSession, instructor: User, count: int = 100
+) -> list[Contest]:
+    """Create multiple future contests."""
+    contests = []
+    now = datetime.now(timezone.utc)
+
+    print(f"  Creating {count} future contests...")
     for i in range(count):
         contest_start = now + timedelta(days=7 + i)
         contest_end = contest_start + timedelta(days=5)
@@ -226,6 +281,7 @@ async def create_contests(
             evaluate_on_submit=True,
             participation_type="LEADER_ONLY",
             max_submission_per_question=5,
+            shuffle_questions=False,
         )
         session.add(contest)
         contests.append(contest)
@@ -234,7 +290,7 @@ async def create_contests(
             print(f"    ✓ Created {i + 1} contests...")
 
     await session.flush()
-    print(f"  ✓ All {count} contests created")
+    print(f"  ✓ All {count} future contests created")
     return contests
 
 
@@ -389,9 +445,15 @@ async def main():
             languages = await get_languages(session)
             print(f"   ✓ {len(languages)} languages available\n")
 
-            # Create contests
-            print("🏆 Creating contests...")
-            contests = await create_contests(session, instructor, count=100)
+            # Create 3 live contests (1, 2, 3 days with registration till end)
+            print("🔴 Creating live contests...")
+            live_contests = await create_live_contests(session, instructor)
+            print()
+
+            # Create future contests
+            print("🏆 Creating future contests...")
+            future_contests = await create_contests(session, instructor, count=100)
+            contests = live_contests + future_contests
             print()
 
             # Determine questions per bank (random between 50-70)
@@ -414,7 +476,12 @@ async def main():
             await session.commit()
             print("✅ Database seeding completed successfully!\n")
             print("📊 Summary:")
-            print(f"   • Contests: {len(contests)} (Created by: {instructor.name})")
+            print(
+                f"   • Contests: {len(contests)} total (3 live + 100 future) - Created by: {instructor.name}"
+            )
+            print(
+                "   • Live contests: 1-day, 2-day, 3-day (registration open till end)"
+            )
             print(f"   • Banks: {len(banks)} (Owned by: {admin.name})")
             print(f"   • Questions per bank: {questions_per_bank} (50-70 range)")
             print(f"   • Total questions: {len(questions)}")

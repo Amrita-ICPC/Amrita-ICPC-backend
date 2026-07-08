@@ -157,6 +157,14 @@ class Contest(Base):
     show_leaderboard: Mapped[bool] = mapped_column(Boolean, default=False)
     show_team_submissions: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    # When enabled, each student sees the contest questions in a randomized
+    # order. The order is derived deterministically from the contest and the
+    # student's contest_team_member id, so it stays stable across refreshes
+    # and re-logins without any per-student storage.
+    shuffle_questions: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, server_default=text("false")
+    )
+
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
