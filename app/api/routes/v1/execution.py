@@ -5,7 +5,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import can_read
 from app.core.clients.database import get_db
+from app.core.config import config
 from app.core.logger import logger
+from app.core.rate_limit import rate_limit
 from app.schema.execution import (
     CodeRunRequest,
     CodeRunResponse,
@@ -26,7 +28,14 @@ def get_code_execution_service(
     "/run",
     response_model=CodeRunResponse,
     status_code=status.HTTP_200_OK,
-    dependencies=[can_read("questions")],
+    dependencies=[
+        can_read("questions"),
+        rate_limit(
+            config.RATE_LIMIT_RUN_TIMES,
+            config.RATE_LIMIT_RUN_SECONDS,
+            namespace="execution_run",
+        ),
+    ],
     summary="Run code against test cases (practice mode)",
     description="Execute code against all non-hidden test cases and get immediate feedback",
     responses={

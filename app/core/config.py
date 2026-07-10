@@ -187,6 +187,26 @@ class Config(BaseSettings):
         description="Worker concurrency for the bulk_contest_evaluation queue",
     )
 
+    # API rate limiting (per authenticated user) for endpoints that fan out to
+    # Judge0. These are the only unthrottled surfaces a single student could
+    # otherwise hammer to flood the judge queue or run up Judge0 usage.
+    RATE_LIMIT_RUN_TIMES: int = Field(
+        default=10,
+        description="Max practice/sample 'run code' requests per user per RATE_LIMIT_RUN_SECONDS",
+    )
+    RATE_LIMIT_RUN_SECONDS: int = Field(
+        default=10,
+        description="Time window (seconds) for RATE_LIMIT_RUN_TIMES",
+    )
+    RATE_LIMIT_SUBMIT_TIMES: int = Field(
+        default=5,
+        description="Max contest 'submit code' requests per user per RATE_LIMIT_SUBMIT_SECONDS",
+    )
+    RATE_LIMIT_SUBMIT_SECONDS: int = Field(
+        default=10,
+        description="Time window (seconds) for RATE_LIMIT_SUBMIT_TIMES",
+    )
+
     # Keycloak Configuration
     KEYCLOAK_SERVER_URL: str = Field(
         default="http://localhost:8080",

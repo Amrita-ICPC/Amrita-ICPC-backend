@@ -12,6 +12,7 @@ from app.core.clients.redis import close_redis, init_redis
 from app.core.config import config
 from app.core.logger import logger, setup_sqlalchemy_logging, setup_uvicorn_logging
 from app.core.middleware import RequestMiddleware
+from app.core.rate_limit import init_rate_limiter
 from app.core.security import setup_security
 
 
@@ -28,6 +29,9 @@ async def lifespan(app: FastAPI):
 
     # Initialize Redis
     await init_redis()
+
+    # Initialize rate limiter (Redis-backed; must run after init_redis())
+    await init_rate_limiter()
 
     # Initialize MinIO
     await init_minio()

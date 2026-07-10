@@ -9,7 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import get_current_user_id
 from app.core.clients.database import get_db
 from app.core.clients.redis import get_redis
+from app.core.config import config
 from app.core.logger import logger
+from app.core.rate_limit import rate_limit
 from app.core.response import create_api_response
 from app.repositories.contest import ContestRepository
 from app.repositories.contest_team_progress import ContestTeamProgressRepository
@@ -170,6 +172,13 @@ async def save_workspace(
     response_model=APIResponse[StudentCodeRunResponse],
     status_code=status.HTTP_200_OK,
     summary="Run student code against sample test cases",
+    dependencies=[
+        rate_limit(
+            config.RATE_LIMIT_RUN_TIMES,
+            config.RATE_LIMIT_RUN_SECONDS,
+            namespace="student_run",
+        )
+    ],
 )
 async def run_student_code(
     request: Request,
@@ -201,6 +210,13 @@ async def run_student_code(
     response_model=APIResponse[StudentSubmissionResponse],
     status_code=status.HTTP_201_CREATED,
     summary="Submit student code to a contest question",
+    dependencies=[
+        rate_limit(
+            config.RATE_LIMIT_SUBMIT_TIMES,
+            config.RATE_LIMIT_SUBMIT_SECONDS,
+            namespace="student_submit",
+        )
+    ],
 )
 async def submit_contest_question(
     request: Request,
