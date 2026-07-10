@@ -766,8 +766,24 @@ class TeamRepository:
             ).label(pending_label),
         ]
 
+    @staticmethod
+    def _progress_member_match(is_leader_only: bool):
+        """Build the ``ContestTeamProgress`` <-> member join predicate.
+
+        For ``LEADER_ONLY`` contests the session is stored as a single
+        team-level progress row (``contest_team_member_id IS NULL``), so it must
+        attach to every accepted member of the team. For
+        ``INDIVIDUAL_WORKSPACE`` each member has their own progress row and is
+        matched by id. This mirrors the write-side ``member_id_filter`` logic in
+        the student contest-session service so the read side finds the same row
+        that was created.
+        """
+        if is_leader_only:
+            return ContestTeamProgress.contest_team_member_id.is_(None)
+        return ContestTeamProgress.contest_team_member_id == ContestTeamMember.id
+
     async def get_contest_team_analytics(
-        self, contest_id: UUID, contest_team_id: UUID
+        self, contest_id: UUID, contest_team_id: UUID, is_leader_only: bool = False
     ) -> tuple[Any, list[Any]]:
         """
         Fetch team analytics with aggregate submission status counts and member progress.
@@ -837,7 +853,7 @@ class TeamRepository:
                 and_(
                     ContestTeamProgress.contest_id == contest_id,
                     ContestTeamProgress.contest_team_id == ContestTeam.id,
-                    ContestTeamProgress.contest_team_member_id == ContestTeamMember.id,
+                    self._progress_member_match(is_leader_only),
                 ),
             )
             .outerjoin(
@@ -888,7 +904,7 @@ class TeamRepository:
                 and_(
                     ContestTeamProgress.contest_id == contest_id,
                     ContestTeamProgress.contest_team_id == contest_team_id,
-                    ContestTeamProgress.contest_team_member_id == ContestTeamMember.id,
+                    self._progress_member_match(is_leader_only),
                 ),
             )
             .where(
@@ -902,14 +918,27 @@ class TeamRepository:
         return team_row, list(member_result.all())
 
     async def has_contest_team_member_progress(
-        self, contest_team_id: UUID, contest_team_member_id: UUID
+        self,
+        contest_team_id: UUID,
+        contest_team_member_id: UUID,
+        is_leader_only: bool = False,
     ) -> bool:
-        """Return whether the contest team member has started/attempted the contest."""
+        """Return whether the contest team member has started/attempted the contest.
+
+        For ``LEADER_ONLY`` contests progress is recorded once at the team level
+        (``contest_team_member_id IS NULL``), so any accepted member of a team
+        with a team-level progress row counts as having started.
+        """
+        member_filter = (
+            ContestTeamProgress.contest_team_member_id.is_(None)
+            if is_leader_only
+            else ContestTeamProgress.contest_team_member_id == contest_team_member_id
+        )
         result = await self.db.execute(
             select(ContestTeamProgress.id)
             .where(
                 ContestTeamProgress.contest_team_id == contest_team_id,
-                ContestTeamProgress.contest_team_member_id == contest_team_member_id,
+                member_filter,
             )
             .limit(1)
         )
@@ -921,6 +950,7 @@ class TeamRepository:
         contest_id: UUID,
         contest_team_id: UUID,
         contest_team_member_id: UUID,
+        is_leader_only: bool = False,
     ) -> Any:
         """Fetch one contest team member with participation and aggregate stats."""
         submission_status_subq = self._build_submission_status_subquery(
@@ -1046,7 +1076,7 @@ class TeamRepository:
                 and_(
                     ContestTeamProgress.contest_id == contest_id,
                     ContestTeamProgress.contest_team_id == contest_team_id,
-                    ContestTeamProgress.contest_team_member_id == ContestTeamMember.id,
+                    self._progress_member_match(is_leader_only),
                 ),
             )
             .outerjoin(submission_stats_subq, true())

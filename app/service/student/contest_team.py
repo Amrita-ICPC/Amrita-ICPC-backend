@@ -48,6 +48,7 @@ from app.utils.enums import (
     ContestMode,
     ContestStatus,
     ContestTeamMemberStatus,
+    ContestTeamParticipationType,
     TeamApprovalMode,
     TeamApprovalStatus,
     TeamStatus,
@@ -860,12 +861,16 @@ class ContestTeamService:
         if own_team_id is None:
             return None
 
+        contest = await self.contest_repository.get_contest_or_raise(contest_id)
+        is_leader_only = (
+            contest.participation_type == ContestTeamParticipationType.LEADER_ONLY
+        )
         assert self.team_analytics_repository is not None
         (
             team_row,
             member_rows,
         ) = await self.team_analytics_repository.get_contest_team_analytics(
-            contest_id, own_team_id
+            contest_id, own_team_id, is_leader_only=is_leader_only
         )
         return to_student_team_analytics(team_row, member_rows)
 
@@ -879,12 +884,17 @@ class ContestTeamService:
             contest_id, contest_team_member_id, user_id
         )
 
+        contest = await self.contest_repository.get_contest_or_raise(contest_id)
+        is_leader_only = (
+            contest.participation_type == ContestTeamParticipationType.LEADER_ONLY
+        )
         assert self.team_analytics_repository is not None
         member_row = (
             await self.team_analytics_repository.get_contest_team_member_detail(
                 contest_id=contest_id,
                 contest_team_id=own_team_id,
                 contest_team_member_id=contest_team_member_id,
+                is_leader_only=is_leader_only,
             )
         )
         return to_student_member_detail(member_row)

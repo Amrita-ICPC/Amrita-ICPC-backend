@@ -32,6 +32,7 @@ from app.schema.team import (
 from app.utils.contest import calculate_effective_times
 from app.utils.enums import (
     ContestTeamMemberStatus,
+    ContestTeamParticipationType,
     TeamApprovalMode,
     TeamApprovalStatus,
     TeamStatus,
@@ -477,8 +478,11 @@ class TeamService:
         contest = await self.contest_repository.get_contest_or_raise(contest_id)
         await self.guard.check_read_team(user_id=user_id, contest=contest)
 
+        is_leader_only = (
+            contest.participation_type == ContestTeamParticipationType.LEADER_ONLY
+        )
         team_row, member_rows = await self.repository.get_contest_team_analytics(
-            contest_id, contest_team_id
+            contest_id, contest_team_id, is_leader_only=is_leader_only
         )
         return to_contest_team_analytics(team_row, member_rows)
 
@@ -495,10 +499,14 @@ class TeamService:
         contest = await self.contest_repository.get_contest_or_raise(contest_id)
         await self.guard.check_read_team(user_id=user_id, contest=contest)
 
+        is_leader_only = (
+            contest.participation_type == ContestTeamParticipationType.LEADER_ONLY
+        )
         member_row = await self.repository.get_contest_team_member_detail(
             contest_id=contest_id,
             contest_team_id=contest_team_id,
             contest_team_member_id=contest_team_member_id,
+            is_leader_only=is_leader_only,
         )
         _, remaining_seconds = calculate_effective_times(
             base_end_time=member_row.base_end_time,
@@ -530,8 +538,11 @@ class TeamService:
         contest = await self.contest_repository.get_contest_or_raise(contest_id)
         await self.guard.check_read_team(user_id=user_id, contest=contest)
 
+        is_leader_only = (
+            contest.participation_type == ContestTeamParticipationType.LEADER_ONLY
+        )
         has_progress = await self.repository.has_contest_team_member_progress(
-            contest_team_id, contest_team_member_id
+            contest_team_id, contest_team_member_id, is_leader_only=is_leader_only
         )
         if not has_progress:
             raise ContestTeamProgressNotFoundError(
