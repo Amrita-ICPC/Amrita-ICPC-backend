@@ -47,6 +47,40 @@ class ContestTeamRepository:
         await self.db.flush()
         return contest_team_members
 
+    async def acquire_roster_lock(self, contest_team_id: UUID) -> None:
+        """Serialize roster-capacity checks (invite + accept) for one contest team.
+
+        Acquires a transaction-scoped PostgreSQL advisory lock to serialize concurrent
+        roster modifications (e.g., invites and acceptances) on a specific team,
+        preventing race conditions that could bypass max_team_size constraints.
+
+        Args:
+            contest_team_id: The ID of the contest team to lock.
+        """
+        await self.db.execute(
+            select(
+                func.pg_advisory_xact_lock(
+                    func.hashtext(f"team_roster:{contest_team_id}")
+                )
+            )
+        )
+
+    async def acquire_team_count_lock(self, contest_id: UUID) -> None:
+        """Serialize max_teams checks for a contest.
+
+        Acquires a transaction-scoped PostgreSQL advisory lock to serialize team
+        creation and import operations within a specific contest, preventing race
+        conditions that could bypass the contest's max_teams limit.
+
+        Args:
+            contest_id: The ID of the contest to lock.
+        """
+        await self.db.execute(
+            select(
+                func.pg_advisory_xact_lock(func.hashtext(f"team_count:{contest_id}"))
+            )
+        )
+
     async def get_contest_team_by_id_or_raise(
         self, contest_team_id: UUID
     ) -> ContestTeam:
@@ -133,12 +167,14 @@ class ContestTeamRepository:
 
         Args:
             user_id: The ID of the user.
-            stauts: The status of the contest team member.
-            team_status: The status of the contest team.
-            contest_id: The ID of the contest.
+            status: Optional member status filter.
+            approval_status: Optional team approval status filter.
+            team_status: Optional team status filter.
+            contest_id: Optional contest ID filter.
+
         Returns:
-            ContestTeamMember: The contest team member record associated with the user ID, or None if
-            not found.
+            ContestTeamMember | None: The contest team member record associated with the
+                user ID, or None if not found.
         """
         stmt = (
             select(ContestTeamMember)
@@ -185,10 +221,11 @@ class ContestTeamRepository:
 
         Args:
             user_id: The ID of the user.
-            status: The status of the contest team member.
-            approval_status: The approval status of the contest team.
-            team_status: The status of the contest team.
-            contest_id: The ID of the contest.
+            status: Optional member status filter.
+            approval_status: Optional team approval status filter.
+            team_status: Optional team status filter.
+            contest_id: Optional contest ID filter.
+
         Returns:
             list[ContestTeamMember]: The contest team member records associated with the user ID.
         """

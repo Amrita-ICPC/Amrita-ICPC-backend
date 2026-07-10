@@ -168,12 +168,15 @@ class ContestTeamService:
                 contest_id=contest_id,
             )
 
-        # Validate max teams limit
+        # Validate max teams limit. Locked so two concurrent imports/creates
+        # into this contest can't both pass the count check before either
+        # insert commits (see acquire_team_count_lock docstring).
         if (
             contest.max_teams is not None
             and isinstance(contest.max_teams, int)
             and contest.max_teams > 0
         ):
+            await self.repository.acquire_team_count_lock(contest_id)
             counts = await self.repository.count_teams_by_status(contest_id)
             ContestTeamValidator.validate_max_teams(
                 approved_teams_count=counts["approved_count"],
@@ -243,12 +246,15 @@ class ContestTeamService:
                 contest_id=contest_id,
             )
 
-        # Validate max teams limit
+        # Validate max teams limit. Locked so two concurrent imports/creates
+        # into this contest can't both pass the count check before either
+        # insert commits (see acquire_team_count_lock docstring).
         if (
             contest.max_teams is not None
             and isinstance(contest.max_teams, int)
             and contest.max_teams > 0
         ):
+            await self.repository.acquire_team_count_lock(contest_id)
             counts = await self.repository.count_teams_by_status(contest_id)
             ContestTeamValidator.validate_max_teams(
                 approved_teams_count=counts["approved_count"],
@@ -606,6 +612,12 @@ class ContestTeamService:
             user_ids=[user_id],
         )
 
+        # Locked so two invitees accepting for this same team at the same
+        # moment can't both pass the count check before either status write
+        # commits (see acquire_roster_lock docstring). The lock is held for
+        # the rest of this request's transaction, which covers the actual
+        # status write performed later by the caller.
+        await self.repository.acquire_roster_lock(contest_team_id)
         current_contest_team_member_count = (
             await self.repository.count_contest_team_members(
                 contest_team_id, ContestTeamMemberStatus.ACCEPTED
@@ -678,7 +690,11 @@ class ContestTeamService:
             team_name=contest_team.name,
         )
 
-        # Validate team size capacity limits
+        # Validate team size capacity limits. Locked so a concurrent invite
+        # or accept for this same team can't slip past the count check
+        # before this one's inserts commit (see acquire_roster_lock
+        # docstring).
+        await self.repository.acquire_roster_lock(contest_team_id)
         active_members_count = await self.repository.count_contest_team_members(
             contest_team_id,
             [ContestTeamMemberStatus.INVITED, ContestTeamMemberStatus.ACCEPTED],
