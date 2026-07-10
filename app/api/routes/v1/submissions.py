@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import can_read
+from app.auth.dependencies import instructor_manager_admin_procedure
 from app.core.clients.database import get_db
 from app.core.response import create_api_response
 from app.repositories.submission import ContestSubmissionRepository
@@ -28,7 +28,9 @@ def get_submission_service(db: AsyncSession = Depends(get_db)) -> SubmissionServ
     response_model=APIResponse[SubmissionDetailResponse],
     status_code=status.HTTP_200_OK,
     summary="Get submission detail",
-    dependencies=[can_read("contests")],
+    description="Staff-only. Exposes full submission detail including source code; "
+    "students must use the scoped /students/... submission endpoints instead.",
+    dependencies=[instructor_manager_admin_procedure],
 )
 async def get_submission_detail(
     request: Request,
@@ -50,7 +52,9 @@ async def get_submission_detail(
     response_model=APIResponse[SubmissionTestCaseListResponse],
     status_code=status.HTTP_200_OK,
     summary="Get submission testcase results",
-    dependencies=[can_read("contests")],
+    description="Staff-only. Exposes hidden testcase input/expected output for "
+    "review purposes; must never be reachable by students.",
+    dependencies=[instructor_manager_admin_procedure],
 )
 async def get_submission_testcases(
     request: Request,
