@@ -362,8 +362,20 @@ class EvaluationService:
         question_id: UUID,
         contest_submission_context: ContestSubmissionContext | None,
         status: str,
+        score: int | None = None,
+        passed_testcases: int | None = None,
+        total_testcases: int | None = None,
     ) -> None:
-        """Publish submission status update event to the contest event publisher for students."""
+        """Publish submission status update event to the contest event publisher for students.
+
+        score/passed_testcases/total_testcases are only known once a terminal
+        verdict has been persisted (see save_result/persist); left as None for
+        the "RUNNING" event fired right after submit. Root cause of "score
+        never updates" for a client that renders straight off this SSE push
+        instead of re-fetching the submission: this event previously carried
+        only a bare status string, never the score itself, even though the DB
+        row had already been updated correctly by the time this fires.
+        """
         if not contest_submission_context:
             return
         contest_id = contest_submission_context.contest_id
@@ -381,6 +393,9 @@ class EvaluationService:
                     submission_id=str(submission_id),
                     question_id=str(question_id),
                     status=status,
+                    score=score,
+                    passed_testcases=passed_testcases,
+                    total_testcases=total_testcases,
                 ),
             )
             await event_service.publish_event(
@@ -451,6 +466,9 @@ class EvaluationService:
                 resolved_question_id,
                 contest_sub_ctx,
                 status.value,
+                score=0,
+                passed_testcases=0,
+                total_testcases=0,
             )
 
     # ----------------------------------------------------------------- #
@@ -781,7 +799,7 @@ class EvaluationService:
                     timed_out=timed_out,
                 )
 
-                await self.save_result(
+                finalized_submission = await self.save_result(
                     db, submission_id, eval_result, data.testcases, max_score
                 )
 
@@ -798,6 +816,13 @@ class EvaluationService:
                     question_id,
                     contest_sub_ctx,
                     status_str,
+                    score=(
+                        finalized_submission.score
+                        if finalized_submission is not None
+                        else None
+                    ),
+                    passed_testcases=eval_result.passed_testcases,
+                    total_testcases=eval_result.total_testcases,
                 )
             logger.info(
                 f"Finished evaluation for submission {submission_id} "

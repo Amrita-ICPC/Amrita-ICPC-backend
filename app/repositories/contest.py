@@ -1389,6 +1389,21 @@ class ContestRepository:
         IntegrityError on the unique (contest_id, contest_team_id,
         contest_team_member_id) index.
 
+        That uniqueness is enforced by a *partial* index (see
+        uq_contest_team_progress_member on ContestTeamProgress, scoped to
+        ``WHERE contest_team_member_id IS NOT NULL`` since LEADER_ONLY
+        contests also store a team-level row with contest_team_member_id
+        NULL under a separate partial index). Postgres requires an
+        ON CONFLICT target's predicate to match a partial index's WHERE
+        clause exactly -- passing only index_elements with no index_where
+        does not resolve to this index and raises "there is no unique or
+        exclusion constraint matching the ON CONFLICT specification" on
+        every row that already exists, i.e. on every call after the first
+        for a given member. That error was being silently swallowed by the
+        caller's try/except (see _sync_team_progress_score), which is why
+        ContestTeamProgress.score stopped updating after a member's first
+        submission with no visible failure anywhere.
+
         Args:
             contest_id: Contest ID
             member_team_ids: Mapping from contest_team_member_id to contest_team_id
@@ -1414,7 +1429,8 @@ class ContestRepository:
                     "contest_id",
                     "contest_team_id",
                     "contest_team_member_id",
-                ]
+                ],
+                index_where=ContestTeamProgress.contest_team_member_id.isnot(None),
             )
         )
         await self.db.execute(stmt)

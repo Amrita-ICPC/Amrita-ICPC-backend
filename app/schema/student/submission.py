@@ -41,11 +41,22 @@ class StudentSubmissionResponse(BaseModel):
 
 
 class StudentSubmissionUpdatePayload(BaseModel):
-    """Payload details for a submission update event."""
+    """Payload details for a submission update event.
+
+    ``score``/``passed_testcases``/``total_testcases`` are only known once
+    evaluation has produced a terminal verdict, so they're None for the
+    "RUNNING" event fired right after submit -- a client relying solely on
+    this push channel (rather than re-fetching the submission) needs the
+    actual numbers here, not just a status string, or the displayed score
+    never changes even though the DB row was updated correctly.
+    """
 
     submission_id: str
     question_id: str
     status: str
+    score: int | None = None
+    passed_testcases: int | None = None
+    total_testcases: int | None = None
 
 
 class StudentSubmissionUpdateEvent(BaseModel):
