@@ -26,6 +26,8 @@ class AudienceAlreadyExistsError(AppBaseException):
 class UserNotInAudienceError(AppBaseException):
     """Raised when a user is not part of an audience."""
 
+    error_code = "USER_NOT_IN_AUDIENCE"
+
     def __init__(self, user_id: str, audience_ids: list[str] | None = None):
         super().__init__(
             message=f"User {user_id} is not a member of the requested audience(s)",

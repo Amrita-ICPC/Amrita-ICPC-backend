@@ -12,6 +12,8 @@ from app.exceptions.contest import ContestNotFoundError
 class NoContestTeamMemberFoundError(AppBaseException):
     """Raised when a user is not a member of any team in the contest."""
 
+    error_code = "NO_CONTEST_TEAM_MEMBER_FOUND"
+
     def __init__(
         self, detail: str = "User is not a member of any team in this contest."
     ):

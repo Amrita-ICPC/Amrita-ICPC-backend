@@ -21,6 +21,8 @@ class InvalidImagePathError(AppBaseException):
         message: Human-readable validation error message.
     """
 
+    error_code = "INVALID_IMAGE_PATH"
+
     def __init__(self, message: str) -> None:
         super().__init__(
             message=f"Invalid image path: {message}",
@@ -35,6 +37,8 @@ class InvalidImageDataError(AppBaseException):
         message: Human-readable validation error message.
     """
 
+    error_code = "INVALID_IMAGE_DATA"
+
     def __init__(self, message: str) -> None:
         super().__init__(
             message=f"Invalid image data: {message}",
@@ -48,6 +52,8 @@ class ImageNotFoundError(AppBaseException):
     Args:
         object_key: Object key that was not found.
     """
+
+    error_code = "IMAGE_NOT_FOUND"
 
     def __init__(self, object_key: str) -> None:
         super().__init__(
@@ -64,6 +70,8 @@ class ImageStorageError(AppBaseException):
         message: Human-readable failure message.
         detail: Optional structured details.
     """
+
+    error_code = "IMAGE_STORAGE_ERROR"
 
     def __init__(self, message: str, *, detail: object | None = None) -> None:
         super().__init__(

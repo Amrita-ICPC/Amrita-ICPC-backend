@@ -1,7 +1,6 @@
 import uuid
 
 from app.core.guards.contest import ContestOperationGuard
-from app.exceptions.contest import ContestNotFoundError
 from app.repositories.contest import ContestRepository
 from app.repositories.submission import ContestSubmissionRepository
 from app.repositories.team import TeamRepository
@@ -18,7 +17,7 @@ from app.schema.submission import (
     SubmissionUserSchema,
     TeamPerformanceSchema,
 )
-from app.utils.enums import ContestStatus
+from app.validators.contest import ContestValidator
 
 
 class ContestDashboardService:
@@ -57,8 +56,7 @@ class ContestDashboardService:
         """
         # 1. Retrieve contest and check existence/soft-deletion
         contest = await self.contest_repository.get_contest_or_raise(contest_id)
-        if contest.status == ContestStatus.DELETED:
-            raise ContestNotFoundError(str(contest_id))
+        ContestValidator.validate_not_deleted(contest.status, contest_id)
 
         # 2. Enforce manage contest permissions (Creator, assigned instructors, or admins)
         await self.guard.check_manage_contest(user_id=user_id, contest=contest)
@@ -190,8 +188,7 @@ class ContestDashboardService:
             PermissionDeniedError: If the user lacks manage permissions for this contest.
         """
         contest = await self.contest_repository.get_contest_or_raise(contest_id)
-        if contest.status == ContestStatus.DELETED:
-            raise ContestNotFoundError(str(contest_id))
+        ContestValidator.validate_not_deleted(contest.status, contest_id)
 
         await self.guard.check_manage_contest(user_id=user_id, contest=contest)
 

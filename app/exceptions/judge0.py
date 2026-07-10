@@ -49,6 +49,8 @@ class Judge0ServiceUnavailableError(Judge0ClientError):
 class Judge0NotInitializedError(Judge0ClientError):
     """Judge0 client is not initialized (service disabled)."""
 
+    error_code = "JUDGE0_NOT_INITIALIZED"
+
     def __init__(self, message: str = "Judge0 service is not configured or disabled"):
         super().__init__(
             message=message,

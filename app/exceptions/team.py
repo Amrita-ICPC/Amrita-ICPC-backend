@@ -37,6 +37,8 @@ class InvalidTeamSizeByModeError(AppBaseException):
 class TeamNotFoundError(AppBaseException):
     """Raised when a team is not found."""
 
+    error_code = "TEAM_NOT_FOUND"
+
     def __init__(self, team_id: str, contest_id: str):
         super().__init__(
             message=f"Team {team_id} not found in contest {contest_id}",
@@ -92,6 +94,8 @@ class InvalidLeaderAssignmentError(AppBaseException):
 class TeamIsConfirmedError(AppBaseException):
     """Raised when trying to change members of a confirmed team."""
 
+    error_code = "TEAM_IS_CONFIRMED"
+
     def __init__(self, team_name: str):
         super().__init__(
             message=f"Team '{team_name}' is confirmed and cannot be modified",
@@ -138,6 +142,8 @@ class StudentTeamNotFoundError(AppBaseException):
 class StudentTeamUserNotFoundError(AppBaseException):
     """Raised when a user is not found as a member of a team in the student context."""
 
+    error_code = "STUDENT_TEAM_USER_NOT_FOUND"
+
     def __init__(self, team_id: str | UUID, user_id: str | UUID):
         super().__init__(
             message=f"User {user_id} is not a member of team {team_id}.",
@@ -149,6 +155,8 @@ class StudentTeamUserNotFoundError(AppBaseException):
 class StudentTeamInvitationNotFoundError(AppBaseException):
     """Raised when a team invitation is not found by ID in the student context."""
 
+    error_code = "STUDENT_TEAM_INVITATION_NOT_FOUND"
+
     def __init__(self, invitation_id: str | UUID):
         super().__init__(
             message=f"Team invitation with ID {invitation_id} not found.",
@@ -159,6 +167,8 @@ class StudentTeamInvitationNotFoundError(AppBaseException):
 
 class StudentTeamInvitationError(AppBaseException):
     """Raised when a team invitation operation is invalid in the student context."""
+
+    error_code = "STUDENT_TEAM_INVITATION_ERROR"
 
     def __init__(self, detail: str):
         super().__init__(
@@ -182,6 +192,8 @@ class TeamMemberAccessDeniedError(AppBaseException):
 class TeamNotHavingRequiredNumberOfMembersException(AppBaseException):
     """Raised when a team does not have the required number of members."""
 
+    error_code = "TEAM_NOT_HAVING_REQUIRED_NUMBER_OF_MEMBERS"
+
     def __init__(
         self,
         team_name: str,
@@ -199,6 +211,8 @@ class TeamNotHavingRequiredNumberOfMembersException(AppBaseException):
 class LeaderMustBeMemberError(AppBaseException):
     """Raised when the team leader is not included in the members to import."""
 
+    error_code = "LEADER_MUST_BE_MEMBER"
+
     def __init__(self, leader_id: str, team_name: str):
         super().__init__(
             message=f"Team leader {leader_id} must be included as a member of team '{team_name}'",
@@ -209,6 +223,8 @@ class LeaderMustBeMemberError(AppBaseException):
 
 class IndividualModeActionNotAllowedError(AppBaseException):
     """Raised when trying to perform team actions in individual contest mode."""
+
+    error_code = "INDIVIDUAL_MODE_ACTION_NOT_ALLOWED"
 
     def __init__(self, action: str):
         super().__init__(

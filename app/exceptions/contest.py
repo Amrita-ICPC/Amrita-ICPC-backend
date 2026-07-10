@@ -6,6 +6,8 @@ from app.exceptions.base import AppBaseException
 class ContestNotFoundError(AppBaseException):
     """Raised when contest is not found."""
 
+    error_code = "CONTEST_NOT_FOUND"
+
     def __init__(self, contest_id: str):
         super().__init__(
             message=f"Contest with ID {contest_id} not found",
@@ -26,6 +28,8 @@ class ContestDeletedError(AppBaseException):
 class ContestAlreadyExistsError(AppBaseException):
     """Raised when contest with same name already exists."""
 
+    error_code = "CONTEST_ALREADY_EXISTS"
+
     def __init__(self, name: str):
         super().__init__(
             message=f"Contest with name '{name}' already exists",
@@ -35,6 +39,8 @@ class ContestAlreadyExistsError(AppBaseException):
 
 class InvalidContestError(AppBaseException):
     """Raised when contest data is invalid."""
+
+    error_code = "INVALID_CONTEST"
 
     def __init__(self, message: str = "Invalid contest data"):
         super().__init__(
@@ -46,6 +52,8 @@ class InvalidContestError(AppBaseException):
 class ContestOperationError(AppBaseException):
     """Raised when contest operation fails."""
 
+    error_code = "CONTEST_OPERATION_ERROR"
+
     def __init__(self, message: str = "Contest operation failed"):
         super().__init__(
             message=message,
@@ -55,6 +63,8 @@ class ContestOperationError(AppBaseException):
 
 class InstructorNotFoundError(AppBaseException):
     """Raised when instructor is not found."""
+
+    error_code = "INSTRUCTOR_NOT_FOUND"
 
     def __init__(self, instructor_id: str):
         super().__init__(
@@ -66,6 +76,8 @@ class InstructorNotFoundError(AppBaseException):
 class InstructorAlreadyAssignedError(AppBaseException):
     """Raised when instructor is already assigned to contest."""
 
+    error_code = "INSTRUCTOR_ALREADY_ASSIGNED"
+
     def __init__(self, instructor_id: str, contest_id: str):
         super().__init__(
             message=f"Instructor {instructor_id} is already assigned to contest {contest_id}",
@@ -75,6 +87,8 @@ class InstructorAlreadyAssignedError(AppBaseException):
 
 class InstructorNotAssignedError(AppBaseException):
     """Raised when instructor is not assigned to contest."""
+
+    error_code = "INSTRUCTOR_NOT_ASSIGNED"
 
     def __init__(self, instructor_id: str, contest_id: str):
         super().__init__(
@@ -96,6 +110,8 @@ class InvalidInstructorRoleError(AppBaseException):
 class QuestionAlreadyInContestError(AppBaseException):
     """Raised when question is already added to the contest."""
 
+    error_code = "QUESTION_ALREADY_IN_CONTEST"
+
     def __init__(self, question_id: str, contest_id: str):
         super().__init__(
             message=f"Question {question_id} is already in contest {contest_id}",
@@ -105,6 +121,8 @@ class QuestionAlreadyInContestError(AppBaseException):
 
 class QuestionNotInContestError(AppBaseException):
     """Raised when question is not found in the contest."""
+
+    error_code = "QUESTION_NOT_IN_CONTEST"
 
     def __init__(self, question_id: str, contest_id: str):
         super().__init__(
@@ -116,6 +134,8 @@ class QuestionNotInContestError(AppBaseException):
 class InvalidContestQuestionDataError(AppBaseException):
     """Raised when contest question data is invalid."""
 
+    error_code = "INVALID_CONTEST_QUESTION_DATA"
+
     def __init__(self, message: str = "Invalid contest question data"):
         super().__init__(
             message=message,
@@ -125,6 +145,8 @@ class InvalidContestQuestionDataError(AppBaseException):
 
 class DuplicateQuestionOrderError(AppBaseException):
     """Raised when question order conflicts with existing questions."""
+
+    error_code = "DUPLICATE_QUESTION_ORDER"
 
     def __init__(self, order: int, contest_id: str):
         super().__init__(
@@ -136,6 +158,8 @@ class DuplicateQuestionOrderError(AppBaseException):
 class AudienceNotAssignedToContestError(AppBaseException):
     """Raised when audience is not assigned to contest."""
 
+    error_code = "AUDIENCE_NOT_ASSIGNED_TO_CONTEST"
+
     def __init__(self, audience_id: str, contest_id: str):
         super().__init__(
             message=f"Audience {audience_id} is not assigned to contest {contest_id}",
@@ -145,6 +169,8 @@ class AudienceNotAssignedToContestError(AppBaseException):
 
 class InvalidContestStateError(AppBaseException):
     """Raised when contest is in an invalid state for the requested operation."""
+
+    error_code = "INVALID_CONTEST_STATE"
 
     def __init__(
         self,
@@ -167,6 +193,8 @@ class InvalidContestStateError(AppBaseException):
 class StudentNotEligibleForContestError(AppBaseException):
     """Raised when student is not eligible for the contest."""
 
+    error_code = "STUDENT_NOT_ELIGIBLE_FOR_CONTEST"
+
     def __init__(self, user_id: str, contest_id: str):
         super().__init__(
             message=f"Student {user_id} is not eligible for contest {contest_id}",
@@ -187,6 +215,8 @@ class ContestResultsNotVisibleError(AppBaseException):
 class StudentAlreadyInContestError(AppBaseException):
     """Raised when student is already registered or enrolled in the contest."""
 
+    error_code = "STUDENT_ALREADY_IN_CONTEST"
+
     def __init__(self, user_id: str, contest_id: str):
         super().__init__(
             message=f"Student {user_id} is already in contest {contest_id}",
@@ -196,6 +226,8 @@ class StudentAlreadyInContestError(AppBaseException):
 
 class StudentContestSessionAlreadyStartedError(AppBaseException):
     """Raised when a student tries to re-register after starting a contest session."""
+
+    error_code = "STUDENT_CONTEST_SESSION_ALREADY_STARTED"
 
     def __init__(self, user_id: str, contest_id: str):
         super().__init__(
@@ -207,6 +239,8 @@ class StudentContestSessionAlreadyStartedError(AppBaseException):
 class TeamAlreadyInContestError(AppBaseException):
     """Raised when team is already registered or enrolled in the contest."""
 
+    error_code = "TEAM_ALREADY_IN_CONTEST"
+
     def __init__(self, team_id: str, contest_id: str):
         super().__init__(
             message=f"Team {team_id} is already in contest {contest_id}",
@@ -217,6 +251,8 @@ class TeamAlreadyInContestError(AppBaseException):
 class ContestTeamNotFoundException(AppBaseException):
     """Raised when contest team is not found."""
 
+    error_code = "CONTEST_TEAM_NOT_FOUND"
+
     def __init__(self, contest_team_id: str):
         super().__init__(
             message=f"Contest team with ID {contest_team_id} not found",
@@ -226,6 +262,8 @@ class ContestTeamNotFoundException(AppBaseException):
 
 class ContestTeamProgressNotFoundError(AppBaseException):
     """Raised when contest team progress is not found."""
+
+    error_code = "CONTEST_TEAM_PROGRESS_NOT_FOUND"
 
     def __init__(self, contest_id: str, contest_team_id: str):
         super().__init__(
@@ -245,6 +283,8 @@ class TeamCanceledError(AppBaseException):
 
 
 class AccessDeniedTeamStatusError(AppBaseException):
+    error_code = "ACCESS_DENIED_TEAM_STATUS"
+
     def __init__(self, team_status: str):
         super().__init__(
             message=f"Team is in status {team_status}' you cannot make changes to the team for students",
@@ -253,6 +293,8 @@ class AccessDeniedTeamStatusError(AppBaseException):
 
 
 class TeamDisqualifiedError(AppBaseException):
+    error_code = "TEAM_DISQUALIFIED"
+
     def __init__(self):
         super().__init__(
             message="Team is disqualified",
@@ -263,6 +305,8 @@ class TeamDisqualifiedError(AppBaseException):
 class ContestTeamMemberNotFoundException(AppBaseException):
     """Raised when contest team member is not found."""
 
+    error_code = "CONTEST_TEAM_MEMBER_NOT_FOUND"
+
     def __init__(self, contest_team_member_id: str):
         super().__init__(
             message=f"Contest team member with ID {contest_team_member_id} not found",
@@ -272,6 +316,8 @@ class ContestTeamMemberNotFoundException(AppBaseException):
 
 class ContestMaxTeamsReachedError(AppBaseException):
     """Raised when the contest has reached its maximum allowed number of teams."""
+
+    error_code = "CONTEST_MAX_TEAMS_REACHED"
 
     def __init__(self, contest_id: str, max_teams: int):
         super().__init__(

@@ -10,6 +10,8 @@ class BankNotFoundError(AppBaseException):
     a bank that does not exist in the database or has been deleted.
     """
 
+    error_code = "BANK_NOT_FOUND"
+
     def __init__(self, bank_id: str):
         """Initialize the exception with the missing bank's ID.
 
@@ -28,6 +30,8 @@ class BankAlreadyExistsError(AppBaseException):
     This error is thrown to enforce uniqueness constraints, typically
     preventing a user from creating multiple banks with the exact same name.
     """
+
+    error_code = "BANK_ALREADY_EXISTS"
 
     def __init__(self, name: str):
         """Initialize the exception with the conflicting bank name.
@@ -48,6 +52,8 @@ class BankAccessDeniedError(AppBaseException):
     a bank that they do not own and which has not been shared with them.
     """
 
+    error_code = "BANK_ACCESS_DENIED"
+
     def __init__(self):
         """Initialize the access denied exception."""
         super().__init__(
@@ -62,6 +68,8 @@ class BankPermissionError(AppBaseException):
     This error is thrown when a user has some access to a bank (e.g., READ),
     but attempts an operation that requires a higher permission level (e.g., EDIT or OWNER).
     """
+
+    error_code = "BANK_PERMISSION_ERROR"
 
     def __init__(self, bank_id: str | None = None):
         """Initialize the permission error exception."""
@@ -79,6 +87,8 @@ class BankOwnerUnshareError(AppBaseException):
     This error is thrown when a user attempts to remove the owner's access to their own bank.
     The bank owner cannot be unshared from the bank.
     """
+
+    error_code = "BANK_OWNER_UNSHARE_ERROR"
 
     def __init__(self, bank_id: str, owner_id: str):
         """Initialize the exception with the bank and owner IDs.

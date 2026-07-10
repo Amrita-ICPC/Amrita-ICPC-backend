@@ -6,7 +6,6 @@ from app.core.cache.decorators import cache_delete
 from app.core.guards.contest_student import ContestStudentGuard
 from app.core.guards.team_student import TeamStudentGuard
 from app.exceptions.contest import (
-    ContestNotFoundError,
     ContestResultsNotVisibleError,
     ContestTeamNotFoundException,
     StudentAlreadyInContestError,
@@ -46,7 +45,6 @@ from app.schema.team import ContestTeamCreate, ContestTeamImport
 from app.service.contest_service import ContestService
 from app.utils.enums import (
     ContestMode,
-    ContestStatus,
     ContestTeamMemberStatus,
     ContestTeamParticipationType,
     TeamApprovalMode,
@@ -810,8 +808,7 @@ class ContestTeamService:
             ContestResultsNotVisibleError: If results are hidden or team-only.
         """
         contest = await self.contest_repository.get_contest_or_raise(contest_id)
-        if contest.status == ContestStatus.DELETED:
-            raise ContestNotFoundError(str(contest_id))
+        ContestValidator.validate_not_deleted(contest.status, contest_id)
 
         await self.contest_student_guard.check_student_eligibility(
             user_id=user_id, contest=contest
@@ -876,8 +873,7 @@ class ContestTeamService:
                 team submissions are not configured to be shown.
         """
         contest = await self.contest_repository.get_contest_or_raise(contest_id)
-        if contest.status == ContestStatus.DELETED:
-            raise ContestNotFoundError(str(contest_id))
+        ContestValidator.validate_not_deleted(contest.status, contest_id)
 
         if not contest.results_published_at:
             raise ContestResultsNotVisibleError(str(contest_id))

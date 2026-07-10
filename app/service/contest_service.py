@@ -12,7 +12,6 @@ from app.core.logger import logger
 from app.core.permissions import AudiencePermission
 from app.exceptions.contest import (
     AudienceNotAssignedToContestError,
-    ContestNotFoundError,
     InvalidContestError,
 )
 from app.exceptions.evaluation import (
@@ -148,8 +147,7 @@ class ContestService:
             PermissionDeniedError: If user lacks permission
         """
         contest = await self.repository.get_contest_or_raise(contest_id)
-        if contest.status == ContestStatus.DELETED:
-            raise ContestNotFoundError(str(contest_id))
+        self.validator.validate_not_deleted(contest.status, contest_id)
         await self.guard.check_manage_contest(user_id=user_id, contest=contest)
 
         user = await self.user_repository.get_user_or_raise(user_id)
@@ -246,8 +244,7 @@ class ContestService:
         contest = await self.repository.get_contest_or_raise(contest_id)
 
         # Check if contest is soft-deleted
-        if contest.status == ContestStatus.DELETED:
-            raise ContestNotFoundError(str(contest_id))
+        self.validator.validate_not_deleted(contest.status, contest_id)
 
         # Check permissions
         await self.guard.check_read_contest(user_id=user_id, contest=contest)
@@ -730,8 +727,7 @@ class ContestService:
         contest = await self.repository.get_contest_or_raise(contest_id)
 
         # Check if contest is soft-deleted
-        if contest.status == ContestStatus.DELETED:
-            raise ContestNotFoundError(str(contest_id))
+        self.validator.validate_not_deleted(contest.status, contest_id)
 
         # Validate contest state (must be DRAFT)
         self.validator.validate_contest_can_be_published(contest.status, contest_id)
@@ -763,8 +759,7 @@ class ContestService:
         contest = await self.repository.get_contest_or_raise(contest_id)
 
         # Check if already soft-deleted
-        if contest.status == ContestStatus.DELETED:
-            raise ContestNotFoundError(str(contest_id))
+        self.validator.validate_not_deleted(contest.status, contest_id)
 
         # Check permissions
         await self.guard.check_manage_contest(user_id=user_id, contest=contest)
@@ -886,8 +881,7 @@ class ContestService:
             List of audiences with details
         """
         contest = await self.repository.get_contest_or_raise(contest_id)
-        if contest.status == ContestStatus.DELETED:
-            raise ContestNotFoundError(str(contest_id))
+        self.validator.validate_not_deleted(contest.status, contest_id)
         await self.guard.check_read_contest(user_id=user_id, contest=contest)
 
         audiences = await self.repository.get_contest_audiences_with_details(contest_id)
@@ -907,8 +901,7 @@ class ContestService:
             user_id: ID of the user requesting the cancellation
         """
         contest = await self.repository.get_contest_or_raise(contest_id)
-        if contest.status == ContestStatus.DELETED:
-            raise ContestNotFoundError(str(contest_id))
+        self.validator.validate_not_deleted(contest.status, contest_id)
 
         await self.guard.check_manage_contest(user_id=user_id, contest=contest)
 
@@ -990,8 +983,7 @@ class ContestService:
             raise EvaluationBackendUnavailableError("Redis client is not initialized")
 
         contest = await self.repository.get_contest_or_raise(contest_id)
-        if contest.status == ContestStatus.DELETED:
-            raise ContestNotFoundError(str(contest_id))
+        self.validator.validate_not_deleted(contest.status, contest_id)
 
         await self.guard.check_manage_contest(user_id=user_id, contest=contest)
 
@@ -1098,8 +1090,7 @@ class ContestService:
             PermissionDeniedError: If the user lacks permission to manage the contest.
         """
         contest = await self.repository.get_contest_or_raise(contest_id)
-        if contest.status == ContestStatus.DELETED:
-            raise ContestNotFoundError(str(contest_id))
+        self.validator.validate_not_deleted(contest.status, contest_id)
 
         await self.guard.check_manage_contest(user_id=user_id, contest=contest)
 
@@ -1150,8 +1141,7 @@ class ContestService:
             PermissionDeniedError: If the user lacks permission to manage the contest.
         """
         contest = await self.repository.get_contest_or_raise(contest_id)
-        if contest.status == ContestStatus.DELETED:
-            raise ContestNotFoundError(str(contest_id))
+        self.validator.validate_not_deleted(contest.status, contest_id)
 
         await self.guard.check_manage_contest(user_id=user_id, contest=contest)
 
@@ -1299,8 +1289,7 @@ class ContestService:
             PermissionDeniedError: If the user lacks read permission.
         """
         contest = await self.repository.get_contest_or_raise(contest_id)
-        if contest.status == ContestStatus.DELETED:
-            raise ContestNotFoundError(str(contest_id))
+        self.validator.validate_not_deleted(contest.status, contest_id)
 
         await self.guard.check_read_contest(user_id=user_id, contest=contest)
 
@@ -1331,8 +1320,7 @@ class ContestService:
             PermissionDeniedError: If the user lacks manage permission.
         """
         contest = await self.repository.get_contest_or_raise(contest_id)
-        if contest.status == ContestStatus.DELETED:
-            raise ContestNotFoundError(str(contest_id))
+        self.validator.validate_not_deleted(contest.status, contest_id)
 
         await self.guard.check_manage_contest(user_id=user_id, contest=contest)
 

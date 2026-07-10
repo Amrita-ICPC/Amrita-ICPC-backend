@@ -18,6 +18,8 @@ class InvalidCodeError(AppBaseException):
     - Code format is invalid
     """
 
+    error_code = "INVALID_CODE"
+
     def __init__(self, message: str):
         super().__init__(
             message=f"Invalid code submission: {message}",
@@ -33,6 +35,8 @@ class InvalidLanguageError(AppBaseException):
     - Language ID is not a valid integer
     - Language is not supported by Judge0
     """
+
+    error_code = "INVALID_LANGUAGE"
 
     def __init__(self, message: str):
         super().__init__(
@@ -51,6 +55,8 @@ class InvalidSubmissionTokenError(AppBaseException):
     - Token cannot be parsed or recognized
     """
 
+    error_code = "INVALID_SUBMISSION_TOKEN"
+
     def __init__(self, message: str):
         super().__init__(
             message=f"Invalid submission token: {message}",
@@ -68,6 +74,8 @@ class CodeExecutionError(AppBaseException):
     - Cannot retrieve execution results
     """
 
+    error_code = "CODE_EXECUTION_ERROR"
+
     def __init__(self, message: str = "Code execution failed"):
         super().__init__(
             message=message,
@@ -81,6 +89,8 @@ class NoTestCasesError(AppBaseException):
     Raised when attempting to run code against a question that has no
     visible test cases for students to practice against.
     """
+
+    error_code = "NO_TEST_CASES"
 
     def __init__(self, message: str):
         super().__init__(

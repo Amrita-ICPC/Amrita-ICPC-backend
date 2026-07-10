@@ -12,7 +12,6 @@ from app.core.cache.decorators import cache_delete, cache_get
 from app.core.guards.contest_student import ContestStudentGuard
 from app.core.logger import logger
 from app.exceptions.base import AppBaseException
-from app.exceptions.contest import ContestNotFoundError
 from app.exceptions.student.contests import (
     ContestSessionEndedError,
     ContestSessionNotStartedError,
@@ -703,8 +702,7 @@ class StudentContestService:
         Validates that the contest exists, is not deleted, and the user belongs to an approved team.
         """
         contest = await self.contest_repository.get_contest_or_raise(contest_id)
-        if contest.status == ContestStatus.DELETED:
-            raise ContestNotFoundError(str(contest_id))
+        ContestValidator.validate_not_deleted(contest.status, contest_id)
 
         contest_team_member = (
             await self.contest_team_repository.get_contest_team_member_by_user_id(

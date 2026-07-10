@@ -7,7 +7,6 @@ from app.core.cache.decorators import cache_delete, cache_get
 from app.core.guards.contest import ContestOperationGuard
 from app.core.logger import logger
 from app.exceptions.contest import (
-    ContestNotFoundError,
     DuplicateQuestionOrderError,
     QuestionAlreadyInContestError,
     QuestionNotInContestError,
@@ -52,7 +51,6 @@ from app.schema.question import (
 )
 from app.utils.enums import (
     ContestQuestionSortBy,
-    ContestStatus,
     QuestionDifficulty,
     SortOrder,
 )
@@ -111,8 +109,7 @@ class ContestQuestionService:
             PermissionDeniedError: If user lacks required permission.
         """
         contest = await self.repository.get_contest_or_raise(contest_id)
-        if contest.status == ContestStatus.DELETED:
-            raise ContestNotFoundError(str(contest_id))
+        self.validator.validate_not_deleted(contest.status, contest_id)
 
         if permission_level == "manage":
             await self.guard.check_manage_contest(user_id=user_id, contest=contest)
