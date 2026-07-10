@@ -50,6 +50,28 @@ def build_create_contest_dto(
 def build_update_contest_dto(contest_data: ContestUpdate) -> UpdateContestData:
     """Map contest update schema to repository update DTO."""
     fields_set = contest_data.model_fields_set
+
+    # These columns are NOT NULL on the contest table. Clients sometimes send an
+    # explicit ``null`` for them (e.g. the contest form clears the
+    # participation-type widget when the mode is switched from team to
+    # individual), which would otherwise be applied verbatim and blow up on
+    # flush with a not-null violation. Treat an explicit null on a required
+    # field as "leave unchanged" (UNSET) so a stray null can never blank it.
+    non_nullable_fields = (
+        "contest_mode",
+        "participation_type",
+        "scoring_type",
+        "team_approval_mode",
+    )
+
+    def _set(field_name: str):
+        if field_name not in fields_set:
+            return UNSET
+        value = getattr(contest_data, field_name)
+        if value is None and field_name in non_nullable_fields:
+            return UNSET
+        return value
+
     return UpdateContestData(
         name=contest_data.name if "name" in fields_set else UNSET,
         description=contest_data.description if "description" in fields_set else UNSET,
@@ -57,9 +79,7 @@ def build_update_contest_dto(contest_data: ContestUpdate) -> UpdateContestData:
         is_public=contest_data.is_public if "is_public" in fields_set else UNSET,
         start_time=contest_data.start_time if "start_time" in fields_set else UNSET,
         end_time=contest_data.end_time if "end_time" in fields_set else UNSET,
-        contest_mode=contest_data.contest_mode
-        if "contest_mode" in fields_set
-        else UNSET,
+        contest_mode=_set("contest_mode"),
         registration_start=(
             contest_data.registration_start
             if "registration_start" in fields_set
@@ -76,25 +96,15 @@ def build_update_contest_dto(contest_data: ContestUpdate) -> UpdateContestData:
             contest_data.max_team_size if "max_team_size" in fields_set else UNSET
         ),
         rules=contest_data.rules if "rules" in fields_set else UNSET,
-        scoring_type=(
-            contest_data.scoring_type if "scoring_type" in fields_set else UNSET
-        ),
-        team_approval_mode=(
-            contest_data.team_approval_mode
-            if "team_approval_mode" in fields_set
-            else UNSET
-        ),
+        scoring_type=_set("scoring_type"),
+        team_approval_mode=_set("team_approval_mode"),
         duration=contest_data.duration if "duration" in fields_set else UNSET,
         show_leaderboard_during_contest=(
             contest_data.show_leaderboard_during_contest
             if "show_leaderboard_during_contest" in fields_set
             else UNSET
         ),
-        participation_type=(
-            contest_data.participation_type
-            if "participation_type" in fields_set
-            else UNSET
-        ),
+        participation_type=_set("participation_type"),
         evaluate_on_submit=(
             contest_data.evaluate_on_submit
             if "evaluate_on_submit" in fields_set
