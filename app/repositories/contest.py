@@ -409,13 +409,16 @@ class ContestRepository:
         if filters.is_public is not None:
             base_query = base_query.filter(Contest.is_public == filters.is_public)
 
-        # Get stats before temporal filters and pagination
+        # Get stats before temporal filters, search/lifecycle/visibility filters, and pagination
         now = datetime.now(timezone.utc)
-        stats_sub = base_query.with_only_columns(
+        stats_base = select(
             Contest.id,
             Contest.start_time,
             Contest.end_time,
-        ).subquery()
+        )
+        stats_base = self._apply_permission_filter(stats_base, user_id, is_admin)
+        stats_base = stats_base.filter(Contest.status != ContestStatus.DELETED)
+        stats_sub = stats_base.subquery()
 
         stats_query = select(
             func.count(stats_sub.c.id).label("total_count"),
@@ -567,13 +570,16 @@ class ContestRepository:
         # Get distinct results
         base_query = base_query.distinct()
 
-        # Get stats before pagination
+        # Get stats before search/lifecycle filters and pagination
         now = datetime.now(timezone.utc)
-        stats_sub = base_query.with_only_columns(
+        stats_base = select(
             Contest.id,
             Contest.start_time,
             Contest.end_time,
-        ).subquery()
+        )
+        stats_base = self._apply_permission_filter(stats_base, user_id, is_admin)
+        stats_base = stats_base.filter(Contest.status == ContestStatus.DELETED)
+        stats_sub = stats_base.subquery()
 
         stats_query = select(
             func.count(stats_sub.c.id).label("total_count"),
