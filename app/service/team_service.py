@@ -234,6 +234,7 @@ class TeamService:
             f"contest:{contest_id}:teams:*",
             f"team:{contest_team_id}:members:*",
             *cache_keys.student_contests_bust(),
+            cache_keys.student_session_validation_bust_pattern(contest_id),
         ]
     )
     async def disqualify_team(

@@ -369,9 +369,10 @@ class ContestTeamService:
         return None
 
     @cache_delete(
-        key_builder=lambda self, contest_id, contest_team_id, user_id, contest_team_status: (
-            cache_keys.student_contests_bust()
-        )
+        key_builder=lambda self, contest_id, contest_team_id, user_id, contest_team_status: [
+            *cache_keys.student_contests_bust(),
+            cache_keys.student_session_validation_bust_pattern(contest_id),
+        ]
     )
     async def update_contest_team_status(
         self,
@@ -436,9 +437,10 @@ class ContestTeamService:
         return None
 
     @cache_delete(
-        key_builder=lambda self, user_id, contest_id, contest_team_id, contest_team_member_id, contest_team_member_status: (
-            cache_keys.student_contests_bust()
-        )
+        key_builder=lambda self, user_id, contest_id, contest_team_id, contest_team_member_id, contest_team_member_status: [
+            *cache_keys.student_contests_bust(),
+            cache_keys.student_session_validation_bust_pattern(contest_id),
+        ]
     )
     async def update_contest_team_member_status(
         self,

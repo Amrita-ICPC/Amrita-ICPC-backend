@@ -8,6 +8,7 @@ from fastapi import status
 from fastapi.sse import ServerSentEvent
 from redis.asyncio import Redis
 
+from app.core.cache import keys as cache_keys
 from app.core.cache.decorators import cache_get
 from app.core.clients.celery import celery_app
 from app.core.logger import logger
@@ -119,7 +120,7 @@ class StudentContestQuestionService:
 
     @cache_get(
         key_builder=lambda self, contest_id, user_id: (
-            f"contests:{contest_id}:users:{user_id}:session-validation"
+            cache_keys.student_session_validation_key(contest_id, user_id)
         ),
         ttl=60,
     )

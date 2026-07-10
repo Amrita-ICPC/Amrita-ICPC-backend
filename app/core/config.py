@@ -77,6 +77,11 @@ class Config(BaseSettings):
     )
     MINIO_SECURE: bool = Field(default=False, description="Use HTTPS for MinIO")
 
+    IMAGE_MAX_UPLOAD_SIZE_BYTES: int = Field(
+        default=5 * 1024 * 1024,
+        description="Max accepted image upload size in bytes (default 5MB)",
+    )
+
     # Log Configuration
     LOG_LEVEL: str = Field(default="INFO", description="Log level")
     LOG_FORMAT: str = Field(

@@ -7,6 +7,7 @@ from fastapi import status
 from fastapi.sse import ServerSentEvent
 from redis.asyncio import Redis
 
+from app.core.cache import keys as cache_keys
 from app.core.cache.decorators import cache_delete, cache_get
 from app.core.guards.contest_student import ContestStudentGuard
 from app.core.logger import logger
@@ -564,7 +565,7 @@ class StudentContestService:
 
     @cache_delete(
         key_builder=lambda self, contest_id, user_id: [
-            f"contests:{contest_id}:users:*:session-validation",
+            cache_keys.student_session_validation_bust_pattern(contest_id),
         ],
     )
     async def finish_contest_session(

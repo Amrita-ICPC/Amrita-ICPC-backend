@@ -115,11 +115,19 @@ def contest_leaderboard_bust_pattern(contest_id: UUID) -> str:
 
 def contest_full_bust(contest_id: UUID) -> list[str]:
     """Standard bust list for any mutation that changes contest state
-    visible to instructors, students, and the contest list."""
+    visible to instructors, students, and the contest list.
+
+    Includes the per-student session-validation cache: contest.status
+    changes (e.g. cancel_contest sets CANCELLED directly, bypassing
+    update_contest's structural-change guard) must not leave an already
+    cached "contest is published, session is fine" entry valid for up to
+    its TTL after the contest is cancelled/deleted/restored.
+    """
     return [
         contest_bust_pattern(contest_id),
         CONTESTS_LIST_BUST_PATTERN,
         *student_contests_bust(),
+        student_session_validation_bust_pattern(contest_id),
     ]
 
 

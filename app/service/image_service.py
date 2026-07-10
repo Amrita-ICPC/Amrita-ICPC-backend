@@ -17,6 +17,7 @@ from fastapi import UploadFile
 from minio import Minio
 
 from app.core.clients.minio import get_minio_client
+from app.core.config import config
 from app.exceptions.image import (
     ImageStorageError,
     InvalidImageDataError,
@@ -24,6 +25,41 @@ from app.exceptions.image import (
 )
 from app.schema.image import ImageUploadResponse
 from app.utils.image import image_object_key_to_url
+
+# Magic-byte signatures for the small allowlist of raster formats accepted
+# here. Deliberately excludes SVG: SVG is XML and can embed <script>/
+# event-handler payloads that execute if the stored object is ever viewed
+# inline in a browser (stored XSS), and it has no fixed magic-byte signature
+# to anchor a check on in the first place.
+_MEDIA_TYPE_EXTENSIONS: dict[str, str] = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+}
+
+
+def _detect_image_media_type(data: bytes) -> str | None:
+    """Sniff the actual image format from file bytes.
+
+    The client-supplied ``Content-Type`` header and filename extension are
+    both trivially spoofable (a request can label an SVG payload as
+    "image/png" with a ".png" filename) -- this is the only check here that
+    looks at what was actually uploaded, and its result is what determines
+    the stored extension and Content-Type, not anything the client sent.
+
+    Returns:
+        The canonical media type string if recognized, else None.
+    """
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
 
 
 class ImageService:
@@ -45,24 +81,38 @@ class ImageService:
             ImageUploadResponse: Uploaded image metadata including URL and object key.
 
         Raises:
-            InvalidImageDataError: If the uploaded file is empty or not an image.
+            InvalidImageDataError: If the uploaded file is empty, exceeds the
+                size limit, or is not a recognized image format.
             InvalidImagePathError: If folder/filename results in an unsafe object key.
             ImageStorageError: If object storage upload fails.
         """
 
-        content_type = getattr(file, "content_type", None)
-        if content_type and not content_type.startswith("image/"):
-            raise InvalidImageDataError("only image/* content types are allowed")
-
         data = await file.read()
         if not data:
             raise InvalidImageDataError("uploaded file is empty")
+        if len(data) > config.IMAGE_MAX_UPLOAD_SIZE_BYTES:
+            raise InvalidImageDataError(
+                f"uploaded file exceeds the {config.IMAGE_MAX_UPLOAD_SIZE_BYTES} "
+                "byte limit"
+            )
+
+        # Authoritative type check: sniffed from bytes, not the client-supplied
+        # Content-Type header or filename extension (see _detect_image_media_type).
+        media_type = _detect_image_media_type(data)
+        if media_type is None:
+            raise InvalidImageDataError(
+                "file content is not a recognized image format "
+                "(png/jpeg/gif/webp); other formats including svg are not accepted"
+            )
+
+        # Still validated for path-safety even though it no longer determines
+        # the stored extension -- it's echoed back as original_filename below.
+        _sanitize_filename(file.filename or "image")
 
         resource_id = uuid.uuid4()
-        filename = _sanitize_filename(file.filename or "image")
         safe_folder = _sanitize_folder(folder)
 
-        random_name = f"{uuid.uuid4().hex}{_safe_extension(filename)}"
+        random_name = f"{uuid.uuid4().hex}{_MEDIA_TYPE_EXTENSIONS[media_type]}"
 
         object_key = f"{safe_folder}/{resource_id}/{random_name}"
         client = get_minio_client()
@@ -74,7 +124,7 @@ class ImageService:
                 object_name=object_key,
                 data=io.BytesIO(data),
                 length=len(data),
-                content_type=content_type or "application/octet-stream",
+                content_type=media_type,
             )
         except Exception as exc:
             raise ImageStorageError(
@@ -99,23 +149,10 @@ class ImageService:
             object_key=object_key,
             url=url,
             bucket_name=bucket_name,
-            content_type=content_type,
+            content_type=media_type,
             size_bytes=len(data),
             original_filename=file.filename,
         )
-
-
-def _safe_extension(filename: str) -> str:
-    ext = os.path.splitext(filename)[1].lower()
-    if not ext:
-        return ""
-    if len(ext) > 10:
-        return ""
-    if not ext.startswith("."):
-        return ""
-    if not all(ch.isalnum() for ch in ext[1:]):
-        return ""
-    return ext
 
 
 def _sanitize_folder(folder: str) -> str:
