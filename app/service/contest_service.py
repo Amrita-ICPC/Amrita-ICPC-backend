@@ -464,6 +464,16 @@ class ContestService:
 
         update_data = build_update_contest_dto(contest_data)
 
+        # Block edits to fields that define the contest's runtime/scoring
+        # model (participation_type, contest_mode, team sizes, etc.) once
+        # any participant has actually started a session -- changing them
+        # afterwards silently corrupts already-created progress rows and
+        # leaderboard aggregation.
+        has_sessions_started = await self.repository.has_any_session_started(contest_id)
+        self.validator.validate_no_structural_changes_after_start(
+            update_data, contest_id, has_sessions_started
+        )
+
         # Validate dates if being updated
         new_start = (
             update_data.start_time

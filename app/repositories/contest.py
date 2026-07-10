@@ -183,6 +183,30 @@ class ContestRepository:
             raise ContestNotFoundError(str(contest_id))
         return contest
 
+    async def has_any_session_started(self, contest_id: UUID) -> bool:
+        """Check whether any team/member has started a session in this contest.
+
+        A ``ContestTeamProgress`` row is only ever created when a session is
+        actually started (see student contest session start flow), so its
+        existence is the precise signal that live gameplay data -- and thus
+        structural assumptions like participation_type or scoring -- are now
+        in play for this contest.
+
+        Args:
+            contest_id: ID of the contest to check.
+
+        Returns:
+            True if at least one ContestTeamProgress row exists for the contest.
+        """
+        query = (
+            select(1)
+            .select_from(ContestTeamProgress)
+            .where(ContestTeamProgress.contest_id == contest_id)
+            .exists()
+        )
+        result = await self.db.scalar(select(query))
+        return bool(result)
+
     async def count_questions_in_contest(self, contest_id: UUID) -> int:
         """Count the number of questions in a contest.
 

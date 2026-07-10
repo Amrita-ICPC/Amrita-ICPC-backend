@@ -10,7 +10,26 @@ from app.exceptions.contest import (
     QuestionNotInContestError,
 )
 from app.models.contest import ContestInstructor
+from app.repositories.dto.contest import UNSET, UpdateContestData
 from app.utils.enums import ContestStatus
+
+# Fields that determine how a contest's runtime/scoring model behaves.
+# Changing any of these after a team/member has actually started a session
+# (see ContestRepository.has_any_session_started) can silently corrupt
+# already-created ContestTeamProgress rows, leaderboard aggregation, and
+# submission-cap enforcement -- e.g. flipping participation_type from
+# INDIVIDUAL_WORKSPACE to LEADER_ONLY orphans per-member progress rows that
+# the LEADER_ONLY code path never looks at.
+STRUCTURAL_CONTEST_FIELDS: tuple[str, ...] = (
+    "contest_mode",
+    "participation_type",
+    "scoring_type",
+    "evaluate_on_submit",
+    "shuffle_questions",
+    "min_team_size",
+    "max_team_size",
+    "max_submission_per_question",
+)
 
 
 class ContestValidator:
@@ -387,4 +406,42 @@ class ContestValidator:
         if status != ContestStatus.PUBLISHED:
             raise InvalidContestStateError(
                 str(contest_id), "start session for", status, ContestStatus.PUBLISHED
+            )
+
+    @staticmethod
+    def validate_no_structural_changes_after_start(
+        update_data: UpdateContestData,
+        contest_id: UUID,
+        has_sessions_started: bool,
+    ) -> None:
+        """
+        Prevent edits to fields that define a contest's runtime/scoring model
+        once any team/member has actually started a session.
+
+        Fields like description, rules, image, max_teams, and extending
+        end_time remain freely editable at any time; only the structural
+        fields in STRUCTURAL_CONTEST_FIELDS are locked.
+
+        Args:
+            update_data: The patch data being applied (UNSET marks untouched fields).
+            contest_id: ID of the contest, for error context.
+            has_sessions_started: Whether any ContestTeamProgress row already
+                exists for this contest.
+
+        Raises:
+            InvalidContestError: If a structural field is present in the patch
+                and at least one session has already started.
+        """
+        if not has_sessions_started:
+            return
+
+        touched = [
+            field
+            for field in STRUCTURAL_CONTEST_FIELDS
+            if getattr(update_data, field) is not UNSET
+        ]
+        if touched:
+            raise InvalidContestError(
+                f"Cannot change {', '.join(touched)} for contest {contest_id}: "
+                "one or more participants have already started a session"
             )
