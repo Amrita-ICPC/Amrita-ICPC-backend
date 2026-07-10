@@ -310,6 +310,16 @@ class ContestTeamService:
             contest_team_id
         )
 
+        # Renaming is a roster-adjacent mutation like invite/accept, so it's
+        # bound by the same registration window (see invite_members/
+        # create_contest_team for the equivalent check elsewhere in this file).
+        contest = await self.contest_repository.get_contest_or_raise(
+            contest_team.contest_id
+        )
+        ContestValidator.validate_registration_date_past(
+            contest.registration_start, contest.registration_end
+        )
+
         TeamValidator.validate_team_confirmation(
             contest_team.team_status, contest_team.name
         )
@@ -337,6 +347,16 @@ class ContestTeamService:
         # Fetch the contest team
         contest_team = await self.repository.get_contest_team_by_id_or_raise(
             contest_team_id
+        )
+
+        # Leadership transfer is a roster-adjacent mutation like invite/accept,
+        # so it's bound by the same registration window (see invite_members/
+        # create_contest_team for the equivalent check elsewhere in this file).
+        contest = await self.contest_repository.get_contest_or_raise(
+            contest_team.contest_id
+        )
+        ContestValidator.validate_registration_date_past(
+            contest.registration_start, contest.registration_end
         )
 
         TeamValidator.validate_team_confirmation(
@@ -406,6 +426,13 @@ class ContestTeamService:
         # Status(Confirmed) check the required thisngs before the update
         if contest_team_status == TeamStatus.CONFIRMED:
             contest = await self.contest_repository.get_contest_or_raise(contest_id)
+            # Confirming is a roster-lifecycle action like invite/accept, so
+            # it's bound by the same registration window (unlike CANCELLED
+            # below, which stays intentionally exempt to allow cleanup after
+            # registration closes).
+            ContestValidator.validate_registration_date_past(
+                contest.registration_start, contest.registration_end
+            )
             # Count only ACCEPTED members: REJECTED/LEFT/REMOVED members aren't
             # actually on the team, and INVITED members can no longer accept once
             # the team is CONFIRMED (accepting requires team_status == DRAFT), so
