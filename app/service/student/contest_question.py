@@ -515,6 +515,14 @@ class StudentContestQuestionService:
         if not contest_question:
             raise QuestionNotInContestError(str(question_id), str(contest_id))
 
+        # Serialize the count-then-insert submission check below against any
+        # other concurrent submit from this same member for this question
+        # (see acquire_submission_slot_lock docstring for why a plain DB
+        # constraint can't express this dynamic, cross-table limit).
+        await self.repository.acquire_submission_slot_lock(
+            contest_id, session_data.contest_team_member_id, question_id
+        )
+
         existing_submissions = (
             await self.repository.get_submissions_by_team_and_question(
                 session_data.contest_team_id, question_id

@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 from app.models import ContestQuestion, Question
 from app.models.question import Submission
 from app.utils.enums import SubmissionStatus
+from app.utils.key_builder import build_submission_slot_lock_key
 
 
 class StudentContestQuestionRepository:
@@ -132,6 +133,53 @@ class StudentContestQuestionRepository:
         )
         result = await self.db.execute(stmt)
         return result.scalars().first()
+
+    async def acquire_submission_slot_lock(
+        self, contest_id: UUID, contest_team_member_id: UUID, question_id: UUID
+    ) -> None:
+        """
+        Serialize the count-then-insert submission check for one (member, question) pair.
+
+        `max_submission_per_question` is enforced by counting existing
+        submissions for the team (get_submissions_by_team_and_question counts
+        team-wide, not per member) and comparing against the limit before
+        inserting a new one. That limit is dynamic (configured per
+        contest_question, falling back to a per-contest default) and can be
+        None (unlimited), so it can't be expressed as a static SQL
+        CHECK/UNIQUE constraint -- the allowed count depends on data in
+        another table, not just the new row. Without serialization, two
+        submit_code calls racing for the same submission slot (e.g. a
+        double-click or a retried request for the same member) can both read
+        the same count before either insert lands, letting that slot exceed
+        the cap.
+
+        Scoped per contest_team_member_id (one submitter at a time), not per
+        team: only one member is ever actively submitting for a given
+        member id, so this closes the same-member race without serializing
+        unrelated teammates' submissions to different questions against each
+        other. It does not serialize two *different* members of the same
+        team submitting to the same question concurrently -- if that turns
+        out to matter, the lock key must be widened back to contest_team_id.
+
+        Takes a Postgres transaction-scoped advisory lock keyed by
+        (contest_id, contest_team_member_id, question_id) via
+        build_submission_slot_lock_key, matching the labeled key convention
+        used by build_workspace_key/build_question_view_key. Different
+        member/question pairs use different lock keys and never block each
+        other. The lock is released automatically when the current
+        transaction commits or rolls back.
+
+        Args:
+            contest_id: The contest the submission belongs to.
+            contest_team_member_id: The submitting student's contest_team_member id.
+            question_id: The question being submitted for.
+        """
+        lock_key = build_submission_slot_lock_key(
+            contest_id, contest_team_member_id, question_id
+        )
+        await self.db.execute(
+            select(func.pg_advisory_xact_lock(func.hashtext(lock_key)))
+        )
 
     async def get_submissions_by_team_and_question(
         self, contest_team_id: UUID, question_id: UUID
