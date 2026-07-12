@@ -47,6 +47,7 @@ from app.utils.enums import (
     ContestRunStatus,
     ContestStatus,
     ContestTeamMemberStatus,
+    ContestTeamParticipationType,
     QuestionDifficulty,
     TeamApprovalStatus,
     TeamStatus,
@@ -1342,6 +1343,19 @@ class ContestRepository:
         )
         return result.scalars().first()
 
+    async def get_contest_participation_type(
+        self, contest_id: UUID
+    ) -> ContestTeamParticipationType | None:
+        """Fetch just a contest's participation_type, without the full Contest load.
+
+        Used by score-sync paths that only need to branch on LEADER_ONLY vs
+        INDIVIDUAL_WORKSPACE and would otherwise pay for get_contest_or_raise's
+        selectinload chain through ContestAudience for no reason.
+        """
+        return await self.db.scalar(
+            select(Contest.participation_type).where(Contest.id == contest_id)
+        )
+
     async def update_team_member_progress_scores(
         self, contest_id: UUID, member_scores: dict[UUID, int]
     ) -> None:
@@ -1369,6 +1383,44 @@ class ContestRepository:
                     ContestTeamProgress.contest_team_member_id.in_(
                         member_scores.keys()
                     ),
+                )
+            )
+            .values(score=score_cases)
+        )
+
+        await self.db.execute(stmt)
+        await self.db.flush()
+
+    async def update_team_level_progress_scores(
+        self, contest_id: UUID, team_scores: dict[UUID, int]
+    ) -> None:
+        """
+        Update the team-level score for LEADER_ONLY contests.
+
+        LEADER_ONLY teams share a single ContestTeamProgress row keyed by
+        contest_team_id with contest_team_member_id IS NULL (see
+        ensure_team_level_progress_rows), so this targets that row instead of
+        a per-member one.
+
+        Args:
+            contest_id: Contest ID
+            team_scores: Dictionary mapping contest_team_id to total score
+        """
+        if not team_scores:
+            return
+
+        score_cases = case(
+            {team_id: score for team_id, score in team_scores.items()},
+            value=ContestTeamProgress.contest_team_id,
+        )
+
+        stmt = (
+            update(ContestTeamProgress)
+            .where(
+                and_(
+                    ContestTeamProgress.contest_id == contest_id,
+                    ContestTeamProgress.contest_team_id.in_(team_scores.keys()),
+                    ContestTeamProgress.contest_team_member_id.is_(None),
                 )
             )
             .values(score=score_cases)
@@ -1436,6 +1488,46 @@ class ContestRepository:
         await self.db.execute(stmt)
         await self.db.flush()
 
+    async def ensure_team_level_progress_rows(
+        self, contest_id: UUID, contest_team_ids: list[UUID]
+    ) -> None:
+        """
+        Create missing team-level progress rows for LEADER_ONLY contests.
+
+        Mirrors ensure_team_member_progress_rows but for the single
+        contest_team_member_id IS NULL row per team, keyed by the
+        uq_contest_team_progress_team_level partial index rather than
+        uq_contest_team_progress_member.
+
+        Args:
+            contest_id: Contest ID
+            contest_team_ids: ContestTeam IDs needing a team-level progress row
+        """
+        team_ids = list(dict.fromkeys(contest_team_ids))
+        if not team_ids:
+            return
+
+        stmt = (
+            pg_insert(ContestTeamProgress)
+            .values(
+                [
+                    {
+                        "contest_id": contest_id,
+                        "contest_team_id": team_id,
+                        "contest_team_member_id": None,
+                        "score": 0,
+                    }
+                    for team_id in team_ids
+                ]
+            )
+            .on_conflict_do_nothing(
+                index_elements=["contest_id", "contest_team_id"],
+                index_where=ContestTeamProgress.contest_team_member_id.is_(None),
+            )
+        )
+        await self.db.execute(stmt)
+        await self.db.flush()
+
     async def recompute_member_score(
         self,
         contest_id: UUID,
@@ -1469,34 +1561,49 @@ class ContestRepository:
         """
         from app.models.contest import ContestTeamMember
 
-        # Materialize a progress row for every ACCEPTED member of this team,
-        # not just the one who submitted. The team's leaderboard score is an
-        # AVG over ContestTeamProgress rows (see get_teams_ranked_by_score),
-        # so if only submitting members ever get a row, the denominator of
-        # that AVG depends on which members happened to submit -- and
-        # disagrees with the contest-wide recompute in ContestService.
-        # compute_team_scores, which always creates rows for every accepted
-        # member up front. Keeping both paths create the same row set means
-        # the team's score no longer changes depending on which recompute
-        # path last ran.
-        accepted_member_ids = (
-            (
-                await self.db.execute(
-                    select(ContestTeamMember.id).where(
-                        ContestTeamMember.contest_team_id == contest_team_id,
-                        ContestTeamMember.status == ContestTeamMemberStatus.ACCEPTED,
+        # LEADER_ONLY contests keep a single team-level progress row
+        # (contest_team_member_id IS NULL, see ensure_team_level_progress_rows)
+        # instead of one row per member -- that's the row the analytics/
+        # leaderboard reads join to for these contests (see
+        # TeamRepository._progress_member_match). Only the leader can submit
+        # in this mode, so scoping the aggregate to the submitting member's
+        # own submissions still yields the team's score; the row we write it
+        # to is what differs from INDIVIDUAL_WORKSPACE.
+        participation_type = await self.get_contest_participation_type(contest_id)
+        is_leader_only = participation_type == ContestTeamParticipationType.LEADER_ONLY
+
+        if not is_leader_only:
+            # Materialize a progress row for every ACCEPTED member of this team,
+            # not just the one who submitted. The team's leaderboard score is an
+            # AVG over ContestTeamProgress rows (see get_teams_ranked_by_score),
+            # so if only submitting members ever get a row, the denominator of
+            # that AVG depends on which members happened to submit -- and
+            # disagrees with the contest-wide recompute in ContestService.
+            # compute_team_scores, which always creates rows for every accepted
+            # member up front. Keeping both paths create the same row set means
+            # the team's score no longer changes depending on which recompute
+            # path last ran.
+            accepted_member_ids = (
+                (
+                    await self.db.execute(
+                        select(ContestTeamMember.id).where(
+                            ContestTeamMember.contest_team_id == contest_team_id,
+                            ContestTeamMember.status
+                            == ContestTeamMemberStatus.ACCEPTED,
+                        )
                     )
                 )
+                .scalars()
+                .all()
             )
-            .scalars()
-            .all()
-        )
-        team_member_ids = {
-            member_id: contest_team_id for member_id in accepted_member_ids
-        }
-        team_member_ids.setdefault(contest_team_member_id, contest_team_id)
+            team_member_ids = {
+                member_id: contest_team_id for member_id in accepted_member_ids
+            }
+            team_member_ids.setdefault(contest_team_member_id, contest_team_id)
 
-        await self.ensure_team_member_progress_rows(contest_id, team_member_ids)
+            await self.ensure_team_member_progress_rows(contest_id, team_member_ids)
+        else:
+            await self.ensure_team_level_progress_rows(contest_id, [contest_team_id])
 
         best_per_question = (
             select(
@@ -1519,13 +1626,20 @@ class ContestRepository:
             .scalar_subquery()
         )
 
-        await self.db.execute(
-            update(ContestTeamProgress)
-            .where(
+        if is_leader_only:
+            progress_match = and_(
+                ContestTeamProgress.contest_id == contest_id,
+                ContestTeamProgress.contest_team_id == contest_team_id,
+                ContestTeamProgress.contest_team_member_id.is_(None),
+            )
+        else:
+            progress_match = and_(
                 ContestTeamProgress.contest_id == contest_id,
                 ContestTeamProgress.contest_team_member_id == contest_team_member_id,
             )
-            .values(score=total_score)
+
+        await self.db.execute(
+            update(ContestTeamProgress).where(progress_match).values(score=total_score)
         )
         await self.db.flush()
 
@@ -1757,6 +1871,7 @@ class ContestRepository:
         sort_order: str = "desc",
         skip: int | None = None,
         limit: int | None = None,
+        is_leader_only: bool = False,
     ) -> tuple[list[tuple[ContestTeam, int]], int]:
         """Aggregate team scores from ContestTeamProgress and return teams sorted.
 
@@ -1773,6 +1888,11 @@ class ContestRepository:
             sort_order: 'asc' or 'desc' for score sorting.
             skip: Optional pagination offset.
             limit: Optional pagination limit.
+            is_leader_only: Whether the contest uses LEADER_ONLY participation,
+                in which case each team's score lives on a single
+                ContestTeamProgress row with contest_team_member_id IS NULL
+                (see TeamRepository._progress_member_match) instead of one
+                row per member.
 
         Returns:
             Tuple containing:
@@ -1797,6 +1917,12 @@ class ContestRepository:
             func.round(func.avg(ContestTeamProgress.score)), 0
         ).label("team_score")
 
+        progress_member_match = (
+            ContestTeamProgress.contest_team_member_id.is_(None)
+            if is_leader_only
+            else ContestTeamProgress.contest_team_member_id == ContestTeamMember.id
+        )
+
         stmt = (
             select(ContestTeam, avg_score)
             .options(selectinload(ContestTeam.contest_team_member))
@@ -1811,7 +1937,7 @@ class ContestRepository:
                 ContestTeamProgress,
                 and_(
                     ContestTeamProgress.contest_team_id == ContestTeam.id,
-                    ContestTeamProgress.contest_team_member_id == ContestTeamMember.id,
+                    progress_member_match,
                     ContestTeamProgress.contest_id == contest_id,
                 ),
             )
@@ -1841,7 +1967,11 @@ class ContestRepository:
         return [(row[0], int(row[1])) for row in result.all()], total_count
 
     async def get_team_rank_and_score(
-        self, contest_id: UUID, contest_team_id: UUID, sort_order: str = "desc"
+        self,
+        contest_id: UUID,
+        contest_team_id: UUID,
+        sort_order: str = "desc",
+        is_leader_only: bool = False,
     ) -> tuple[int, int] | None:
         """Compute a single team's rank/score within the contest standings.
 
@@ -1853,6 +1983,8 @@ class ContestRepository:
             contest_team_id: ID of the team to look up.
             sort_order: 'asc' or 'desc' for score sorting (must match the
                 leaderboard's sort order for ranks to be consistent).
+            is_leader_only: Whether the contest uses LEADER_ONLY participation
+                (see get_teams_ranked_by_score for what this changes).
 
         Returns:
             Tuple of (rank, score), or None if the team is not part of the
@@ -1864,6 +1996,12 @@ class ContestRepository:
             func.round(func.avg(ContestTeamProgress.score)), 0
         ).label("team_score")
         order_col = asc("team_score") if sort_order == "asc" else desc("team_score")
+
+        progress_member_match = (
+            ContestTeamProgress.contest_team_member_id.is_(None)
+            if is_leader_only
+            else ContestTeamProgress.contest_team_member_id == ContestTeamMember.id
+        )
 
         ranked = (
             select(
@@ -1882,7 +2020,7 @@ class ContestRepository:
                 ContestTeamProgress,
                 and_(
                     ContestTeamProgress.contest_team_id == ContestTeam.id,
-                    ContestTeamProgress.contest_team_member_id == ContestTeamMember.id,
+                    progress_member_match,
                     ContestTeamProgress.contest_id == contest_id,
                 ),
             )

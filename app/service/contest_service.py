@@ -60,6 +60,7 @@ from app.utils.enums import (
     ContestRunStatus,
     ContestStatus,
     ContestTeamMemberStatus,
+    ContestTeamParticipationType,
     EvaluationScope,
     UserRole,
 )
@@ -1171,8 +1172,13 @@ class ContestService:
                 q_id = sub.question_id
                 team_member_question_subs[t_id][m_id][q_id].append(sub)
 
+        is_leader_only = (
+            contest.participation_type == ContestTeamParticipationType.LEADER_ONLY
+        )
+
         member_total_scores: dict[UUID, int] = defaultdict(int)
         member_team_ids: dict[UUID, UUID] = {}
+        team_total_scores: dict[UUID, int] = defaultdict(int)
 
         for team in teams:
             accepted_members = [
@@ -1189,8 +1195,24 @@ class ContestService:
                     subs = team_member_question_subs[team.id][member.id][question.id]
                     best_score = max((s.score for s in subs), default=0)
                     member_total_scores[member.id] += best_score
+                    if is_leader_only:
+                        team_total_scores[team.id] += best_score
 
-        if member_total_scores:
+        # LEADER_ONLY contests keep one team-level ContestTeamProgress row
+        # (contest_team_member_id IS NULL) rather than a row per member --
+        # see TeamRepository._progress_member_match, the read side this must
+        # agree with. Only the leader can submit in this mode so every other
+        # accepted member's best_score is always 0, making the per-team sum
+        # above equivalent to the leader's own total.
+        if is_leader_only:
+            if team_total_scores:
+                await self.repository.ensure_team_level_progress_rows(
+                    contest_id, list(team_total_scores.keys())
+                )
+                await self.repository.update_team_level_progress_scores(
+                    contest_id, dict(team_total_scores)
+                )
+        elif member_total_scores:
             await self.repository.ensure_team_member_progress_rows(
                 contest_id, member_team_ids
             )
@@ -1204,7 +1226,7 @@ class ContestService:
 
     @staticmethod
     @cache_get(
-        key_builder=lambda repository, contest_id, search_term=None, sort_order="desc", skip=0, limit=50: (
+        key_builder=lambda repository, contest_id, search_term=None, sort_order="desc", skip=0, limit=50, is_leader_only=False: (
             cache_keys.contest_leaderboard_key(
                 contest_id,
                 search_term=search_term,
@@ -1222,11 +1244,16 @@ class ContestService:
         sort_order: str = "desc",
         skip: int = 0,
         limit: int = 50,
+        is_leader_only: bool = False,
     ) -> tuple[LeaderboardResponse, int]:
         """Compute and cache the contest leaderboard standings.
 
         Cached independently of the caller (instructor or student service) so both
         code paths share the same Redis entry.
+
+        is_leader_only is intentionally left out of the cache key: it's a
+        deterministic function of contest_id (a contest's participation_type
+        doesn't change), so the same contest_id always implies the same value.
         """
         ranked_teams, total_count = await repository.get_teams_ranked_by_score(
             contest_id,
@@ -1234,6 +1261,7 @@ class ContestService:
             sort_order=sort_order,
             skip=skip,
             limit=limit,
+            is_leader_only=is_leader_only,
         )
 
         standings: list[LeaderboardRow] = []
@@ -1293,8 +1321,17 @@ class ContestService:
 
         await self.guard.check_read_contest(user_id=user_id, contest=contest)
 
+        is_leader_only = (
+            contest.participation_type == ContestTeamParticipationType.LEADER_ONLY
+        )
         return await self.get_cached_contest_leaderboard(
-            self.repository, contest_id, search_term, sort_order, skip, limit
+            self.repository,
+            contest_id,
+            search_term,
+            sort_order,
+            skip,
+            limit,
+            is_leader_only,
         )
 
     @cache_delete(

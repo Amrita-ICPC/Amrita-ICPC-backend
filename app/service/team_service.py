@@ -351,9 +351,18 @@ class TeamService:
         )
         pagination = PaginationParams(skip=skip, limit=limit)
 
+        is_leader_only = (
+            contest.participation_type == ContestTeamParticipationType.LEADER_ONLY
+        )
+
         # Delegate to repository
         result = await self.contest_team_repository.get_contest_teams(
-            contest_id, filters, pagination, sort_by=sort_by, sort_order=sort_order
+            contest_id,
+            filters,
+            pagination,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            is_leader_only=is_leader_only,
         )
 
         team_members_map = {}

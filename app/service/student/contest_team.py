@@ -817,8 +817,17 @@ class ContestTeamService:
         if not contest.results_published_at or not contest.show_leaderboard:
             raise ContestResultsNotVisibleError(str(contest_id))
 
+        is_leader_only = (
+            contest.participation_type == ContestTeamParticipationType.LEADER_ONLY
+        )
         leaderboard, total = await ContestService.get_cached_contest_leaderboard(
-            self.contest_repository, contest_id, search_term, sort_order, skip, limit
+            self.contest_repository,
+            contest_id,
+            search_term,
+            sort_order,
+            skip,
+            limit,
+            is_leader_only,
         )
 
         return leaderboard, total

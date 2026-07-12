@@ -459,6 +459,7 @@ class ContestTeamRepository:
         pagination: PaginationParams,
         sort_by: str | None = None,
         sort_order: str = "desc",
+        is_leader_only: bool = False,
     ) -> PaginatedResult:
         """Retrieve paginated and filtered list of contest teams for a contest.
 
@@ -475,11 +476,21 @@ class ContestTeamRepository:
                 team score; any other value (or None) keeps the default
                 enrollment-time ordering.
             sort_order: 'asc' or 'desc', only applied when sort_by == "score".
+            is_leader_only: Whether the contest uses LEADER_ONLY participation,
+                in which case each team's score lives on a single
+                ContestTeamProgress row with contest_team_member_id IS NULL
+                (see TeamRepository._progress_member_match) instead of one
+                row per member.
 
         Returns:
             PaginatedResult: Total count and list of ContestTeam objects, each
             with a transient ``.score`` attribute set.
         """
+        progress_member_match = (
+            ContestTeamProgress.contest_team_member_id.is_(None)
+            if is_leader_only
+            else ContestTeamProgress.contest_team_member_id == ContestTeamMember.id
+        )
         score_subq = (
             select(
                 ContestTeamMember.contest_team_id.label("contest_team_id"),
@@ -493,7 +504,7 @@ class ContestTeamRepository:
                 and_(
                     ContestTeamProgress.contest_team_id
                     == ContestTeamMember.contest_team_id,
-                    ContestTeamProgress.contest_team_member_id == ContestTeamMember.id,
+                    progress_member_match,
                     ContestTeamProgress.contest_id == contest_id,
                 ),
             )
