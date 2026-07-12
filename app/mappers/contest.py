@@ -31,7 +31,6 @@ def build_create_contest_dto(
         min_team_size=contest.min_team_size,
         max_team_size=contest.max_team_size,
         rules=contest.rules,
-        scoring_type=contest.scoring_type.value,
         team_approval_mode=contest.team_approval_mode,
         contest_mode=contest.contest_mode,
         audience_ids=contest.audience_ids,
@@ -60,7 +59,6 @@ def build_update_contest_dto(contest_data: ContestUpdate) -> UpdateContestData:
     non_nullable_fields = (
         "contest_mode",
         "participation_type",
-        "scoring_type",
         "team_approval_mode",
     )
 
@@ -96,7 +94,6 @@ def build_update_contest_dto(contest_data: ContestUpdate) -> UpdateContestData:
             contest_data.max_team_size if "max_team_size" in fields_set else UNSET
         ),
         rules=contest_data.rules if "rules" in fields_set else UNSET,
-        scoring_type=_set("scoring_type"),
         team_approval_mode=_set("team_approval_mode"),
         duration=contest_data.duration if "duration" in fields_set else UNSET,
         show_leaderboard_during_contest=(
@@ -173,7 +170,6 @@ def to_contest_response(
         submission_count=submission_count or 0,
         participant_count=participant_count or 0,
         rules=contest.rules,
-        scoring_type=contest.scoring_type,
         team_approval_mode=contest.team_approval_mode,
         contest_mode=contest.contest_mode,
         run_status=run_status,
@@ -255,7 +251,6 @@ def build_contest_entity(contest_data: CreateContestData) -> Contest:
         min_team_size=contest_data.min_team_size,
         max_team_size=contest_data.max_team_size,
         rules=contest_data.rules,
-        scoring_type=contest_data.scoring_type,
         team_approval_mode=contest_data.team_approval_mode,
         contest_mode=contest_data.contest_mode,
         created_by=contest_data.created_by,

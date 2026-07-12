@@ -32,7 +32,6 @@ from app.utils.enums import (
     ContestMode,
     ContestStatus,
     QuestionDifficulty,
-    ScoringType,
     TeamApprovalMode,
     UserRole,
 )
@@ -213,7 +212,6 @@ async def create_live_contests(
             rules="Standard programming contest rules apply",
             registration_start=now - timedelta(days=7),
             registration_end=contest_end,  # Registration open until contest ends
-            scoring_type=ScoringType.AUTO,
             team_approval_mode=TeamApprovalMode.AUTO_APPROVE,
             contest_mode=ContestMode.TEAM,
             status=ContestStatus.PUBLISHED,  # Live/published status
@@ -268,7 +266,6 @@ async def create_contests(
             rules="Standard programming contest rules apply",
             registration_start=now,
             registration_end=registration_end,
-            scoring_type=ScoringType.AUTO,
             team_approval_mode=TeamApprovalMode.AUTO_APPROVE,
             contest_mode=ContestMode.TEAM,
             status=ContestStatus.DRAFT,

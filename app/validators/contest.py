@@ -23,7 +23,6 @@ from app.utils.enums import ContestStatus
 STRUCTURAL_CONTEST_FIELDS: tuple[str, ...] = (
     "contest_mode",
     "participation_type",
-    "scoring_type",
     "evaluate_on_submit",
     "shuffle_questions",
     "min_team_size",

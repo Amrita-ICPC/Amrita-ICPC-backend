@@ -29,7 +29,6 @@ from app.utils.enums import (
     ContestMode,
     ContestStatus,
     QuestionDifficulty,
-    ScoringType,
     TeamApprovalMode,
     UserRole,
 )
@@ -69,7 +68,6 @@ async def setup_test_data():
             rules="Test rules",
             registration_start=now,
             registration_end=now + timedelta(days=1),
-            scoring_type=ScoringType.AUTO,
             team_approval_mode=TeamApprovalMode.AUTO_APPROVE,
             contest_mode=ContestMode.TEAM,
             status=ContestStatus.DRAFT,

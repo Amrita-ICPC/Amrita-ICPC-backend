@@ -27,7 +27,6 @@ from app.utils.enums import (
     ContestStatus,
     ContestTeamMemberStatus,
     ContestTeamParticipationType,
-    ScoringType,
     TeamApprovalMode,
     TeamApprovalStatus,
     TeamStatus,
@@ -76,9 +75,6 @@ class Contest(Base):
     )
     registration_end: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
-    )
-    scoring_type: Mapped[ScoringType] = mapped_column(
-        Enum(ScoringType, name="scoringtype"), default=ScoringType.AUTO
     )
     team_approval_mode: Mapped[TeamApprovalMode] = mapped_column(
         Enum(TeamApprovalMode, name="teamapprovalmode"),

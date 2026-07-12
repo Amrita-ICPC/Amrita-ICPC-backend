@@ -67,7 +67,6 @@ class CreateContestData:
     min_team_size: int
     max_team_size: int
     rules: str | None
-    scoring_type: str
     team_approval_mode: TeamApprovalMode
     contest_mode: ContestMode
     audience_ids: list[UUID]
@@ -104,7 +103,6 @@ class UpdateContestData:
     min_team_size: int | None | _UnsetType = UNSET
     max_team_size: int | None | _UnsetType = UNSET
     rules: str | None | _UnsetType = UNSET
-    scoring_type: str | None | _UnsetType = UNSET
     team_approval_mode: TeamApprovalMode | None | _UnsetType = UNSET
     contest_mode: ContestMode | None | _UnsetType = UNSET
     duration: int | None | _UnsetType = UNSET

@@ -30,7 +30,6 @@ from app.utils.enums import (
     ContestMode,
     ContestStatus,
     ContestTeamParticipationType,
-    ScoringType,
     TeamApprovalMode,
     UserRole,
 )
@@ -184,7 +183,6 @@ def mock_contest(user_id):
     contest.min_team_size = 1
     contest.max_team_size = 5
     contest.rules = None
-    contest.scoring_type = ScoringType.AUTO
     contest.team_approval_mode = TeamApprovalMode.AUTO_APPROVE
     contest.contest_mode = ContestMode.INDIVIDUAL
     contest.status = ContestStatus.DRAFT
@@ -289,7 +287,6 @@ def contest_create_data():
         min_team_size=1,
         max_team_size=5,
         rules=None,
-        scoring_type=ScoringType.AUTO,
     )
 
 

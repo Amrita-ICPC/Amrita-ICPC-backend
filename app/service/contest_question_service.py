@@ -42,6 +42,7 @@ from app.schema.contest import (
     ContestQuestionResponse,
     RemoveContestQuestionRequest,
     ReorderContestQuestionsRequest,
+    UpdateContestQuestionScoreRequest,
 )
 from app.schema.question import (
     ContestQuestionsListResponse,
@@ -516,6 +517,61 @@ class ContestQuestionService:
         updated_question = await self.question_repository.update_question(question)
 
         return QuestionResponse.from_question(updated_question)
+
+    @cache_delete(
+        key_builder=lambda self, contest_id, question_id, request, user_id: [
+            *cache_keys.contest_questions_bust(contest_id),
+            f"student:contest:{contest_id}*",
+            "student:contests:*",
+        ]
+    )
+    async def update_contest_question_score(
+        self,
+        contest_id: UUID,
+        question_id: UUID,
+        request: UpdateContestQuestionScoreRequest,
+        user_id: UUID,
+    ) -> ContestQuestionResponse:
+        """
+        Update the score (marks/points) of a question within a contest.
+
+        Only the contest creator and assigned instructors/admins may perform
+        this operation.
+
+        Args:
+            contest_id: UUID of the contest.
+            question_id: UUID of the question whose score is being updated.
+            request: Validated request containing the new score.
+            user_id: UUID of the authenticated user performing the update.
+
+        Returns:
+            ContestQuestionResponse: The updated contest-question link.
+
+        Raises:
+            ContestNotFoundError: If the contest does not exist or is deleted.
+            QuestionNotInContestError: If the question is not linked to the contest.
+            PermissionDeniedError: If the user lacks management permissions.
+            InvalidContestError: If the score fails business validation rules.
+        """
+        await self._verify_contest_access(contest_id, user_id, "manage")
+        await self._verify_question_in_contest(contest_id, question_id)
+
+        self.validator.validate_question_score(request.score)
+
+        contest_question = await self.repository.get_contest_question(
+            contest_id, question_id
+        )
+        if contest_question is None:
+            raise QuestionNotInContestError(str(question_id), str(contest_id))
+
+        contest_question.score = request.score
+
+        logger.info(
+            f"Updated score for question {question_id} in contest {contest_id} to "
+            f"{request.score} by user {user_id}"
+        )
+
+        return to_contest_question_response(contest_question)
 
     @cache_delete(
         key_builder=lambda self, contest_id, request, user_id: (

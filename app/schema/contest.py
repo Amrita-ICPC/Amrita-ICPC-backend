@@ -10,7 +10,6 @@ from app.utils.enums import (
     ContestRunStatus,
     ContestStatus,
     ContestTeamParticipationType,
-    ScoringType,
     TeamApprovalMode,
 )
 
@@ -38,9 +37,6 @@ class ContestBase(BaseModel):
     min_team_size: int = Field(1, description="Minimum team size")
     max_team_size: int = Field(1, description="Maximum team size")
     rules: Optional[str] = Field(None, description="Contest rules")
-    scoring_type: ScoringType = Field(
-        default=ScoringType.AUTO, description="Scoring type"
-    )
     team_approval_mode: TeamApprovalMode = Field(
         default=TeamApprovalMode.AUTO_APPROVE,
         description="How teams are approved in this contest",
@@ -131,7 +127,6 @@ class ContestUpdate(BaseModel):
     min_team_size: Optional[int] = Field(None, description="Minimum team size")
     max_team_size: Optional[int] = Field(None, description="Maximum team size")
     rules: Optional[str] = Field(None, description="Contest rules")
-    scoring_type: Optional[ScoringType] = Field(None, description="Scoring type")
     contest_mode: Optional[ContestMode] = Field(None, description="Contest mode")
     team_approval_mode: Optional[TeamApprovalMode] = Field(
         None,
@@ -402,6 +397,18 @@ class ContestQuestionResponse(BaseModel):
     )
     created_at: datetime = Field(..., description="When question was added to contest")
     created_by: UUID = Field(..., description="User ID who added the question")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UpdateContestQuestionScoreRequest(BaseModel):
+    """Schema for updating the score (marks/points) of a contest question."""
+
+    score: int = Field(
+        ...,
+        gt=0,
+        description="Points/marks awarded for solving this question. Must be a positive integer.",
+    )
 
     model_config = ConfigDict(from_attributes=True)
 

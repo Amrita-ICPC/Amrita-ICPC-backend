@@ -167,24 +167,6 @@ class BankSortBy(str, enum.Enum):
     CREATED_AT = "created_at"
 
 
-class ScoringType(str, enum.Enum):
-    """
-    Enumeration of scoring methods for contest evaluation.
-
-    Determines how submissions are evaluated and scored during contests,
-    affecting the judging workflow and result calculation.
-
-    Attributes:
-        AUTO: Fully automatic scoring using predefined test cases and judges.
-        MANUAL: Human-reviewed scoring for subjective or complex evaluation.
-        HYBRID: Combined automatic and manual scoring for comprehensive assessment.
-    """
-
-    AUTO = "AUTO"
-    MANUAL = "MANUAL"
-    HYBRID = "HYBRID"
-
-
 class ExecutionStatus(str, enum.Enum):
     """
     Enumeration of code execution status outcomes from Judge0.

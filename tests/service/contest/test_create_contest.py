@@ -17,7 +17,6 @@ import pytest
 
 from app.models.contest import Contest
 from app.schema.contest import ContestCreate, ContestResponse
-from app.utils.enums import ScoringType
 
 
 class TestCreateContestSuccess:
@@ -68,7 +67,6 @@ class TestCreateContestSuccess:
             min_team_size=1,
             max_team_size=5,
             rules=None,
-            scoring_type=ScoringType.AUTO,
         )
         mock_contest_repository.create_contest.return_value = mock_contest
 
@@ -100,7 +98,6 @@ class TestCreateContestSuccess:
             min_team_size=1,
             max_team_size=5,
             rules=None,
-            scoring_type=ScoringType.AUTO,
         )
         mock_contest_repository.create_contest.return_value = mock_contest
 

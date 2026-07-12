@@ -41,6 +41,7 @@ from app.schema.contest import (
     MessageResponse,
     RemoveContestQuestionRequest,
     ReorderContestQuestionsRequest,
+    UpdateContestQuestionScoreRequest,
 )
 from app.schema.evaluation import (
     EvaluationResponse,
@@ -1217,6 +1218,59 @@ async def update_contest_question(
         request,
         data=question,
         message="Contest question updated successfully",
+    )
+
+
+@router.patch(
+    "/{contest_id}/questions/{question_id}/score",
+    response_model=APIResponse[ContestQuestionResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Update the score of a contest question",
+    dependencies=[can_update("contests:questions")],
+)
+async def update_contest_question_score(
+    request: Request,
+    contest_id: UUID,
+    question_id: UUID,
+    payload: UpdateContestQuestionScoreRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    service: ContestQuestionService = Depends(get_contest_question_service),
+) -> APIResponse[ContestQuestionResponse]:
+    """
+    Update the score (marks/points) awarded for a question within a contest.
+
+    Only the contest creator and assigned instructors/admins can perform this
+    operation. The score must be a valid positive integer.
+
+    Args:
+        request (Request): Framework context.
+        contest_id (UUID): The unique identifier of the contest.
+        question_id (UUID): The unique identifier of the question.
+        payload (UpdateContestQuestionScoreRequest): The new score value.
+        user_id (UUID): Authenticated user ID.
+        service (ContestQuestionService): Injected domain service.
+
+    Returns:
+        APIResponse[ContestQuestionResponse]: The updated contest-question link.
+
+    Raises:
+        UnauthorizedError: If the caller is not authenticated.
+        PermissionDeniedError: If the caller lacks update permission.
+        RequestValidationError: If the score is not a valid positive integer.
+        ContestNotFoundError: If the contest does not exist.
+        QuestionNotInContestError: If the question is not linked to the contest.
+        InvalidContestError: If the score fails business validation rules.
+    """
+    contest_question = await service.update_contest_question_score(
+        contest_id, question_id, payload, user_id
+    )
+    logger.info(
+        f"Updated score for question {question_id} in contest {contest_id} (actor=REDACTED)"
+    )
+    return create_api_response(
+        request,
+        data=contest_question,
+        message="Contest question score updated successfully",
     )
 
 
