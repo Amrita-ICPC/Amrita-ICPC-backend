@@ -3,6 +3,9 @@ services:
     image: postgres:15-alpine
     container_name: amrita_icpc_db
     restart: always
+    # shared_preload_libraries requires this over just CREATE EXTENSION --
+    # the module has to be loaded at server start, not just enabled per-db.
+    command: postgres -c shared_preload_libraries=pg_stat_statements -c pg_stat_statements.track=all -c pg_stat_statements.max=5000
     environment:
       POSTGRES_USER: ${DATABASE_USERNAME:-postgres}
       POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-postgres}
@@ -11,6 +14,9 @@ services:
       - "${DATABASE_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # Only runs against a fresh (empty) volume -- see the script for the
+      # manual command if the db already has data.
+      - ./observability/postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USERNAME:-postgres}"]
       interval: 10s
@@ -144,7 +150,76 @@ services:
       redis:
         condition: service_healthy
 
+  # ---------------------------------------------------------------------
+  # Load-test monitoring: Postgres query cost + DB health, Redis keys/hit
+  # ratio, all viewed in Grafana over Prometheus. No request tracing or
+  # worker instrumentation yet (deferred until actually needed). Only
+  # Grafana publishes a port; the exporters/Prometheus stay internal-only.
+  # ---------------------------------------------------------------------
+
+  # Aggregate, unsampled DB metrics for load testing: connections, locks,
+  # cache hit ratio, checkpoint/IO activity (built-in collectors), plus the
+  # top-cost queries via pg_stat_statements (observability/postgres-exporter-queries.yaml).
+  postgres_exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:latest
+    container_name: amrita_icpc_postgres_exporter
+    restart: always
+    mem_limit: 150m
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${DATABASE_USERNAME:-postgres}:${DATABASE_PASSWORD:-postgres}@db:5432/${DATABASE_NAME:-amrita_icpc}?sslmode=disable"
+      PG_EXPORTER_EXTEND_QUERY_PATH: /etc/postgres_exporter/queries.yaml
+    volumes:
+      - ./observability/postgres-exporter-queries.yaml:/etc/postgres_exporter/queries.yaml:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Redis keyspace hits/misses (cache hit ratio), key counts per db, memory
+  # usage, evictions/expirations, connected clients.
+  redis_exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: amrita_icpc_redis_exporter
+    restart: always
+    mem_limit: 100m
+    environment:
+      REDIS_ADDR: redis://redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: amrita_icpc_prometheus
+    restart: always
+    mem_limit: 500m
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      - api
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: amrita_icpc_grafana
+    restart: always
+    mem_limit: 300m
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    depends_on:
+      - prometheus
+
 volumes:
   postgres_data:
   redis_data:
   minio_data:
+  prometheus_data:
+  grafana_data:

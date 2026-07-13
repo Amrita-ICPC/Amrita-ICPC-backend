@@ -1,0 +1,33 @@
+# Extends postgres_exporter's built-in collectors (which already cover
+# connections, locks, cache hit ratio, checkpoints/IO via pg_stat_database,
+# pg_stat_bgwriter, pg_locks, pg_stat_activity) with per-query cost from
+# pg_stat_statements -- the piece that answers "which query should I
+# optimize", not just "is the database healthy".
+pg_stat_statements:
+  query: |
+    SELECT
+      LEFT(regexp_replace(query, '\s+', ' ', 'g'), 200) AS query,
+      calls,
+      total_exec_time,
+      mean_exec_time,
+      rows
+    FROM pg_stat_statements
+    WHERE query NOT ILIKE '%pg_stat_statements%'
+    ORDER BY total_exec_time DESC
+    LIMIT 25
+  metrics:
+    - query:
+        usage: "LABEL"
+        description: "Normalized query text (truncated to 200 chars)"
+    - calls:
+        usage: "COUNTER"
+        description: "Number of times this query has been executed"
+    - total_exec_time:
+        usage: "COUNTER"
+        description: "Total time spent executing this query, in milliseconds"
+    - mean_exec_time:
+        usage: "GAUGE"
+        description: "Mean execution time for this query, in milliseconds"
+    - rows:
+        usage: "COUNTER"
+        description: "Total rows retrieved or affected by this query"
