@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.api.errors import setup_exception_handlers
 from app.api.route import api_router
@@ -78,6 +79,10 @@ fastapi_app.add_middleware(RequestMiddleware)
 
 fastapi_app.include_router(api_router, prefix=config.API_PREFIX)
 setup_exception_handlers(fastapi_app)
+
+# Setup Prometheus metrics
+Instrumentator().instrument(fastapi_app).expose(fastapi_app)
+
 
 if __name__ == "__main__":
     import uvicorn

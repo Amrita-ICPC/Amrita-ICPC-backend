@@ -43,5 +43,6 @@ def setup_security(app: FastAPI):
             "/docs",
             "/openapi.json",
             "/redoc",
+            "/metrics",
         ],
     )
