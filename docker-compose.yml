@@ -163,6 +163,7 @@ services:
   postgres_exporter:
     image: quay.io/prometheuscommunity/postgres-exporter:latest
     container_name: amrita_icpc_postgres_exporter
+    profiles: ["observability"]
     restart: always
     mem_limit: 150m
     environment:
@@ -179,6 +180,7 @@ services:
   redis_exporter:
     image: oliver006/redis_exporter:latest
     container_name: amrita_icpc_redis_exporter
+    profiles: ["observability"]
     restart: always
     mem_limit: 100m
     environment:
@@ -191,6 +193,7 @@ services:
   prometheus:
     image: prom/prometheus:latest
     container_name: amrita_icpc_prometheus
+    profiles: ["observability"]
     restart: always
     mem_limit: 500m
     command:
@@ -205,10 +208,11 @@ services:
   grafana:
     image: grafana/grafana:latest
     container_name: amrita_icpc_grafana
+    profiles: ["observability"]
     restart: always
     mem_limit: 300m
     ports:
-      - "${GRAFANA_PORT:-3000}:3000"
+      - "${GRAFANA_PORT:-3001}:3000"
     volumes:
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - grafana_data:/var/lib/grafana
