@@ -4,7 +4,7 @@ Locust load test for the ICPC backend.
 Step 1: Keycloak-authenticated student users hitting the student dashboard
 (GET /api/v1/students/). Always pass --host explicitly, e.g.:
 
-    locust -f loadtest/locustfile.py --host http://<backend-host>:8000 \
+    locust -f loadtest/scenarios/dashboard_locustfile.py --host http://<backend-host>:8000 \
         --users 1 --spawn-rate 1 --run-time 30s --headless
 
 The number of seeded student accounts (student1..studentN) available to draw
@@ -13,6 +13,12 @@ should be >= the peak number of concurrent users you plan to simulate.
 """
 
 import os
+import sys
+from pathlib import Path
+
+# keycloak_auth.py lives one level up, in loadtest/ - Locust only auto-adds
+# this file's own directory to sys.path, not its parent, so add it ourselves.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from keycloak_auth import (
     BROWSER_USER_AGENT,
