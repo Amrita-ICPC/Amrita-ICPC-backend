@@ -9,3 +9,41 @@ datasources:
     isDefault: true
     jsonData:
       httpMethod: POST
+      # Jump from a Prometheus panel straight to the Tempo trace behind an
+      # exemplar point (populated by Tempo's metrics-generator, see tempo.yaml).
+      exemplarTraceIdDestinations:
+        - datasourceUid: tempo
+          name: trace_id
+
+  - name: Tempo
+    type: tempo
+    uid: tempo
+    access: proxy
+    url: http://tempo:3200
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: "-5m"
+        spanEndTimeShift: "5m"
+        filterByTraceID: true
+        tags: [{ key: "service.name", value: "service_name" }]
+      tracesToMetrics:
+        datasourceUid: prometheus
+      serviceMap:
+        datasourceUid: prometheus
+      nodeGraph:
+        enabled: true
+
+  - name: Loki
+    type: loki
+    uid: loki
+    access: proxy
+    url: http://loki:3100
+    jsonData:
+      # Click a trace_id in a log line to jump to that trace in Tempo
+      # (promtail promotes trace_id to a label -- see promtail-config.yaml).
+      derivedFields:
+        - datasourceUid: tempo
+          matcherRegex: "trace_id=(?P<trace_id>[0-9a-f]{32})"
+          name: TraceID
+          url: "${__value.raw}"

@@ -82,6 +82,37 @@ class Config(BaseSettings):
         description="Max accepted image upload size in bytes (default 5MB)",
     )
 
+    # Observability (OpenTelemetry tracing -> OTel Collector -> Tempo)
+    OTEL_EXPORTER_OTLP_ENDPOINT: Optional[str] = Field(
+        default=None,
+        description="OTel Collector OTLP/gRPC endpoint (e.g. otel-collector:4317). "
+        "Tracing is disabled entirely when unset, so local dev without the "
+        "observability stack running is unaffected.",
+    )
+    OTEL_SERVICE_NAME: str = Field(
+        default="api",
+        description="Service name reported on spans from this process. Overridden "
+        "per Celery worker role (worker-student/worker-bulk/worker-poller) via "
+        "docker-compose.yml so each shows up as a distinct service on a trace.",
+    )
+    OTEL_TRACES_SAMPLER_RATIO: float = Field(
+        default=1.0,
+        description="Head-sample ratio (0-1) applied before spans reach the "
+        "collector. The collector's tail_sampling policy (observability/"
+        "otel-collector-config.yaml) makes the real keep/drop decision; this is "
+        "just a cap so a runaway baseline can't flood it.",
+    )
+
+    # Grafana <-> Keycloak SSO (Grafana is the only observability service with
+    # a published port; gated by a dedicated confidential client in the
+    # existing realm instead of a separate credential set)
+    GRAFANA_KEYCLOAK_CLIENT_ID: Optional[str] = Field(
+        default=None, description="Keycloak client ID used for Grafana SSO"
+    )
+    GRAFANA_KEYCLOAK_CLIENT_SECRET: Optional[str] = Field(
+        default=None, description="Keycloak client secret used for Grafana SSO"
+    )
+
     # Log Configuration
     LOG_LEVEL: str = Field(default="INFO", description="Log level")
     LOG_FORMAT: str = Field(

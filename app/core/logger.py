@@ -6,6 +6,13 @@ from rich.logging import RichHandler
 
 from .config import config
 
+# opentelemetry-instrumentation-logging (enabled in app/core/telemetry.py)
+# injects otelTraceID/otelSpanID into every log record; rendering it here is
+# what lets promtail (observability/promtail-config.yaml) promote it to a
+# label, which Grafana then uses to jump from a Tempo trace to its log lines.
+# No brackets -- Rich's markup=True would otherwise try to parse them as tags.
+_TRACE_FORMATTER = logging.Formatter("%(message)s | trace_id=%(otelTraceID)s")
+
 
 class Logger:
     _instance: Optional["Logger"] = None
@@ -53,6 +60,7 @@ class Logger:
                 show_path=True,
             )
             rich_handler.setLevel(self.log_level)
+            rich_handler.setFormatter(_TRACE_FORMATTER)
 
             # Add handler to logger
             self.logger.addHandler(rich_handler)
@@ -92,6 +100,7 @@ class Logger:
                     show_path=True,
                 )
                 rich_handler.setLevel(self.log_level)
+                rich_handler.setFormatter(_TRACE_FORMATTER)
 
                 # Add handler to logger
                 logger_instance.addHandler(rich_handler)
@@ -124,20 +133,18 @@ class Logger:
 
 if config.USE_RICH_LOGGING:
     # Logging Configuration
+    _root_rich_handler = RichHandler(
+        rich_tracebacks=True,
+        markup=True,
+        show_time=True,
+        show_level=True,
+        show_path=True,
+    )
+    _root_rich_handler.setFormatter(_TRACE_FORMATTER)
     logging.basicConfig(
         level=config.LOG_LEVEL,
-        format=config.LOG_FORMAT,
         datefmt="[%X]",
-        style="{",
-        handlers=[
-            RichHandler(
-                rich_tracebacks=True,
-                markup=True,
-                show_time=True,
-                show_level=True,
-                show_path=True,
-            ),
-        ],
+        handlers=[_root_rich_handler],
     )
 
 
@@ -152,15 +159,15 @@ def setup_sqlalchemy_logging():
         for handler in sqlalchemy_logger.handlers[:]:
             sqlalchemy_logger.removeHandler(handler)
 
-        sqlalchemy_logger.addHandler(
-            RichHandler(
-                rich_tracebacks=True,
-                markup=True,
-                show_time=True,
-                show_level=True,
-                show_path=True,
-            )
+        sqlalchemy_handler = RichHandler(
+            rich_tracebacks=True,
+            markup=True,
+            show_time=True,
+            show_level=True,
+            show_path=True,
         )
+        sqlalchemy_handler.setFormatter(_TRACE_FORMATTER)
+        sqlalchemy_logger.addHandler(sqlalchemy_handler)
         sqlalchemy_logger.propagate = False
 
 
@@ -177,15 +184,15 @@ def setup_uvicorn_logging():
                 logger_instance.removeHandler(handler)
 
             # Add RichHandler
-            logger_instance.addHandler(
-                RichHandler(
-                    rich_tracebacks=True,
-                    markup=True,
-                    show_time=True,
-                    show_level=True,
-                    show_path=True,
-                )
+            uvicorn_handler = RichHandler(
+                rich_tracebacks=True,
+                markup=True,
+                show_time=True,
+                show_level=True,
+                show_path=True,
             )
+            uvicorn_handler.setFormatter(_TRACE_FORMATTER)
+            logger_instance.addHandler(uvicorn_handler)
             logger_instance.propagate = False
 
 

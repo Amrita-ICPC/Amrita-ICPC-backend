@@ -10,6 +10,7 @@ from app.core.clients.judge0 import init_judge0
 from app.core.clients.redis import init_redis
 from app.core.config import config
 from app.core.logger import logger
+from app.core.telemetry import instrument_celery, setup_telemetry
 
 celery_app = Celery(
     "amrita_icpc",
@@ -79,6 +80,13 @@ celery_app.conf.update(
 @worker_process_init.connect
 def init_worker_process(**kwargs):
     """Initialize async clients in the worker process."""
+
+    # Tracing first, so it's in place before Redis/Judge0 clients below open
+    # their first connection. OTEL_SERVICE_NAME is set per worker role
+    # (worker-student/worker-bulk/worker-poller) via docker-compose.yml, so
+    # all of them show up as distinct services on one connected trace.
+    setup_telemetry(config.OTEL_SERVICE_NAME)
+    instrument_celery()
 
     # Dispose of the engine connection pool inherited from the parent process
     # so each worker creates its own pool bound to its own event loop.

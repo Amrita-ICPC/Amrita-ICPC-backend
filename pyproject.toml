@@ -29,6 +29,14 @@ dependencies = [
     "fastapi-limiter>=0.2.0",
     "locust>=2.45.0",
     "prometheus-fastapi-instrumentator>=8.0.2",
+    "opentelemetry-sdk>=1.43.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.43.0",
+    "opentelemetry-instrumentation-fastapi>=0.64b0",
+    "opentelemetry-instrumentation-sqlalchemy>=0.64b0",
+    "opentelemetry-instrumentation-httpx>=0.64b0",
+    "opentelemetry-instrumentation-redis>=0.64b0",
+    "opentelemetry-instrumentation-celery>=0.64b0",
+    "opentelemetry-instrumentation-logging>=0.64b0",
 ]
 
 [dependency-groups]

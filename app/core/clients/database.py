@@ -5,6 +5,7 @@ import app.models  # noqa: F401
 from app.core.cache.decorators import defer_cache_invalidation
 from app.core.config import config
 from app.core.logger import logger
+from app.core.telemetry import instrument_sqlalchemy_engine
 
 # Import all models to ensure they are registered with Base.metadata
 from app.models.base import Base
@@ -19,6 +20,11 @@ engine = create_async_engine(
     pool_size=config.DATABASE_POOL_SIZE,
     max_overflow=config.DATABASE_MAX_OVERFLOW,
 )
+
+# Every process that imports this module (api + all Celery worker roles)
+# gets query spans for free -- the tracer is resolved lazily per-query, so
+# this doesn't depend on setup_telemetry() having run yet in this process.
+instrument_sqlalchemy_engine(engine)
 
 SessionLocal = async_sessionmaker(
     bind=engine,
