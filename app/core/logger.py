@@ -14,6 +14,28 @@ from .config import config
 _TRACE_FORMATTER = logging.Formatter("%(message)s | trace_id=%(otelTraceID)s")
 
 
+class _DefaultTraceIdFilter(logging.Filter):
+    """Guarantees otelTraceID exists on every record.
+
+    LoggingInstrumentor (app/core/telemetry.py) only runs inside the FastAPI
+    lifespan or a Celery worker's worker_process_init -- standalone scripts
+    (loadtest/setup/setup_contest.py, scripts/seed_*.py, etc.) import this
+    logger without ever going through either, so the attribute is otherwise
+    missing and %(otelTraceID)s in _TRACE_FORMATTER raises. Handler filters
+    run immediately before that handler's format() call, so this is the last
+    chance to backfill it -- if OTel already set a real trace id, this is a
+    no-op (setdefault-style via getattr).
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if not hasattr(record, "otelTraceID"):
+            record.otelTraceID = "0"
+        return True
+
+
+_trace_id_filter = _DefaultTraceIdFilter()
+
+
 class Logger:
     _instance: Optional["Logger"] = None
     _initialized: bool = False
@@ -61,6 +83,7 @@ class Logger:
             )
             rich_handler.setLevel(self.log_level)
             rich_handler.setFormatter(_TRACE_FORMATTER)
+            rich_handler.addFilter(_trace_id_filter)
 
             # Add handler to logger
             self.logger.addHandler(rich_handler)
@@ -101,6 +124,7 @@ class Logger:
                 )
                 rich_handler.setLevel(self.log_level)
                 rich_handler.setFormatter(_TRACE_FORMATTER)
+                rich_handler.addFilter(_trace_id_filter)
 
                 # Add handler to logger
                 logger_instance.addHandler(rich_handler)
@@ -141,6 +165,7 @@ if config.USE_RICH_LOGGING:
         show_path=True,
     )
     _root_rich_handler.setFormatter(_TRACE_FORMATTER)
+    _root_rich_handler.addFilter(_trace_id_filter)
     logging.basicConfig(
         level=config.LOG_LEVEL,
         datefmt="[%X]",
@@ -167,6 +192,7 @@ def setup_sqlalchemy_logging():
             show_path=True,
         )
         sqlalchemy_handler.setFormatter(_TRACE_FORMATTER)
+        sqlalchemy_handler.addFilter(_trace_id_filter)
         sqlalchemy_logger.addHandler(sqlalchemy_handler)
         sqlalchemy_logger.propagate = False
 
@@ -192,6 +218,7 @@ def setup_uvicorn_logging():
                 show_path=True,
             )
             uvicorn_handler.setFormatter(_TRACE_FORMATTER)
+            uvicorn_handler.addFilter(_trace_id_filter)
             logger_instance.addHandler(uvicorn_handler)
             logger_instance.propagate = False
 
