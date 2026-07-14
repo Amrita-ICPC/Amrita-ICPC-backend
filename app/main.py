@@ -86,7 +86,9 @@ fastapi_app.include_router(api_router, prefix=config.API_PREFIX)
 setup_exception_handlers(fastapi_app)
 
 # Setup Prometheus metrics
-Instrumentator().instrument(fastapi_app).expose(fastapi_app)
+Instrumentator(should_instrument_requests_inprogress=True).instrument(
+    fastapi_app
+).expose(fastapi_app)
 
 # Setup request tracing (no-op if OTEL_EXPORTER_OTLP_ENDPOINT isn't set)
 instrument_fastapi_app(fastapi_app)

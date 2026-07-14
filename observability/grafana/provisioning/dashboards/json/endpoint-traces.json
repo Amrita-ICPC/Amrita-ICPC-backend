@@ -1,0 +1,74 @@
+{
+  "uid": "amrita-icpc-endpoint-traces",
+  "title": "Amrita ICPC — Endpoint Trace Drilldown",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "endpoint",
+        "type": "query",
+        "label": "Endpoint",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": { "query": "label_values(http_requests_total, handler)", "refId": "endpoint" },
+        "refresh": 2,
+        "includeAll": true,
+        "multi": false,
+        "current": { "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "panels": [
+    { "type": "row", "title": "Selected endpoint", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }, "id": 100 },
+
+    {
+      "id": 1, "type": "timeseries", "title": "p50 / p95 / p99 latency (from spans, unsampled)",
+      "description": "Sourced from Tempo's metrics-generator (traces_spanmetrics_*), remote_written to Prometheus. Unlike the trace list below, this is derived from every span, not just the ones the tail-sampling policy kept -- so it's the reliable per-endpoint latency signal even during a heavy burst.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(traces_spanmetrics_latency_bucket{span_name=~\"$endpoint\"}[5m])) by (le))", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.95, sum(rate(traces_spanmetrics_latency_bucket{span_name=~\"$endpoint\"}[5m])) by (le))", "legendFormat": "p95" },
+        { "expr": "histogram_quantile(0.99, sum(rate(traces_spanmetrics_latency_bucket{span_name=~\"$endpoint\"}[5m])) by (le))", "legendFormat": "p99" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "id": 2, "type": "timeseries", "title": "Call rate + error rate (from spans)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum(rate(traces_spanmetrics_calls_total{span_name=~\"$endpoint\"}[5m])) by (span_name)", "legendFormat": "{{span_name}}" },
+        { "expr": "sum(rate(traces_spanmetrics_calls_total{span_name=~\"$endpoint\", status_code=\"STATUS_CODE_ERROR\"}[5m])) by (span_name)", "legendFormat": "{{span_name}} (errors)" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }
+    },
+    {
+      "id": 3, "type": "nodeGraph", "title": "Service graph (api -> workers -> Judge0)",
+      "description": "Built automatically from span parent/child relationships by Tempo's metrics-generator -- no manual wiring per endpoint.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "targets": [{ "queryType": "serviceMap", "refId": "A" }]
+    },
+
+    { "type": "row", "title": "Recent traces for this endpoint", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 17 }, "id": 200 },
+
+    {
+      "id": 10, "type": "traces", "title": "Traces",
+      "description": "Click any trace to open its full waterfall -- every DB query, Redis call, and Judge0 request made during that specific request, in order. Subject to the collector's tail-sampling (all errors + slow requests are always kept, ~15% baseline).",
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 18 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "targets": [
+        {
+          "queryType": "traceql",
+          "query": "{resource.service.name=\"api\" && name=~\"$endpoint\"} | sort(duration desc)",
+          "limit": 50,
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}
