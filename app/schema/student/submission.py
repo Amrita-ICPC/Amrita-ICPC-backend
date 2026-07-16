@@ -5,6 +5,11 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schema.submission import (
+    SubmissionDetailLanguageSchema,
+    SubmissionDetailQuestionSchema,
+    SubmissionDetailUserSchema,
+)
 from app.utils.enums import SubmissionStatus
 
 
@@ -64,3 +69,22 @@ class StudentSubmissionUpdateEvent(BaseModel):
 
     type: str = "submission_update"
     payload: StudentSubmissionUpdatePayload
+
+
+class StudentSubmissionDetailResponse(BaseModel):
+    """Detailed submission response for student review."""
+
+    submission_id: UUID
+    question: SubmissionDetailQuestionSchema
+    submitted_by: SubmissionDetailUserSchema
+    status: SubmissionStatus | None = None
+    score: int
+    language: SubmissionDetailLanguageSchema
+    submitted_at: datetime
+    execution_time_ms: int | None = None
+    memory_kb: int | None = None
+    passed_testcases: int = 0
+    total_testcases: int = 0
+    source_code: str
+
+    model_config = ConfigDict(from_attributes=True)

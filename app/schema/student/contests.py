@@ -263,6 +263,18 @@ class StudentTemplateResponse(BaseModel):
 
     language_id: int
     starter_code: str
+    solution_code: str | None = None
+
+
+class StudentTestCaseResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    input: str
+    output: str
+    is_hidden: bool
+    weight: int
+    order: int
 
 
 class StudentQuestionDetailResponse(BaseModel):
@@ -275,13 +287,21 @@ class StudentQuestionDetailResponse(BaseModel):
     allowed_languages: list[str] = Field(default_factory=list)
     tags: list[TagResponse] = Field(default_factory=list)
     templates: list[StudentTemplateResponse] = Field(default_factory=list)
+    testcases: list[StudentTestCaseResponse] = Field(default_factory=list)
     max_submission: int | None = Field(
         None, description="Maximum submissions allowed for this question"
+    )
+    is_practice: bool = Field(
+        False,
+        description="True when viewed after contest results were published (practice mode)",
     )
 
     @classmethod
     def from_question(
-        cls, question: "Question", max_submission: int | None = None
+        cls,
+        question: "Question",
+        max_submission: int | None = None,
+        include_solution: bool = False,
     ) -> "StudentQuestionDetailResponse":
         language_names: list[str] = []
         for mapping in getattr(question, "languages", []) or []:
@@ -294,6 +314,7 @@ class StudentQuestionDetailResponse(BaseModel):
             StudentTemplateResponse(
                 language_id=template.language_id,
                 starter_code=template.starter_code,
+                solution_code=template.solution_code if include_solution else None,
             )
             for template in (getattr(question, "templates", []) or [])
         ]
@@ -303,6 +324,22 @@ class StudentQuestionDetailResponse(BaseModel):
             for qt in (getattr(question, "tags", []) or [])
             if getattr(qt, "tag", None)
         ]
+
+        testcase_items = (
+            [
+                StudentTestCaseResponse(
+                    id=tc.id,
+                    input=tc.input,
+                    output=tc.output,
+                    is_hidden=tc.is_hidden,
+                    weight=tc.weight,
+                    order=tc.order,
+                )
+                for tc in (getattr(question, "testcases", []) or [])
+            ]
+            if include_solution
+            else []
+        )
 
         return cls(
             id=question.id,
@@ -314,5 +351,7 @@ class StudentQuestionDetailResponse(BaseModel):
             allowed_languages=list(dict.fromkeys(language_names)),
             tags=tag_items,
             templates=template_items,
+            testcases=testcase_items,
             max_submission=max_submission,
+            is_practice=include_solution,
         )

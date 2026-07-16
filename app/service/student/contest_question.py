@@ -12,8 +12,10 @@ from app.core.cache import keys as cache_keys
 from app.core.cache.decorators import cache_get
 from app.core.clients.celery import celery_app
 from app.core.logger import logger
+from app.exceptions.auth import PermissionDeniedError
 from app.exceptions.base import AppBaseException
 from app.exceptions.contest import (
+    ContestResultsNotVisibleError,
     QuestionNotInContestError,
 )
 from app.exceptions.question import QuestionNotFoundError
@@ -22,7 +24,8 @@ from app.exceptions.student.contests import (
     ContestSessionNotStartedError,
     NoContestTeamMemberFoundError,
 )
-from app.models import ContestSubmission
+from app.exceptions.submission import SubmissionNotFoundError
+from app.models import Contest, ContestSubmission
 from app.models.question import Submission
 from app.repositories.contest import ContestRepository
 from app.repositories.contest_team_progress import ContestTeamProgressRepository
@@ -31,6 +34,7 @@ from app.repositories.judge0 import Judge0Repository
 from app.repositories.question import QuestionRepository
 from app.repositories.student.contest_question import StudentContestQuestionRepository
 from app.repositories.student.contest_team import ContestTeamRepository
+from app.repositories.submission import ContestSubmissionRepository
 from app.repositories.testcase import TestCaseRepository
 from app.schema.contest import ContestSessionValidationData
 from app.schema.student import (
@@ -44,9 +48,15 @@ from app.schema.student.run import (
     StudentTestCaseRunResultResponse,
 )
 from app.schema.student.submission import (
+    StudentSubmissionDetailResponse,
     StudentSubmissionResponse,
     StudentSubmissionUpdateEvent,
     StudentSubmissionUpdatePayload,
+)
+from app.schema.submission import (
+    SubmissionDetailLanguageSchema,
+    SubmissionDetailQuestionSchema,
+    SubmissionDetailUserSchema,
 )
 from app.service.contest_event_service import ContestEventService
 from app.service.student.workspace import WorkspaceService
@@ -247,6 +257,118 @@ class StudentContestQuestionService:
             )
 
         return StudentContestQuestionsListResponse(questions=question_responses)
+
+    async def _validate_results_access(
+        self, contest_id: UUID, user_id: UUID
+    ) -> tuple[Contest, UUID]:
+        """
+        Validate that a student may access post-results question review for a
+        contest: the contest must have its results published, and the caller
+        must have actually participated (an accepted member of a confirmed/
+        approved contest team) -- regardless of whether their session is
+        still active, ended, or was never started. Deliberately independent
+        of `_validate_session_and_get_contest` (the live-session path) so
+        that path's validation stays untouched.
+        """
+        contest = await self.contest_repository.get_contest_or_raise(contest_id)
+        ContestValidator.validate_contest_is_published(contest.status, contest_id)
+
+        if not contest.results_published_at:
+            raise ContestResultsNotVisibleError(str(contest_id))
+
+        contest_team_member = (
+            await self.contest_team_repository.get_contest_team_member_by_user_id(
+                user_id=user_id,
+                status=ContestTeamMemberStatus.ACCEPTED,
+                team_status=TeamStatus.CONFIRMED,
+                approval_status=TeamApprovalStatus.APPROVED,
+                contest_id=contest_id,
+            )
+        )
+        if not contest_team_member:
+            raise NoContestTeamMemberFoundError()
+
+        return contest, contest_team_member.contest_team_id
+
+    async def get_results_questions(
+        self, contest_id: UUID, user_id: UUID
+    ) -> StudentContestQuestionsListResponse:
+        """
+        Get the list of questions for a contest for post-results review
+        (after results have been published), for students who participated.
+        """
+        contest, contest_team_id = await self._validate_results_access(
+            contest_id, user_id
+        )
+
+        questions = await self.repository.get_contest_questions(contest_id)
+
+        solved_by_question = await self.repository.get_question_attempt_status(
+            contest_id, contest_team_id
+        )
+
+        question_responses = [
+            StudentContestQuestionResponse(
+                id=q.question_id,
+                title=q.question.title if q.question else "Untitled Question",
+                status=ContestQuestionStatus.submitted
+                if q.question_id in solved_by_question
+                else ContestQuestionStatus.unviewed,
+                max_submission=q.max_submission
+                if q.max_submission is not None
+                else contest.max_submission_per_question,
+            )
+            for q in questions
+        ]
+
+        return StudentContestQuestionsListResponse(questions=question_responses)
+
+    async def get_results_question_details(
+        self, contest_id: UUID, question_id: UUID, user_id: UUID
+    ) -> StudentQuestionDetailResponse:
+        """
+        Get full details of a question for post-results review (statement,
+        testcases, and per-language reference solutions), for students who
+        participated in a contest whose results have been published.
+        """
+        contest, _ = await self._validate_results_access(contest_id, user_id)
+
+        return await self._get_cached_results_question_details(
+            contest_id=contest_id,
+            question_id=question_id,
+            default_max_submission=contest.max_submission_per_question,
+        )
+
+    @cache_get(
+        key_builder=lambda self, contest_id, question_id, default_max_submission: (
+            f"contests:{contest_id}:questions:{question_id}:results"
+        ),
+        use_lock=True,
+    )
+    async def _get_cached_results_question_details(
+        self,
+        contest_id: UUID,
+        question_id: UUID,
+        default_max_submission: int | None,
+    ) -> StudentQuestionDetailResponse:
+        in_contest = await self.contest_repository.is_question_in_contest(
+            contest_id, question_id
+        )
+        if not in_contest:
+            raise QuestionNotInContestError(str(question_id), str(contest_id))
+
+        question = await self.question_repository.get_question_or_raise(question_id)
+
+        contest_question = await self.contest_repository.get_contest_question(
+            contest_id, question_id
+        )
+        max_sub = contest_question.max_submission if contest_question else None
+        if max_sub is None:
+            max_sub = default_max_submission
+
+        return StudentQuestionDetailResponse.from_question(
+            question, max_submission=max_sub, include_solution=True
+        )
 
     @staticmethod
     def _shuffle_questions_for_member(
@@ -690,3 +812,81 @@ class StudentContestQuestionService:
         finally:
             await pubsub.unsubscribe(channel)
             await pubsub.close()
+
+    async def get_submission_detail(
+        self, contest_id: UUID, submission_id: UUID, user_id: UUID
+    ) -> StudentSubmissionDetailResponse:
+        """
+        Retrieve details of a submission if it belongs to the student's team.
+
+        Args:
+            contest_id: UUID of the contest.
+            submission_id: UUID of the submission.
+            user_id: UUID of the requesting student.
+
+        Returns:
+            StudentSubmissionDetailResponse: Details of the submission.
+
+        Raises:
+            SubmissionNotFoundError: If the submission is not found.
+            PermissionDeniedError: If the student does not have access.
+        """
+        # 1. Verify student is a member of a team in this contest
+        contest_team_member = (
+            await self.contest_team_repository.get_contest_team_member_by_user_id(
+                user_id=user_id,
+                status=ContestTeamMemberStatus.ACCEPTED,
+                team_status=TeamStatus.CONFIRMED,
+                approval_status=TeamApprovalStatus.APPROVED,
+                contest_id=contest_id,
+            )
+        )
+        if not contest_team_member:
+            raise NoContestTeamMemberFoundError()
+
+        # 2. Retrieve submission using repository method
+        submission = await self.question_repository.get_submission(submission_id)
+        if not submission:
+            raise SubmissionNotFoundError(submission_id)
+
+        contest_sub = submission.contest_submission
+        if not contest_sub:
+            raise SubmissionNotFoundError(submission_id)
+
+        # 3. Verify submission belongs to the contest and the student's team
+        if (
+            contest_sub.contest_id != contest_id
+            or contest_sub.contest_team_id != contest_team_member.contest_team_id
+        ):
+            raise PermissionDeniedError(
+                "You do not have permission to view this submission."
+            )
+
+        # 4. Fetch submission details
+        submission_repo = ContestSubmissionRepository(self.repository.db)
+        row = await submission_repo.get_submission_detail(submission_id)
+
+        # 5. Map to StudentSubmissionDetailResponse
+        return StudentSubmissionDetailResponse(
+            submission_id=row.submission_id,
+            question=SubmissionDetailQuestionSchema(
+                id=row.question_id,
+                title=row.question_title,
+            ),
+            submitted_by=SubmissionDetailUserSchema(
+                id=row.submitted_by_id,
+                name=row.submitted_by_name,
+            ),
+            status=row.status,
+            score=row.score,
+            language=SubmissionDetailLanguageSchema(
+                id=row.language_id,
+                name=row.language_name,
+            ),
+            submitted_at=row.submitted_at,
+            execution_time_ms=row.execution_time_ms,
+            memory_kb=row.memory_kb,
+            passed_testcases=int(row.passed_testcases or 0),
+            total_testcases=int(row.total_testcases or 0),
+            source_code=row.source_code,
+        )

@@ -288,9 +288,22 @@ class QuestionListSummaryResponse(BaseModel):
     created_by: UUID
     created_at: datetime
     updated_at: datetime
+    max_score: int | None = Field(
+        default=None,
+        description="The maximum score/points allocated to this question in this contest",
+    )
+    obtained_score: int | None = Field(
+        default=None,
+        description="The score obtained by the student for this question in this contest",
+    )
 
     @classmethod
-    def from_question(cls, question: "Question") -> "QuestionListSummaryResponse":
+    def from_question(
+        cls,
+        question: "Question",
+        contest_id: UUID | None = None,
+        obtained_score: int | None = None,
+    ) -> "QuestionListSummaryResponse":
         language_names: list[str] = []
         for mapping in getattr(question, "languages", []) or []:
             language = getattr(mapping, "language", None)
@@ -308,6 +321,13 @@ class QuestionListSummaryResponse(BaseModel):
             if getattr(qt, "tag", None)
         ]
 
+        max_score = None
+        if contest_id and hasattr(question, "contests") and question.contests:
+            for cq in question.contests:
+                if cq.contest_id == contest_id:
+                    max_score = cq.score
+                    break
+
         return cls(
             id=question.id,
             title=getattr(question, "title", "") or "Untitled Question",
@@ -321,6 +341,8 @@ class QuestionListSummaryResponse(BaseModel):
             created_by=question.created_by,
             created_at=question.created_at,
             updated_at=question.updated_at,
+            max_score=max_score,
+            obtained_score=obtained_score,
         )
 
 

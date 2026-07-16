@@ -641,3 +641,127 @@ async def test_get_contest_question_details_marks_viewed(
         f"contests:{contest_id}:members:{team_member.id}:questions:{question_id}:status"
     )
     mock_redis.set.assert_called_once_with(view_key, "1", ex=60 * 60 * 24 * 30)
+
+
+@pytest.mark.asyncio
+async def test_get_submission_detail_success(
+    contest_question_service,
+    mock_contest_team_repository,
+    mock_question_repository,
+    mock_repository,
+):
+    contest_id = uuid4()
+    submission_id = uuid4()
+    user_id = uuid4()
+    team_id = uuid4()
+    contest_team_id = uuid4()
+
+    # Mock team member
+    team_member = MagicMock(spec=ContestTeamMember)
+    team_member.id = uuid4()
+    team_member.contest_team_id = contest_team_id
+    contest_team = MagicMock(spec=ContestTeam)
+    contest_team.id = contest_team_id
+    contest_team.team_id = team_id
+    contest_team.contest_id = contest_id
+    contest_team.team_status = TeamStatus.CONFIRMED
+    contest_team.approval_status = TeamApprovalStatus.APPROVED
+    team_member.contest_team = contest_team
+    mock_contest_team_repository.get_contest_team_member_by_user_id.return_value = (
+        team_member
+    )
+
+    # Mock submission
+    mock_submission = MagicMock()
+    mock_contest_submission = MagicMock()
+    mock_contest_submission.contest_id = contest_id
+    mock_contest_submission.contest_team_id = contest_team_id
+    mock_submission.contest_submission = mock_contest_submission
+    mock_question_repository.get_submission.return_value = mock_submission
+
+    # Mock db
+    mock_repository.db = AsyncMock()
+
+    from unittest.mock import patch
+
+    mock_row = MagicMock()
+    mock_row.submission_id = submission_id
+    mock_row.question_id = uuid4()
+    mock_row.question_title = "Test Question"
+    mock_row.submitted_by_id = user_id
+    mock_row.submitted_by_name = "Student User"
+    mock_row.status = "AC"
+    mock_row.score = 100
+    mock_row.language_id = 54
+    mock_row.language_name = "Python 3"
+    mock_row.submitted_at = datetime.now(timezone.utc)
+    mock_row.execution_time_ms = 50
+    mock_row.memory_kb = 1024
+    mock_row.passed_testcases = 5
+    mock_row.total_testcases = 5
+    mock_row.source_code = "print('hello')"
+
+    with patch(
+        "app.service.student.contest_question.ContestSubmissionRepository"
+    ) as mock_repo_class:
+        mock_repo_instance = MagicMock()
+        mock_repo_instance.get_submission_detail = AsyncMock(return_value=mock_row)
+        mock_repo_class.return_value = mock_repo_instance
+
+        response = await contest_question_service.get_submission_detail(
+            contest_id, submission_id, user_id
+        )
+
+        assert response.submission_id == submission_id
+        assert response.score == 100
+        assert response.status == "AC"
+        assert response.source_code == "print('hello')"
+        mock_repo_instance.get_submission_detail.assert_called_once_with(submission_id)
+        mock_question_repository.get_submission.assert_called_once_with(submission_id)
+
+
+@pytest.mark.asyncio
+async def test_get_submission_detail_permission_denied(
+    contest_question_service,
+    mock_contest_team_repository,
+    mock_question_repository,
+    mock_repository,
+):
+    contest_id = uuid4()
+    submission_id = uuid4()
+    user_id = uuid4()
+    team_id = uuid4()
+    contest_team_id = uuid4()
+
+    # Mock team member
+    team_member = MagicMock(spec=ContestTeamMember)
+    team_member.id = uuid4()
+    team_member.contest_team_id = contest_team_id
+    contest_team = MagicMock(spec=ContestTeam)
+    contest_team.id = contest_team_id
+    contest_team.team_id = team_id
+    contest_team.contest_id = contest_id
+    contest_team.team_status = TeamStatus.CONFIRMED
+    contest_team.approval_status = TeamApprovalStatus.APPROVED
+    team_member.contest_team = contest_team
+    mock_contest_team_repository.get_contest_team_member_by_user_id.return_value = (
+        team_member
+    )
+
+    # Mock submission
+    mock_submission = MagicMock()
+    mock_contest_submission = MagicMock()
+    mock_contest_submission.contest_id = contest_id
+    mock_contest_submission.contest_team_id = uuid4()  # Different team ID
+    mock_submission.contest_submission = mock_contest_submission
+    mock_question_repository.get_submission.return_value = mock_submission
+
+    # Mock db
+    mock_repository.db = AsyncMock()
+
+    from app.exceptions.auth import PermissionDeniedError
+
+    with pytest.raises(PermissionDeniedError):
+        await contest_question_service.get_submission_detail(
+            contest_id, submission_id, user_id
+        )

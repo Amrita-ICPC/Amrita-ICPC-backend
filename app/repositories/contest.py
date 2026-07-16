@@ -1160,6 +1160,7 @@ class ContestRepository:
                 selectinload(Question.languages).joinedload(QuestionLanguage.language),
                 selectinload(Question.tags).joinedload(QuestionTag.tag),
                 selectinload(Question.testcases),
+                selectinload(Question.contests),
             )
         )
 
@@ -2038,3 +2039,36 @@ class ContestRepository:
         )
         row = (await self.db.execute(stmt)).first()
         return (int(row.team_rank), int(row.team_score)) if row else None
+
+    async def get_member_best_scores_per_question(
+        self, contest_id: UUID, contest_team_member_id: UUID
+    ) -> dict[UUID, int]:
+        """
+        Get the maximum score obtained by a student for each question in a contest.
+
+        Args:
+            contest_id: UUID of the contest.
+            contest_team_member_id: UUID of the contest team member.
+
+        Returns:
+            dict[UUID, int]: Dictionary mapping question_id -> maximum score obtained.
+        """
+        from app.models.contest import ContestSubmission
+        from app.models.question import Submission
+
+        stmt = (
+            select(
+                Submission.question_id,
+                func.max(Submission.score).label("best_score"),
+            )
+            .select_from(ContestSubmission)
+            .join(Submission, Submission.id == ContestSubmission.submission_id)
+            .where(
+                ContestSubmission.contest_id == contest_id,
+                ContestSubmission.contest_team_member_id == contest_team_member_id,
+                Submission.is_evaluated.is_(True),
+            )
+            .group_by(Submission.question_id)
+        )
+        result = await self.db.execute(stmt)
+        return {row.question_id: row.best_score for row in result.all()}

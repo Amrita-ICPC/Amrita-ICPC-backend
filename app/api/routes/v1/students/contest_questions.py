@@ -31,6 +31,7 @@ from app.schema.student.run import (
     StudentCodeRunResponse,
 )
 from app.schema.student.submission import (
+    StudentSubmissionDetailResponse,
     StudentSubmissionRequest,
     StudentSubmissionResponse,
 )
@@ -111,6 +112,60 @@ async def get_contest_question_details(
         request,
         data=result,
         message="Contest question details fetched successfully",
+    )
+
+
+@router.get(
+    "/{contest_id}/results/questions",
+    response_model=APIResponse[StudentContestQuestionsListResponse],
+    summary="Get questions for a contest after results are published",
+)
+async def get_results_questions(
+    request: Request,
+    contest_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: StudentContestQuestionService = Depends(get_student_contest_service),
+):
+    """
+    Retrieve questions for a contest for post-results review. Only available
+    once the contest's results have been published, for students who
+    participated. Independent of the live contest session endpoint above --
+    does not require an active/unexpired session.
+    """
+    result = await service.get_results_questions(contest_id, user_id)
+    return create_api_response(
+        request,
+        data=result,
+        message="Questions fetched successfully",
+    )
+
+
+@router.get(
+    "/{contest_id}/results/questions/{question_id}",
+    response_model=APIResponse[StudentQuestionDetailResponse],
+    summary="Get contest question details with solution after results are published",
+)
+async def get_results_question_details(
+    request: Request,
+    contest_id: UUID,
+    question_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: StudentContestQuestionService = Depends(get_student_contest_service),
+):
+    """
+    Retrieve full details of a specific question, including testcases and
+    per-language reference solutions, for post-results review. Only available
+    once the contest's results have been published, for students who
+    participated. Independent of the live contest session endpoint above --
+    does not require an active/unexpired session.
+    """
+    result = await service.get_results_question_details(
+        contest_id=contest_id, question_id=question_id, user_id=user_id
+    )
+    return create_api_response(
+        request,
+        data=result,
+        message="Question details fetched successfully",
     )
 
 
@@ -300,3 +355,46 @@ async def get_submission_events_stream(
             yield event
     except asyncio.CancelledError:
         logger.info("SSE connection cancelled by client")
+
+
+@router.get(
+    "/{contest_id}/submissions/{submission_id}",
+    response_model=APIResponse[StudentSubmissionDetailResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Get submission detail for student",
+)
+async def get_student_submission_detail(
+    request: Request,
+    contest_id: UUID,
+    submission_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    service: StudentContestQuestionService = Depends(get_student_contest_service),
+) -> APIResponse[StudentSubmissionDetailResponse]:
+    """
+    Retrieve full details for a student's own (or team's) specific submission.
+
+    Only accessible by students enrolled in the contest whose team owns the submission.
+
+    Args:
+        request: Framework context
+        contest_id: The unique identifier of the contest
+        submission_id: The unique identifier of the submission
+        user_id: Authenticated user ID
+        service: Injected student contest question service
+
+    Returns:
+        Standardized response with submission details
+
+    Raises:
+        SubmissionNotFoundError: when submission doesn't exist
+        PermissionDeniedError: when user lacks permission
+    """
+    result = await service.get_submission_detail(
+        contest_id=contest_id, submission_id=submission_id, user_id=user_id
+    )
+    return create_api_response(
+        request,
+        data=result,
+        message="Submission details fetched successfully",
+        status_code=status.HTTP_200_OK,
+    )

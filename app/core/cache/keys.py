@@ -195,12 +195,13 @@ def contest_questions_list_key(
     sort_order: str = "asc",
     skip: int = 0,
     limit: int = 20,
+    contest_team_member_id: UUID | None = None,
 ) -> str:
     return (
         f"contest:{contest_id}:questions:user:{user_id}:search:{search_term}:"
         f"difficulty:{difficulty}:language:{language_id}:tag_id:{tag_id}:"
         f"tag_name:{tag_name}:sort_by:{sort_by}:sort_order:{sort_order}:"
-        f"skip:{skip}:limit:{limit}"
+        f"skip:{skip}:limit:{limit}:member:{contest_team_member_id}"
     )
 
 

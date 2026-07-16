@@ -1,0 +1,197 @@
+{
+  "uid": "amrita-icpc-backend-endpoints",
+  "title": "Amrita ICPC — Backend Endpoints (RED)",
+  "tags": ["amrita-icpc", "backend", "endpoints"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "type": "query",
+        "name": "handler",
+        "label": "Endpoint",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": { "query": "label_values(http_requests_total, handler)", "refId": "handler" },
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": { "text": "All", "value": "$__all" },
+        "sort": 1
+      },
+      {
+        "type": "query",
+        "name": "method",
+        "label": "Method",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": { "query": "label_values(http_requests_total, method)", "refId": "method" },
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": { "text": "All", "value": "$__all" },
+        "sort": 1
+      }
+    ]
+  },
+  "panels": [
+    { "type": "row", "title": "Overview", "id": 1, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 } },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Request rate",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(http_requests_total{handler=~\"$handler\", method=~\"$method\"}[$__rate_interval]))" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "decimals": 2, "color": { "mode": "fixed", "fixedColor": "blue" } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "graphMode": "area", "colorMode": "value" }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "5xx error rate",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(http_requests_total{handler=~\"$handler\", method=~\"$method\", status=~\"5..\"}[$__rate_interval])) / clamp_min(sum(rate(http_requests_total{handler=~\"$handler\", method=~\"$method\"}[$__rate_interval])), 1e-9)" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 2,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 0.01 }, { "color": "red", "value": 0.05 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "graphMode": "area", "colorMode": "value" }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "p95 latency",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{handler=~\"$handler\", method=~\"$method\"}[$__rate_interval])) by (le))" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 3,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 0.5 }, { "color": "red", "value": 1 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "graphMode": "area", "colorMode": "value" }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "In-flight requests",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "targets": [
+        { "refId": "A", "expr": "sum(http_requests_inprogress{handler=~\"$handler\", method=~\"$method\"})" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "color": { "mode": "fixed", "fixedColor": "purple" } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "graphMode": "area", "colorMode": "value" }
+    },
+
+    { "type": "row", "title": "Per endpoint", "id": 10, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 } },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Request rate by endpoint",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(http_requests_total{handler=~\"$handler\", method=~\"$method\"}[$__rate_interval])) by (handler)", "legendFormat": "{{handler}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "fillOpacity": 10, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "lastNotNull"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Latency percentiles (selected endpoints)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket{handler=~\"$handler\", method=~\"$method\"}[$__rate_interval])) by (le))", "legendFormat": "p50" },
+        { "refId": "B", "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{handler=~\"$handler\", method=~\"$method\"}[$__rate_interval])) by (le))", "legendFormat": "p95" },
+        { "refId": "C", "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{handler=~\"$handler\", method=~\"$method\"}[$__rate_interval])) by (le))", "legendFormat": "p99" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "fillOpacity": 5, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Error rate by endpoint (4xx / 5xx)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(http_requests_total{handler=~\"$handler\", method=~\"$method\", status=~\"4..\"}[$__rate_interval])) by (handler)", "legendFormat": "4xx {{handler}}" },
+        { "refId": "B", "expr": "sum(rate(http_requests_total{handler=~\"$handler\", method=~\"$method\", status=~\"5..\"}[$__rate_interval])) by (handler)", "legendFormat": "5xx {{handler}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "fillOpacity": 10, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["sum"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Requests by status code",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(http_requests_total{handler=~\"$handler\", method=~\"$method\"}[$__rate_interval])) by (status)", "legendFormat": "{{status}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "fillOpacity": 25, "stacking": { "mode": "normal" }, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+
+    { "type": "row", "title": "Endpoint summary", "id": 20, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 22 } },
+    {
+      "id": 21,
+      "type": "table",
+      "title": "Per-endpoint summary (req/s, error/s, p95)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 23 },
+      "targets": [
+        { "refId": "A", "format": "table", "instant": true, "expr": "sum(rate(http_requests_total{handler=~\"$handler\", method=~\"$method\"}[$__rate_interval])) by (handler)" },
+        { "refId": "B", "format": "table", "instant": true, "expr": "sum(rate(http_requests_total{handler=~\"$handler\", method=~\"$method\", status=~\"5..\"}[$__rate_interval])) by (handler)" },
+        { "refId": "C", "format": "table", "instant": true, "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{handler=~\"$handler\", method=~\"$method\"}[$__rate_interval])) by (le, handler))" }
+      ],
+      "transformations": [
+        { "id": "merge", "options": {} },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Time": true },
+            "indexByName": {},
+            "renameByName": {
+              "handler": "Endpoint",
+              "Value #A": "req/s",
+              "Value #B": "5xx/s",
+              "Value #C": "p95 (s)"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "req/s" }, "properties": [ { "id": "unit", "value": "reqps" }, { "id": "decimals", "value": 2 } ] },
+          { "matcher": { "id": "byName", "options": "5xx/s" }, "properties": [ { "id": "unit", "value": "reqps" }, { "id": "decimals", "value": 2 }, { "id": "custom.cellOptions", "value": { "type": "color-text" } }, { "id": "thresholds", "value": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 0.001 } ] } } ] },
+          { "matcher": { "id": "byName", "options": "p95 (s)" }, "properties": [ { "id": "unit", "value": "s" }, { "id": "decimals", "value": 3 } ] }
+        ]
+      },
+      "options": { "showHeader": true, "sortBy": [ { "displayName": "req/s", "desc": true } ] }
+    }
+  ]
+}

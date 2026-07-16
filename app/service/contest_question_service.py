@@ -137,7 +137,7 @@ class ContestQuestionService:
             raise QuestionNotInContestError(str(question_id), str(contest_id))
 
     @cache_get(
-        key_builder=lambda self, contest_id, user_id, search_term=None, difficulty=None, language_id=None, tag_id=None, tag_name=None, sort_by=None, sort_order="asc", skip=0, limit=20: (
+        key_builder=lambda self, contest_id, user_id, search_term=None, difficulty=None, language_id=None, tag_id=None, tag_name=None, sort_by=None, sort_order="asc", skip=0, limit=20, contest_team_member_id=None: (
             cache_keys.contest_questions_list_key(
                 contest_id,
                 user_id,
@@ -150,6 +150,7 @@ class ContestQuestionService:
                 sort_order=sort_order,
                 skip=skip,
                 limit=limit,
+                contest_team_member_id=contest_team_member_id,
             )
         ),
         ttl=300,
@@ -167,6 +168,7 @@ class ContestQuestionService:
         sort_order: SortOrder | None = SortOrder.ASC,
         skip: int = 0,
         limit: int = 20,
+        contest_team_member_id: UUID | None = None,
     ) -> ContestQuestionsListResponse:
         """
         Retrieve a paginated list of summary questions for a contest.
@@ -180,6 +182,7 @@ class ContestQuestionService:
             tag_id: Optional filter for question tags.
             skip: Number of records to skip for pagination.
             limit: Maximum number of records to return.
+            contest_team_member_id: Optional UUID of the student to fetch marks for.
 
         Returns:
             ContestQuestionsListResponse: Paginated results with metadata and statistics.
@@ -204,9 +207,19 @@ class ContestQuestionService:
             contest_id, PaginationParams(skip=skip, limit=limit), filters
         )
 
+        obtained_scores: dict[UUID, int] = {}
+        if contest_team_member_id:
+            obtained_scores = await self.repository.get_member_best_scores_per_question(
+                contest_id, contest_team_member_id
+            )
+
         return ContestQuestionsListResponse(
             questions=[
-                QuestionListSummaryResponse.from_question(question)
+                QuestionListSummaryResponse.from_question(
+                    question,
+                    contest_id=contest_id,
+                    obtained_score=obtained_scores.get(question.id),
+                )
                 for question in result.items
             ],
             easy_count=result.easy_count,

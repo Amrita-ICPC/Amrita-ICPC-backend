@@ -170,7 +170,7 @@ services:
   # via pg_stat_statements (observability/postgres-exporter-queries.yaml).
   # This is the tool for "what should I optimize" -- unsampled, unlike Tempo.
   postgres_exporter:
-    image: quay.io/prometheuscommunity/postgres-exporter:latest
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
     container_name: amrita_icpc_postgres_exporter
     profiles: ["observability"]
     restart: always
@@ -187,7 +187,7 @@ services:
   # Redis keyspace hits/misses (cache hit ratio), key counts per db, memory
   # usage, evictions/expirations, connected clients.
   redis_exporter:
-    image: oliver006/redis_exporter:latest
+    image: oliver006/redis_exporter:v1.86.0
     container_name: amrita_icpc_redis_exporter
     profiles: ["observability"]
     restart: always
@@ -220,7 +220,7 @@ services:
         condition: service_healthy
 
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:latest
+    image: otel/opentelemetry-collector-contrib:0.156.0
     container_name: amrita_icpc_otel_collector
     profiles: ["observability"]
     restart: always
@@ -232,8 +232,13 @@ services:
       - tempo
       - loki
 
+  # Pinned to the last stable 2.x release -- 3.0.0 removed the ingester
+  # module entirely (replaced by a new block_builder/live_store
+  # architecture), which breaks the classic ingester/compactor config below.
+  # `latest` currently resolves to 3.0.2; don't bump this without rewriting
+  # tempo.yaml for the new schema first.
   tempo:
-    image: grafana/tempo:latest
+    image: grafana/tempo:2.10.7
     container_name: amrita_icpc_tempo
     profiles: ["observability"]
     restart: always
@@ -249,7 +254,7 @@ services:
         condition: service_completed_successfully
 
   loki:
-    image: grafana/loki:latest
+    image: grafana/loki:3.7.3
     container_name: amrita_icpc_loki
     profiles: ["observability"]
     restart: always
@@ -265,7 +270,7 @@ services:
         condition: service_completed_successfully
 
   promtail:
-    image: grafana/promtail:latest
+    image: grafana/promtail:3.7.3
     container_name: amrita_icpc_promtail
     profiles: ["observability"]
     restart: always
@@ -278,7 +283,7 @@ services:
       - loki
 
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.13.1
     container_name: amrita_icpc_prometheus
     profiles: ["observability"]
     restart: always
@@ -296,7 +301,7 @@ services:
       - api
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:13.1.0
     container_name: amrita_icpc_grafana
     profiles: ["observability"]
     restart: always
