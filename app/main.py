@@ -70,10 +70,9 @@ fastapi_app = FastAPI(
 setup_security(fastapi_app)
 
 # Setup CORS Middleware (Must come AFTER auth middleware setup to run FIRST on requests)
-# Allowing all origins for development
 fastapi_app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://10.10.10.23:3000"],
+    allow_origins=config.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

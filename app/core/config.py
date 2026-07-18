@@ -40,6 +40,10 @@ class Config(BaseSettings):
         default=None,
         description="Public API base URL including version prefix, e.g. https://example.com/api/v1",
     )
+    CORS_ALLOW_ORIGINS: str = Field(
+        default="http://localhost:3000,http://10.10.10.23:3000",
+        description="Comma-separated browser origins allowed to call the API",
+    )
 
     # Database Configuration
     DATABASE_NAME: Optional[str] = Field(default=None, description="Database name")
@@ -296,6 +300,15 @@ class Config(BaseSettings):
         if value not in ["development", "staging", "production"]:
             raise ValueError("Invalid environment")
         return value
+
+    @property
+    def CORS_ORIGINS(self) -> list[str]:  # noqa: N802
+        """Parse comma-separated browser origins allowed by CORS."""
+        return [
+            origin.strip()
+            for origin in self.CORS_ALLOW_ORIGINS.split(",")
+            if origin.strip()
+        ]
 
     @property
     def REDIS_URL(self) -> str:  # noqa: N802
