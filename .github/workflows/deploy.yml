@@ -54,18 +54,40 @@ jobs:
         run: |
           docker compose -f /home/amrita/Amrita-ICPC/backend/docker-compose.yml up -d --force-recreate
 
-      - name: Wait for API to be healthy
-        # A simple health check waiting for the API to be reachable
+      - name: Wait for API container to answer health endpoint
         run: |
-          for i in $(seq 1 10); do
-            # Checking if the Swagger UI/docs page exists
-            if curl -sf http://localhost:8000/docs > /dev/null 2>&1; then
-              echo "Microservice is healthy"; break
+          compose_file=/home/amrita/Amrita-ICPC/backend/docker-compose.yml
+          container_id="$(docker compose -f "$compose_file" ps -q backend)"
+
+          if [ -z "$container_id" ]; then
+            echo "Backend container was not created"
+            docker compose -f "$compose_file" ps
+            exit 1
+          fi
+
+          for i in $(seq 1 30); do
+            state="$(docker inspect --format='{{.State.Status}}' "$container_id")"
+
+            if [ "$state" = "exited" ] || [ "$state" = "dead" ]; then
+              echo "Backend container state is $state"
+              docker compose -f "$compose_file" ps
+              docker logs --tail 200 "$container_id"
+              exit 1
             fi
-            [ $i -eq 10 ] && { echo "Health check timed out"; exit 1; }
-            echo "Attempt $i/10 — retrying in 5s..."
+
+            if docker exec "$container_id" python -c "import os, urllib.request; port=os.getenv('API_PORT', '8000'); urllib.request.urlopen(f'http://127.0.0.1:{port}/api/health', timeout=5).read()" > /dev/null 2>&1; then
+              echo "Backend API health endpoint is reachable"
+              exit 0
+            fi
+
+            echo "Attempt $i/30 — backend state is $state; retrying in 5s..."
             sleep 5
           done
+
+          echo "Backend health check timed out"
+          docker compose -f "$compose_file" ps
+          docker logs --tail 200 "$container_id"
+          exit 1
 
       - name: Show final container state
         run: docker compose -f /home/amrita/Amrita-ICPC/backend/docker-compose.yml ps
