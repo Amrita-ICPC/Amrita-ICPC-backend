@@ -70,6 +70,14 @@ class Config(BaseSettings):
     MINIO_HOST: str = Field(default="localhost", description="MinIO host")
     MINIO_PORT: int = Field(default=9000, description="MinIO API port")
     MINIO_CONSOLE_PORT: int = Field(default=9001, description="MinIO console port")
+    MINIO_PUBLIC_HOST: Optional[str] = Field(
+        default=None,
+        description="Public MinIO host used only for browser-facing presigned URLs",
+    )
+    MINIO_PUBLIC_PORT: Optional[int] = Field(
+        default=None,
+        description="Public MinIO API port used only for browser-facing presigned URLs",
+    )
     MINIO_ACCESS_KEY: Optional[str] = Field(
         default=None, description="MinIO access key"
     )

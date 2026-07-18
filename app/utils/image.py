@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import timedelta
 from urllib.parse import quote, unquote, urlsplit
 
-from app.core.clients.minio import get_minio_client
+from app.core.clients.minio import get_minio_presign_client
 from app.core.config import config
 
 
@@ -49,7 +49,7 @@ def create_presigned_image_url(bucket_name: str, object_key: str) -> str:
     """Create a short-lived MinIO download URL for a private image object."""
 
     expires = timedelta(seconds=config.MINIO_PRESIGNED_URL_EXPIRY_SECONDS)
-    return get_minio_client().presigned_get_object(
+    return get_minio_presign_client().presigned_get_object(
         bucket_name=bucket_name,
         object_name=object_key,
         expires=expires,
@@ -73,7 +73,7 @@ def _public_api_base_url() -> str:
 
 def _direct_minio_url_to_bucket_and_key(url: str) -> tuple[str, str] | None:
     parsed = urlsplit(url)
-    if parsed.netloc != f"{config.MINIO_HOST}:{config.MINIO_PORT}":
+    if parsed.netloc not in _configured_minio_netlocs():
         return None
 
     path = parsed.path.lstrip("/")
@@ -85,3 +85,12 @@ def _direct_minio_url_to_bucket_and_key(url: str) -> tuple[str, str] | None:
         return None
 
     return unquote(bucket), unquote(key)
+
+
+def _configured_minio_netlocs() -> set[str]:
+    public_host = config.MINIO_PUBLIC_HOST or config.MINIO_HOST
+    public_port = config.MINIO_PUBLIC_PORT or config.MINIO_PORT
+    return {
+        f"{config.MINIO_HOST}:{config.MINIO_PORT}",
+        f"{public_host}:{public_port}",
+    }
