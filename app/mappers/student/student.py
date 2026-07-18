@@ -6,6 +6,7 @@ from app.schema.user import (
     UserInvitationResponse,
 )
 from app.utils.enums import ContestTeamMemberStatus, TeamMemberRole
+from app.utils.image import image_object_key_to_url
 
 
 def to_user_invitation_response(
@@ -56,7 +57,7 @@ def to_user_invitation_response(
         id=contest.id,
         name=contest.name,
         description=contest.description,
-        image=contest.image,
+        image=image_object_key_to_url(contest.image),
         min_team_size=contest.min_team_size,
         max_team_size=contest.max_team_size,
         registered_teams_count=registered_teams_count,

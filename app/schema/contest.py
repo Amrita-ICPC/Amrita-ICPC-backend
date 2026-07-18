@@ -21,7 +21,7 @@ class ContestBase(BaseModel):
     description: Optional[str] = Field(
         None, max_length=5000, description="Contest description"
     )
-    image: Optional[str] = Field(None, description="Contest image URL")
+    image: Optional[str] = Field(None, description="Contest image access URL")
     is_public: bool = Field(default=False, description="Whether contest is public")
     start_time: datetime = Field(..., description="Contest start time (UTC)")
     end_time: Optional[datetime] = Field(None, description="Contest end time (UTC)")
@@ -111,7 +111,7 @@ class ContestUpdate(BaseModel):
     description: Optional[str] = Field(
         None, max_length=5000, description="Contest description"
     )
-    image: Optional[str] = Field(None, description="Contest image URL")
+    image: Optional[str] = Field(None, description="Contest image access URL")
     is_public: Optional[bool] = Field(None, description="Whether contest is public")
     start_time: Optional[datetime] = Field(None, description="Contest start time (UTC)")
     end_time: Optional[datetime] = Field(None, description="Contest end time (UTC)")
@@ -188,7 +188,7 @@ class ContestSummaryResponse(BaseModel):
     id: UUID = Field(..., description="Contest ID")
     name: str = Field(..., description="Contest name")
     description: Optional[str] = Field(None, description="Contest description")
-    image: Optional[str] = Field(None, description="Contest image URL")
+    image: Optional[str] = Field(None, description="Contest image access URL")
     start_time: datetime = Field(..., description="Contest start time (UTC)")
     end_time: Optional[datetime] = Field(None, description="Contest end time (UTC)")
     status: ContestStatus = Field(..., description="Contest lifecycle status")

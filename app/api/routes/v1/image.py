@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, Request, UploadFile, status
+from fastapi.responses import RedirectResponse
 
 from app.auth.dependencies import can_create, get_current_user_id
 from app.core.response import create_api_response
@@ -38,8 +39,8 @@ async def upload_image(
 ) -> APIResponse[ImageUploadResponse]:
     """Upload an image and return storage metadata.
 
-    This endpoint stores the image in MinIO under a key shaped like:
-    `contest/<random_uuid>/<random_name>`.
+    This endpoint stores the image in MinIO under a key shaped like
+    `contest/<random_uuid>/<random_name>` and returns a stable backend URL.
 
     Args:
         request: Framework request context.
@@ -48,7 +49,7 @@ async def upload_image(
         service: Injected ImageService.
 
     Returns:
-        APIResponse[ImageUploadResponse]: Upload metadata with `object_key` and `url`.
+        APIResponse[ImageUploadResponse]: Upload metadata with `object_key` and a stable `url`.
 
     Raises:
         UnauthorizedError: If the caller is not authenticated.
@@ -58,10 +59,31 @@ async def upload_image(
         ImageStorageError: If upload to object storage fails.
     """
 
-    uploaded = await service.upload_image(file, folder="contest", bucket_name="icpc")
+    uploaded = await service.upload_image(file, folder="contest")
     return create_api_response(
         request,
         data=uploaded,
         message="Image uploaded successfully",
         status_code=status.HTTP_201_CREATED,
+    )
+
+@router.get(
+    "/images/{bucket_name}/{object_key:path}",
+    status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+    summary="Download image",
+)
+async def download_image(
+    bucket_name: str,
+    object_key: str,
+    service: ImageService = Depends(get_image_service),
+) -> RedirectResponse:
+    """Redirect a stable backend image URL to a fresh presigned MinIO URL."""
+
+    presigned_url = service.create_presigned_download_url(
+        bucket_name=bucket_name,
+        object_key=object_key,
+    )
+    return RedirectResponse(
+        url=presigned_url,
+        status_code=status.HTTP_307_TEMPORARY_REDIRECT,
     )

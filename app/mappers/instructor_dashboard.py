@@ -9,6 +9,7 @@ from app.schema.instructor_dashboard import (
 )
 from app.utils.contest import compute_run_status
 from app.utils.enums import ContestRunStatus, ContestStatus
+from app.utils.image import image_object_key_to_url
 
 # Secondary sort key for needs-attention items: within the same live/non-live
 # partition, order by issue type. Lower sorts first.
@@ -27,7 +28,7 @@ def to_instructor_dashboard_contest(
     return InstructorDashboardContest(
         id=row.id,
         name=row.name,
-        image=row.image,
+        image=image_object_key_to_url(row.image),
         start_time=row.start_time,
         end_time=row.end_time,
         run_status=compute_run_status(row.start_time, row.end_time),

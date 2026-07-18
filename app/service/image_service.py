@@ -1,7 +1,6 @@
-"""Service for image upload operations.
+"""Service for image upload and download operations.
 
-This module provides a minimal, reusable service that stores uploaded images in
-MinIO and returns metadata suitable for API responses.
+This module stores uploaded images in MinIO and returns stable API metadata.
 
 The service is intentionally storage-only (no database access) so it can be
 used independently by multiple domains (contests, profiles, etc.).
@@ -24,7 +23,7 @@ from app.exceptions.image import (
     InvalidImagePathError,
 )
 from app.schema.image import ImageUploadResponse
-from app.utils.image import image_object_key_to_url
+from app.utils.image import create_presigned_image_url, image_object_key_to_url
 
 # Magic-byte signatures for the small allowlist of raster formats accepted
 # here. Deliberately excludes SVG: SVG is XML and can embed <script>/
@@ -63,10 +62,10 @@ def _detect_image_media_type(data: bytes) -> str | None:
 
 
 class ImageService:
-    """Service layer for uploading images to object storage."""
+    """Service layer for image object storage and signed download URLs."""
 
     async def upload_image(
-        self, file: UploadFile, *, folder: str = "contest", bucket_name: str = "icpc"
+        self, file: UploadFile, *, folder: str = "contest", bucket_name: str | None = None
     ) -> ImageUploadResponse:
         """Upload an image file and return metadata.
 
@@ -76,9 +75,10 @@ class ImageService:
         Args:
             file: Uploaded file from a multipart request.
             folder: Folder/prefix to group uploads.
+            bucket_name: Optional bucket override. Defaults to MINIO_BUCKET_NAME.
 
         Returns:
-            ImageUploadResponse: Uploaded image metadata including URL and object key.
+            ImageUploadResponse: Uploaded image metadata including a stable access URL.
 
         Raises:
             InvalidImageDataError: If the uploaded file is empty, exceeds the
@@ -111,16 +111,17 @@ class ImageService:
 
         resource_id = uuid.uuid4()
         safe_folder = _sanitize_folder(folder)
+        target_bucket = bucket_name or config.MINIO_BUCKET_NAME
 
         random_name = f"{uuid.uuid4().hex}{_MEDIA_TYPE_EXTENSIONS[media_type]}"
 
         object_key = f"{safe_folder}/{resource_id}/{random_name}"
         client = get_minio_client()
-        _ensure_bucket_exists(client, bucket_name)
+        _ensure_bucket_exists(client, target_bucket)
 
         try:
             client.put_object(
-                bucket_name=bucket_name,
+                bucket_name=target_bucket,
                 object_name=object_key,
                 data=io.BytesIO(data),
                 length=len(data),
@@ -130,17 +131,17 @@ class ImageService:
             raise ImageStorageError(
                 "Failed to upload image to object storage",
                 detail={
-                    "bucket": bucket_name,
+                    "bucket": target_bucket,
                     "object_key": object_key,
                     "error": str(exc),
                 },
             ) from exc
 
-        url = image_object_key_to_url(object_key, bucket_name=bucket_name)
+        url = image_object_key_to_url(object_key, bucket_name=target_bucket)
         if url is None:
             raise ImageStorageError(
-                "Failed to derive image URL",
-                detail={"bucket": bucket_name, "object_key": object_key},
+                "Failed to derive stable image URL",
+                detail={"bucket": target_bucket, "object_key": object_key},
             )
 
         return ImageUploadResponse(
@@ -148,11 +149,31 @@ class ImageService:
             resource_id=resource_id,
             object_key=object_key,
             url=url,
-            bucket_name=bucket_name,
+            bucket_name=target_bucket,
             content_type=media_type,
             size_bytes=len(data),
             original_filename=file.filename,
         )
+
+    def create_presigned_download_url(self, *, bucket_name: str, object_key: str) -> str:
+        """Create a short-lived MinIO URL for the stable backend image route."""
+
+        if bucket_name != config.MINIO_BUCKET_NAME:
+            raise InvalidImagePathError("unsupported image bucket")
+
+        _validate_object_key(object_key)
+
+        try:
+            return create_presigned_image_url(bucket_name, object_key)
+        except Exception as exc:
+            raise ImageStorageError(
+                "Failed to create image download URL",
+                detail={
+                    "bucket": bucket_name,
+                    "object_key": object_key,
+                    "error": str(exc),
+                },
+            ) from exc
 
 
 def _sanitize_folder(folder: str) -> str:
@@ -195,6 +216,16 @@ def _sanitize_filename(filename: str) -> str:
     if "/" in base or "\\" in base:
         raise InvalidImagePathError("filename must not contain path separators")
     return base
+
+
+def _validate_object_key(object_key: str) -> None:
+    """Validate a stored MinIO object key before signing it."""
+
+    normalized = object_key.replace("\\", "/").strip().strip("/")
+    if normalized != object_key:
+        raise InvalidImagePathError("object key must be normalized")
+    if any(part in {".", "..", ""} for part in normalized.split("/")):
+        raise InvalidImagePathError("object key contains invalid path segments")
 
 
 def _ensure_bucket_exists(client: Minio, bucket_name: str) -> None:

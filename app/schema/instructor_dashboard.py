@@ -62,7 +62,7 @@ class InstructorDashboardContest(BaseModel):
 
     id: UUID = Field(..., description="Contest ID")
     name: str = Field(..., description="Contest name")
-    image: str | None = Field(default=None, description="Contest image URL")
+    image: str | None = Field(default=None, description="Contest image access URL")
     start_time: datetime = Field(..., description="Contest start time (UTC)")
     end_time: datetime | None = Field(
         default=None, description="Contest end time (UTC)"

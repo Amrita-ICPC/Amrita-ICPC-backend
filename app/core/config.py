@@ -36,6 +36,10 @@ class Config(BaseSettings):
     API_HOST: str = Field(default="127.0.0.1", description="API host")
     API_PORT: int = Field(default=8000, description="API port")
     API_PREFIX: str = Field(default="/api", description="API prefix")
+    API_PUBLIC_BASE_URL: Optional[str] = Field(
+        default=None,
+        description="Public API base URL including version prefix, e.g. https://example.com/api/v1",
+    )
 
     # Database Configuration
     DATABASE_NAME: Optional[str] = Field(default=None, description="Database name")
@@ -76,6 +80,12 @@ class Config(BaseSettings):
         default="amrita-icpc", description="Default MinIO bucket name"
     )
     MINIO_SECURE: bool = Field(default=False, description="Use HTTPS for MinIO")
+    MINIO_PRESIGNED_URL_EXPIRY_SECONDS: int = Field(
+        default=3600,
+        ge=1,
+        le=7 * 24 * 60 * 60,
+        description="Expiry for presigned MinIO object URLs in seconds",
+    )
 
     IMAGE_MAX_UPLOAD_SIZE_BYTES: int = Field(
         default=5 * 1024 * 1024,
