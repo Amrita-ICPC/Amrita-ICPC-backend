@@ -133,11 +133,20 @@ log() { printf '\n=== %s ===\n' "$*"; }
 wait_for_health() {
     local label="$1"
     log "Waiting for backend health ($label)"
+    # A burst of "Connection reset by peer" right after --force-recreate is
+    # expected and not a sign of a crash: Traefik's Docker service discovery
+    # takes a few seconds to notice the new container and update its
+    # backend pool, and briefly resets in-flight connections to the old one
+    # in the meantime. Retrying is the correct response, not Ctrl-C - this
+    # loop gives it up to 150s and reports the specific curl failure each
+    # attempt so it's clear it's actively retrying, not stuck.
     for i in $(seq 1 30); do
         if curl -fsS -o /dev/null "$HEALTH_URL"; then
             echo "Backend healthy ($label)."
             return 0
         fi
+        curl_exit=$?
+        echo "  attempt $i/30: not healthy yet (curl exit $curl_exit) - retrying in 5s"
         sleep 5
     done
     echo "Backend did not report healthy within 150s ($label)." >&2
