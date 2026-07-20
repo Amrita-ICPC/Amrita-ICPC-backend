@@ -12,12 +12,35 @@ loadtest/
                                     locustfile and setup script (each adds
                                     loadtest/'s parent onto sys.path itself
                                     to reach it, since it's one level up).
+  shapes.py                        Staged LoadTestShape: baseline -> load ->
+                                    stress -> spike -> soak. Combine with any
+                                    scenario via `-f scenario.py,shapes.py`.
+  question_bank_data/              Verified DSA question sets (DP/recursion,
+                                    stack/queue, graph/binary search),
+                                    spliced into scripts/seed_question_bank.py's
+                                    QUESTIONS list at import time.
   scenarios/
     dashboard_locustfile.py         Scenario: dashboard browsing (baseline).
     contest_burst_locustfile.py     Scenario: contest-start burst (T0 herd).
+    code_run_locustfile.py          Scenario: repeated /run calls, respects
+                                    RATE_LIMIT_RUN_*.
+    code_submit_locustfile.py       Scenario: /submit + poll for verdict,
+                                    respects RATE_LIMIT_SUBMIT_*. Measures the
+                                    full API -> Celery -> Judge0 pipeline.
+    workspace_autosave_locustfile.py Scenario: periodic PUT .../workspace
+                                    with a growing payload, simulating a
+                                    student typing throughout the contest.
+    leaderboard_poll_locustfile.py  Scenario: students repeatedly refreshing
+                                    the leaderboard.
   setup/
     setup_contest.py                 Creates one live, published,
-                                    INDIVIDUAL-mode contest directly in the DB.
+                                    INDIVIDUAL-mode contest, clones every
+                                    question from the curated bank
+                                    (scripts/seed_question_bank.py) into it,
+                                    and publishes results so the leaderboard
+                                    is visible. Requires
+                                    scripts/seed_question_bank.py to have
+                                    already been run against the same DB.
     register_students.py             Registers student1..N into a contest
                                     ahead of time (concurrent, default 50 at
                                     a time; retries transient connection
@@ -26,10 +49,22 @@ loadtest/
   summarize_report.py               Prints a terminal summary from a Locust
                                     --json-file report.
   run_contest_burst.sh              One-shot pipeline: contest + registration
-                                    + burst load test + report.
+                                    + burst load test + report (production DB,
+                                    no isolation - use for a quick check
+                                    against data you don't mind touching).
+  run_env_switch_test.sh            One-shot pipeline for any scenario against
+                                    an ISOLATED test database/Redis-DB/MinIO-
+                                    bucket, swapped into the live backend's
+                                    .env for the run and unconditionally
+                                    restored afterward (even on failure/
+                                    Ctrl-C). Preflights against a live contest
+                                    in production before touching anything.
+                                    See its own header comment for the full
+                                    step-by-step and every flag.
   logs/
     latest/                         Symlink to the most recent run's directory.
     contest_burst_<N>students_<timestamp>/
+    envswitch_<timestamp>/
       report.html                   Interactive charts (open this first).
       run.json                      Final per-endpoint metrics.
       run_stats.csv                  Same metrics as CSV.
@@ -50,18 +85,35 @@ scenarios use), read their target contest/question IDs from env vars, and
 name requests (`name=...`) so Locust groups stats by endpoint instead of by
 path param.
 
-Planned next scenarios (not yet built):
-- `scenarios/code_run_locustfile.py` - repeated `/run` calls against sample
-  tests, respects `RATE_LIMIT_RUN_*`.
-- `scenarios/code_submit_locustfile.py` - `/submit` + SSE verdict stream
-  (`GET /students/contests/{id}/submission`), respects `RATE_LIMIT_SUBMIT_*`.
-- `scenarios/workspace_autosave_locustfile.py` - periodic `PUT .../workspace`
-  calls simulating students typing throughout the contest.
-- `scenarios/leaderboard_poll_locustfile.py`.
+All six scenarios above are built and Judge0/live-contest verified. New
+question bank content (`scripts/seed_question_bank.py` + `question_bank_data/`)
+is Judge0-verified per-question - see each file's module docstring for its
+own verification method.
 
 Team-based flows (joining a team, `LEADER_ONLY` submission) are out of
 scope for now - all current scenarios use solo (`min_team_size: 1`) teams
 so each simulated student acts independently.
+
+## Quickstart: staged test against an isolated database
+
+`run_env_switch_test.sh` is the primary way to run any scenario now: it
+swaps the live backend onto an isolated test database/Redis-DB/MinIO-bucket,
+seeds the verified question bank + a published contest + registered
+students, runs the scenario (optionally as one of the staged shapes in
+`shapes.py`), and unconditionally restores the production `.env` afterward -
+even if the run fails or is interrupted. It refuses to run if it finds a
+live contest in the production database, unless `--force` is passed.
+
+```bash
+loadtest/run_env_switch_test.sh --scenario loadtest/scenarios/code_submit_locustfile.py \
+    --shape load --students 300
+```
+
+See the script's own header comment for every flag (`--skip-seed` to reuse
+an already-seeded test environment across repeat runs, `--drop-test-db` to
+clean up afterward, `--force` to bypass the live-contest guard, etc.) and
+`shapes.py`'s docstring for what each named shape (`baseline`/`load`/
+`stress`/`spike`/`soak`) actually does.
 
 ## Quickstart: contest-start burst, end to end
 
@@ -148,7 +200,7 @@ locust -f loadtest/scenarios/contest_burst_locustfile.py \
 
 ## A note on the judge backend
 
-`code_run`/`code_submit` scenarios (once added) will hit the real
-execution/judge backend end-to-end by design, so their results conflate API
+`code_run`/`code_submit` scenarios hit the real execution/judge backend
+end-to-end by design, so their results conflate API
 performance with judge throughput - read them as one number for the whole
 pipeline, not an isolated measurement of the API layer.

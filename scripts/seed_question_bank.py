@@ -1,10 +1,16 @@
 """
 Seed script for a curated DSA "question bank" for the admin side.
 
-Creates a single Bank containing 7 hand-written, fully verified questions
-(3 EASY, 3 MEDIUM, 1 HARD) covering the most common DSA interview patterns:
-two pointers, fixed/variable sliding window, prefix-sum subarray counting,
-and sort + two-pointer triplet search.
+Creates a single Bank containing 13 hand-written, fully verified questions
+covering contest-level DSA patterns: two pointers, fixed/variable sliding
+window, prefix-sum subarray counting, sort + two-pointer triplet search,
+dynamic programming (0/1 knapsack), recursion/backtracking (subsets),
+stack (bracket matching), queue (sliding window maximum), graph traversal
+(BFS/DFS connected components), and binary search (first/last occurrence).
+The dynamic-programming/recursion, stack/queue, and graph/binary-search
+questions are authored in loadtest/question_bank_data/ and spliced into
+QUESTIONS below - see those files' module docstrings for their own
+verification details.
 
 Each question ships with:
   - a full problem statement (question_text)
@@ -45,25 +51,43 @@ from app.models.question import Question, QuestionLanguage, QuestionTemplate, Te
 from app.models.tag import QuestionTag, Tag
 from app.models.user import User
 from app.utils.enums import QuestionDifficulty, UserRole
+from loadtest.question_bank_data.dp_recursion_questions import (
+    QUESTIONS as DP_RECURSION_QUESTIONS,
+)
+from loadtest.question_bank_data.graph_binary_search_questions import (
+    QUESTIONS as GRAPH_BINARY_SEARCH_QUESTIONS,
+)
+from loadtest.question_bank_data.stack_queue_questions import (
+    QUESTIONS as STACK_QUEUE_QUESTIONS,
+)
 
 BANK_NAME = "DSA Patterns - Curated Question Bank"
 
+# `Language.id` IS the Judge0 language id directly (see app/models/language.py:
+# "use judge0 id directly"). These three ids are verified against the live
+# Judge0 deployment's /languages endpoint - if get_or_create_languages let the
+# database autoincrement Language.id instead (the previous bug here), every
+# submission would silently use whatever language Judge0's autoincremented id
+# happens to map to instead of the one the student picked.
 LANGUAGE_DEFS = [
     {
+        "id": 71,
         "slug": "python",
-        "name": "Python 3.11",
+        "name": "Python (3.8.1)",
         "file_extension": ".py",
         "monaco_language": "python",
     },
     {
+        "id": 54,
         "slug": "cpp",
-        "name": "C++ 17",
+        "name": "C++ (GCC 9.2.0)",
         "file_extension": ".cpp",
         "monaco_language": "cpp",
     },
     {
+        "id": 62,
         "slug": "java",
-        "name": "Java 17",
+        "name": "Java (OpenJDK 13.0.1)",
         "file_extension": ".java",
         "monaco_language": "java",
     },
@@ -79,6 +103,16 @@ ALL_TAGS = [
     "Hashing",
     "Sorting",
     "Greedy",
+    # Added alongside dp_recursion/stack_queue/graph_binary_search_questions.py
+    "Dynamic Programming",
+    "Recursion",
+    "Backtracking",
+    "Stack",
+    "Queue",
+    "Graph",
+    "BFS",
+    "DFS",
+    "Binary Search",
 ]
 
 
@@ -1292,6 +1326,12 @@ public:
     },
 ]
 
+# Additional DSA patterns (Dynamic Programming, Recursion/Backtracking,
+# Stack, Queue, Graph, Binary Search), authored + Judge0-verified separately
+# in loadtest/question_bank_data/ - see those files' module docstrings for
+# verification details.
+QUESTIONS = QUESTIONS + DP_RECURSION_QUESTIONS + STACK_QUEUE_QUESTIONS + GRAPH_BINARY_SEARCH_QUESTIONS
+
 
 async def get_or_create_admin(session: AsyncSession) -> User:
     result = await session.execute(
@@ -1325,6 +1365,7 @@ async def get_or_create_languages(session: AsyncSession) -> dict[str, Language]:
             by_slug[slug] = existing[slug]
             continue
         lang = Language(
+            id=lang_def["id"],
             name=lang_def["name"],
             slug=slug,
             file_extension=lang_def["file_extension"],
@@ -1385,9 +1426,10 @@ async def main():
                 id=uuid.uuid4(),
                 name=BANK_NAME,
                 description=(
-                    "7 hand-picked DSA pattern problems (two pointers, sliding "
-                    "window, prefix sum, sorting) with verified Python/C++/Java "
-                    "solutions and visible + hidden testcases."
+                    "13 hand-picked DSA pattern problems (two pointers, sliding "
+                    "window, prefix sum, sorting, dynamic programming, recursion, "
+                    "stack, queue, graph traversal, binary search) with verified "
+                    "Python/C++/Java solutions and visible + hidden testcases."
                 ),
                 created_by=admin.id,
             )
