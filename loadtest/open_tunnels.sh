@@ -12,6 +12,30 @@ BACKEND_REMOTE_PORT="${BACKEND_REMOTE_PORT:-8000}"
 KEYCLOAK_REMOTE_PORT="${KEYCLOAK_REMOTE_PORT:-8080}"
 PID_DIR="${TMPDIR:-/tmp}/amrita-icpc-loadtest-tunnels"
 ACTION="${1:-start}"
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+BACKEND_URL="http://127.0.0.1:$BACKEND_LOCAL_PORT"
+KEYCLOAK_URL="http://127.0.0.1:$KEYCLOAK_LOCAL_PORT/"
+
+is_sourced() {
+    [[ "${BASH_SOURCE[0]}" != "$0" ]]
+}
+
+die() {
+    echo "$*" >&2
+    return 1 2>/dev/null || exit 1
+}
+
+emit_exports() {
+    cat <<EOF
+export HOST=$BACKEND_URL
+export KEYCLOAK_SERVER_URL=$KEYCLOAK_URL
+EOF
+}
+
+apply_exports() {
+    export HOST="$BACKEND_URL"
+    export KEYCLOAK_SERVER_URL="$KEYCLOAK_URL"
+}
 
 mkdir -p "$PID_DIR"
 
@@ -78,32 +102,56 @@ case "$ACTION" in
     start)
         start_tunnel backend "$BACKEND_LOCAL_PORT" "$BACKEND_REMOTE_PORT"
         start_tunnel keycloak "$KEYCLOAK_LOCAL_PORT" "$KEYCLOAK_REMOTE_PORT"
-        cat <<EOF
+        if is_sourced; then
+            apply_exports
+            cat <<EOF
+
+Exported for this shell:
+  HOST=$HOST
+  KEYCLOAK_SERVER_URL=$KEYCLOAK_SERVER_URL
+EOF
+        else
+            cat <<EOF
 
 Use these for local runs:
-  HOST=http://127.0.0.1:$BACKEND_LOCAL_PORT
-  KEYCLOAK_SERVER_URL=http://127.0.0.1:$KEYCLOAK_LOCAL_PORT/
+$(emit_exports)
+
+To export them into your current shell:
+  eval "\$($SCRIPT_PATH env)"
+# or:
+  source "$SCRIPT_PATH" env
 
 Example:
-  HOST=http://127.0.0.1:$BACKEND_LOCAL_PORT \\
-  KEYCLOAK_SERVER_URL=http://127.0.0.1:$KEYCLOAK_LOCAL_PORT/ \\
-  ./loadtest/run_env_switch_test.sh --scenario loadtest/scenarios/dashboard_locustfile.py --shape baseline
+  eval "\$($SCRIPT_PATH env)"
+  ./loadtest/run_env_switch_test.sh --scenario loadtest/scenarios/full_user_journey_locustfile.py --shape baseline --students 50
 EOF
+        fi
+        ;;
+    env)
+        if is_sourced; then
+            apply_exports
+            echo "Exported HOST=$HOST"
+            echo "Exported KEYCLOAK_SERVER_URL=$KEYCLOAK_SERVER_URL"
+        else
+            emit_exports
+        fi
         ;;
     stop)
         stop_tunnel backend
         stop_tunnel keycloak
         ;;
     restart)
-        "$0" stop
-        "$0" start
+        "$SCRIPT_PATH" stop
+        "$SCRIPT_PATH" start
         ;;
     status)
         status_tunnel backend "$BACKEND_LOCAL_PORT"
         status_tunnel keycloak "$KEYCLOAK_LOCAL_PORT"
+        echo
+        echo "Load-test exports:"
+        emit_exports
         ;;
     *)
-        echo "Usage: $0 [start|stop|restart|status]" >&2
-        exit 1
+        die "Usage: $SCRIPT_PATH [start|stop|restart|status|env]"
         ;;
 esac

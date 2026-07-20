@@ -119,6 +119,130 @@ clean up afterward, `--force` to bypass the live-contest guard, etc.) and
 `shapes.py`'s docstring for what each named shape (`baseline`/`load`/
 `stress`/`spike`/`soak`) actually does.
 
+### Local tunnel setup
+
+Use `open_tunnels.sh` when direct access to `10.10.10.23:8000` or
+`10.10.10.23:8080` is flaky. The tunnels still hit Traefik on the remote
+host; they only move the TCP path into SSH.
+
+```bash
+./loadtest/open_tunnels.sh start
+eval "$(./loadtest/open_tunnels.sh env)"
+```
+
+Equivalent if you prefer `source`:
+
+```bash
+source ./loadtest/open_tunnels.sh env
+```
+
+This exports:
+
+```bash
+export HOST=http://127.0.0.1:19000
+export KEYCLOAK_SERVER_URL=http://127.0.0.1:19080/
+```
+
+Check or stop tunnels:
+
+```bash
+./loadtest/open_tunnels.sh status
+./loadtest/open_tunnels.sh stop
+```
+
+### Which scenario to run
+
+| Scenario | Journey modeled | Use when |
+|---|---|---|
+| `full_user_journey_locustfile.py` | Dashboard -> lobby/register -> start/resume -> questions -> workspace autosave/reload -> `/run` -> `/submit`+poll -> leaderboard | You want the closest single test to a normal production contest session. Run this first for overall confidence. |
+| `dashboard_locustfile.py` | Login + contest dashboard/list browsing | Smoke test auth, dashboard API, and basic read-path latency. |
+| `contest_burst_locustfile.py` | Everyone already in lobby clicks **Start Contest** at the same instant | Measure the T0 thundering herd separately from normal traffic. |
+| `workspace_autosave_locustfile.py` | Students type and autosave code repeatedly | Measure background write load during a contest. |
+| `code_run_locustfile.py` | Students repeatedly click **Run** against sample tests | Measure API + Celery + Judge0 practice-run throughput. |
+| `code_submit_locustfile.py` | Students submit and poll until verdict | Measure the full submission -> queue -> Judge0 -> verdict path. This is the heaviest journey. |
+| `leaderboard_poll_locustfile.py` | Students refresh ranking pages | Measure leaderboard query/read behavior. |
+
+### Shape selection
+
+| Shape | Stage table | Minimum `--students` | Use when |
+|---|---:|---:|---|
+| `baseline` | 10 users for 5 minutes | `--students 10` or higher | First correctness run: expect 0 failures before scaling. |
+| `load` | 50 -> 100 -> 200 -> 300 users, 3 minutes each | `--students 300` | Normal capacity check for expected contest load. |
+| `stress` | 100 -> 250 -> 500 -> 750 -> 1000 users, 3 minutes each | `--students 1000` | Find the breaking point: latency, error rate, DB pool, Redis, Celery, Judge0, CPU. |
+| `spike` | 10 users for 30s -> 500 users fast for 2 minutes -> 10 users for 60s | `--students 500` | Sudden contest-open traffic / recovery behavior. |
+| `soak` | 200 users for 8 hours | `--students 200` | Memory leaks, connection leaks, latency creep, worker drift. |
+
+### Recommended test progression
+
+Start with the full journey at baseline:
+
+```bash
+./loadtest/run_env_switch_test.sh \
+  --scenario loadtest/scenarios/full_user_journey_locustfile.py \
+  --shape baseline \
+  --students 50
+```
+
+If baseline is clean, scale the same full journey:
+
+```bash
+./loadtest/run_env_switch_test.sh \
+  --scenario loadtest/scenarios/full_user_journey_locustfile.py \
+  --shape load \
+  --students 300
+```
+
+Then isolate specific bottlenecks:
+
+```bash
+# T0 start spike
+./loadtest/run_env_switch_test.sh \
+  --scenario loadtest/scenarios/contest_burst_locustfile.py \
+  --shape spike \
+  --students 500
+
+# Judge0 practice-run path
+./loadtest/run_env_switch_test.sh \
+  --scenario loadtest/scenarios/code_run_locustfile.py \
+  --shape load \
+  --students 300
+
+# Full submission/verdict path; start lower because this hits Judge0 + Celery hardest
+./loadtest/run_env_switch_test.sh \
+  --scenario loadtest/scenarios/code_submit_locustfile.py \
+  --shape baseline \
+  --students 50
+```
+
+Run `stress` only after `baseline` and `load` are clean:
+
+```bash
+./loadtest/run_env_switch_test.sh \
+  --scenario loadtest/scenarios/full_user_journey_locustfile.py \
+  --shape stress \
+  --students 1000
+```
+
+Run `soak` only when you can leave the environment alone for the full window:
+
+```bash
+./loadtest/run_env_switch_test.sh \
+  --scenario loadtest/scenarios/full_user_journey_locustfile.py \
+  --shape soak \
+  --students 200
+```
+
+Add `--drop-test-db` to the final run in a session if you want the isolated
+test database removed after restore:
+
+```bash
+./loadtest/run_env_switch_test.sh \
+  --scenario loadtest/scenarios/full_user_journey_locustfile.py \
+  --shape baseline \
+  --students 10 \
+  --drop-test-db
+```
+
 ## Quickstart: contest-start burst, end to end
 
 `run_contest_burst.sh` creates a contest, registers students into it, runs
