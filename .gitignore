@@ -32,3 +32,4 @@ celerybeat-schedule-wal
 # Load test reports (regenerated per run)
 loadtest/logs/*
 !loadtest/logs/.gitkeep
+loadtest/.tunnel.env

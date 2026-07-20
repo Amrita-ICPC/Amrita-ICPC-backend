@@ -127,21 +127,18 @@ host; they only move the TCP path into SSH.
 
 ```bash
 ./loadtest/open_tunnels.sh start
-eval "$(./loadtest/open_tunnels.sh env)"
 ```
 
-Equivalent if you prefer `source`:
+`start` writes `loadtest/.tunnel.env`:
 
 ```bash
-source ./loadtest/open_tunnels.sh env
+HOST=http://127.0.0.1:19000
+KEYCLOAK_SERVER_URL=http://127.0.0.1:19080/
 ```
 
-This exports:
-
-```bash
-export HOST=http://127.0.0.1:19000
-export KEYCLOAK_SERVER_URL=http://127.0.0.1:19080/
-```
+`run_env_switch_test.sh` auto-loads that file when it exists, so you do not
+need to export anything manually. Explicit env vars still win if you pass
+them on the command line.
 
 Check or stop tunnels:
 
