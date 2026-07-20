@@ -343,25 +343,35 @@ fi
 
 # --- 6. Run the scenario -------------------------------------------------------
 LOCUST_FILE_ARG="$REPO_ROOT/$SCENARIO"
-LOCUST_EXTRA_ARGS=(--users "$LOCUST_USERS" --spawn-rate "$LOCUST_SPAWN_RATE" --run-time "$LOCUST_RUN_TIME")
 if [[ -n "$SHAPE" ]]; then
     log "Running Locust scenario: $SCENARIO (shape: $SHAPE)"
     LOCUST_FILE_ARG="$REPO_ROOT/$SCENARIO,$REPO_ROOT/loadtest/shapes.py"
     # The shape's own tick() sequence controls user count/spawn-rate/duration
     # end to end (it returns None to stop) - --users/--spawn-rate/--run-time
     # are meaningless once a LoadTestShape is active, so they're omitted
-    # rather than passed-and-ignored.
-    LOCUST_EXTRA_ARGS=()
+    # rather than passed-and-ignored. Keep this as a separate command path:
+    # macOS' Bash 3.2 treats an explicitly empty array expansion as unbound
+    # under `set -u`.
+    LOAD_TEST_CONTEST_ID="${CONTEST_ID:-}" LOAD_TEST_STUDENT_COUNT="$STUDENT_COUNT" LOAD_TEST_SHAPE="$SHAPE" \
+        "$REPO_ROOT/.venv/bin/locust" -f "$LOCUST_FILE_ARG" \
+            --host "$HOST" \
+            --headless \
+            --csv "$RUN_DIR/run" --csv-full-history \
+            --html "$RUN_DIR/report.html" \
+            --json-file "$RUN_DIR/run" || LOCUST_EXIT=$?
 else
     log "Running Locust scenario: $SCENARIO"
+    LOAD_TEST_CONTEST_ID="${CONTEST_ID:-}" LOAD_TEST_STUDENT_COUNT="$STUDENT_COUNT" LOAD_TEST_SHAPE="$SHAPE" \
+        "$REPO_ROOT/.venv/bin/locust" -f "$LOCUST_FILE_ARG" \
+            --host "$HOST" \
+            --users "$LOCUST_USERS" \
+            --spawn-rate "$LOCUST_SPAWN_RATE" \
+            --run-time "$LOCUST_RUN_TIME" \
+            --headless \
+            --csv "$RUN_DIR/run" --csv-full-history \
+            --html "$RUN_DIR/report.html" \
+            --json-file "$RUN_DIR/run" || LOCUST_EXIT=$?
 fi
-LOAD_TEST_CONTEST_ID="${CONTEST_ID:-}" LOAD_TEST_STUDENT_COUNT="$STUDENT_COUNT" LOAD_TEST_SHAPE="$SHAPE" \
-    "$REPO_ROOT/.venv/bin/locust" -f "$LOCUST_FILE_ARG" \
-        --host "$HOST" \
-        "${LOCUST_EXTRA_ARGS[@]}" --headless \
-        --csv "$RUN_DIR/run" --csv-full-history \
-        --html "$RUN_DIR/report.html" \
-        --json-file "$RUN_DIR/run" || LOCUST_EXIT=$?
 
 ln -sfn "$RUN_DIR" "$REPO_ROOT/loadtest/logs/latest"
 
