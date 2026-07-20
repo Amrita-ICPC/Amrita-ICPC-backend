@@ -68,16 +68,46 @@ is_running() {
     [[ -s "$pid_file_path" ]] && kill -0 "$(cat "$pid_file_path")" 2>/dev/null
 }
 
+matching_tunnel_pids() {
+    local local_port="$1"
+    local remote_port="$2"
+    pgrep -f "ssh .* -L $local_port:127.0.0.1:$remote_port .*${SSH_HOST}" 2>/dev/null || true
+}
+
+port_is_listening() {
+    local local_port="$1"
+    if command -v lsof >/dev/null 2>&1; then
+        lsof -nP -iTCP:"$local_port" -sTCP:LISTEN >/dev/null 2>&1
+    else
+        return 1
+    fi
+}
+
 start_tunnel() {
     local name="$1"
     local local_port="$2"
     local remote_port="$3"
-    local pid_file_path
+    local pid_file_path existing_pid
     pid_file_path="$(pid_file "$name")"
 
     if is_running "$pid_file_path"; then
         echo "$name tunnel already running (pid $(cat "$pid_file_path")): http://127.0.0.1:$local_port"
         return
+    fi
+
+    # A previous shell may have started the same tunnel but lost our pid file.
+    # Re-discover and reuse it instead of failing with \"Address already in use\".
+    existing_pid="$(matching_tunnel_pids "$local_port" "$remote_port" | tail -1)"
+    if [[ -n "$existing_pid" ]] && kill -0 "$existing_pid" 2>/dev/null; then
+        echo "$existing_pid" > "$pid_file_path"
+        echo "$name tunnel already running (rediscovered pid $existing_pid): http://127.0.0.1:$local_port"
+        return
+    fi
+
+    if port_is_listening "$local_port"; then
+        echo "$name tunnel cannot start: local port $local_port is already in use by another process." >&2
+        echo "Run: lsof -nP -iTCP:$local_port -sTCP:LISTEN" >&2
+        return 1
     fi
 
     rm -f "$pid_file_path"
@@ -86,20 +116,34 @@ start_tunnel() {
         -L "$local_port:127.0.0.1:$remote_port" \
         "$SSH_HOST"
 
-    # Pick the newest matching tunnel process for this exact local forward.
-    pgrep -f "ssh .* -L $local_port:127.0.0.1:$remote_port .*${SSH_HOST}" | tail -1 > "$pid_file_path"
+    matching_tunnel_pids "$local_port" "$remote_port" | tail -1 > "$pid_file_path"
     echo "$name tunnel started (pid $(cat "$pid_file_path")): http://127.0.0.1:$local_port -> $SSH_HOST:127.0.0.1:$remote_port"
 }
 
 stop_tunnel() {
     local name="$1"
-    local pid_file_path
+    local local_port="$2"
+    local remote_port="$3"
+    local pid_file_path pid stopped=0
     pid_file_path="$(pid_file "$name")"
 
     if is_running "$pid_file_path"; then
-        kill "$(cat "$pid_file_path")"
-        echo "$name tunnel stopped (pid $(cat "$pid_file_path"))"
-    else
+        pid="$(cat "$pid_file_path")"
+        kill "$pid"
+        echo "$name tunnel stopped (pid $pid)"
+        stopped=1
+    fi
+
+    while read -r pid; do
+        [[ -z "$pid" ]] && continue
+        if kill -0 "$pid" 2>/dev/null; then
+            kill "$pid"
+            echo "$name tunnel stopped (rediscovered pid $pid)"
+            stopped=1
+        fi
+    done < <(matching_tunnel_pids "$local_port" "$remote_port")
+
+    if [[ "$stopped" -eq 0 ]]; then
         echo "$name tunnel not running"
     fi
     rm -f "$pid_file_path"
@@ -108,11 +152,19 @@ stop_tunnel() {
 status_tunnel() {
     local name="$1"
     local local_port="$2"
-    local pid_file_path
+    local remote_port="$3"
+    local pid_file_path existing_pid
     pid_file_path="$(pid_file "$name")"
 
     if is_running "$pid_file_path"; then
         echo "$name: running (pid $(cat "$pid_file_path")) http://127.0.0.1:$local_port"
+        return
+    fi
+
+    existing_pid="$(matching_tunnel_pids "$local_port" "$remote_port" | tail -1)"
+    if [[ -n "$existing_pid" ]] && kill -0 "$existing_pid" 2>/dev/null; then
+        echo "$existing_pid" > "$pid_file_path"
+        echo "$name: running (rediscovered pid $existing_pid) http://127.0.0.1:$local_port"
     else
         echo "$name: stopped"
     fi
@@ -149,8 +201,8 @@ EOF
         fi
         ;;
     stop)
-        stop_tunnel backend
-        stop_tunnel keycloak
+        stop_tunnel backend "$BACKEND_LOCAL_PORT" "$BACKEND_REMOTE_PORT"
+        stop_tunnel keycloak "$KEYCLOAK_LOCAL_PORT" "$KEYCLOAK_REMOTE_PORT"
         rm -f "$TUNNEL_ENV_FILE"
         echo "Removed tunnel env file: $TUNNEL_ENV_FILE"
         ;;
@@ -159,8 +211,8 @@ EOF
         "$SCRIPT_PATH" start
         ;;
     status)
-        status_tunnel backend "$BACKEND_LOCAL_PORT"
-        status_tunnel keycloak "$KEYCLOAK_LOCAL_PORT"
+        status_tunnel backend "$BACKEND_LOCAL_PORT" "$BACKEND_REMOTE_PORT"
+        status_tunnel keycloak "$KEYCLOAK_LOCAL_PORT" "$KEYCLOAK_REMOTE_PORT"
         echo
         show_env_file
         ;;
