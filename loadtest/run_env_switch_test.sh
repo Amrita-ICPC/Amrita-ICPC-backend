@@ -29,6 +29,23 @@
 #      wait for health - via a trap, so this runs even if any earlier step
 #      failed or the script was interrupted.
 #
+# Recovery if this script itself is killed with SIGKILL (`kill -9`, an
+# out-of-band process-supervisor timeout, `docker kill` on the shell it's
+# running in, etc.): SIGKILL cannot be trapped by any shell script, so the
+# restore step above will NOT run. Every run's env.prod.bak survives under
+# loadtest/logs/envswitch_<timestamp>/ - to manually recover, run:
+#   scp loadtest/logs/envswitch_<timestamp>/env.prod.bak \
+#       amrita@<host>:/home/amrita/Amrita-ICPC/backend/.env
+#   ssh amrita@<host> 'cd /home/amrita/Amrita-ICPC/backend && \
+#       docker compose up -d --force-recreate backend celery_worker_student \
+#       celery_worker_bulk celery_worker_poller celery_beat'
+# Then confirm with:
+#   ssh amrita@<host> 'docker compose -f /home/amrita/Amrita-ICPC/backend/docker-compose.yml \
+#       exec -T backend python -c "from app.core.config import config; print(config.DATABASE_NAME)"'
+# A normal Ctrl-C (SIGINT) or a plain `kill` (SIGTERM) IS caught (see the
+# trap below) and restores automatically - only an unconditional SIGKILL
+# bypasses it.
+#
 # Usage:
 #   loadtest/run_env_switch_test.sh --scenario scenarios/dashboard_locustfile.py \
 #       --students 50 --users 50 --spawn-rate 50 --run-time 5m
@@ -153,31 +170,40 @@ restore_prod_env() {
             echo "WARNING: failed to drop $TEST_DB_NAME - drop it by hand if needed." >&2
     fi
 }
-trap restore_prod_env EXIT
+trap restore_prod_env EXIT INT TERM
 
 # --- 1. Preflight: refuse to run over a live contest -------------------------
 if [[ "$FORCE" -ne 1 ]]; then
     log "Preflight: checking for a live contest in the production database"
-    LIVE_COUNT="$(ssh "$SSH_HOST" "$COMPOSE exec -T backend python -c \"
+    # Piped as a heredoc over ssh's stdin (docker compose exec -T forwards it
+    # through) rather than an inline `python -c "..."` string: nested
+    # bash/ssh/python quote-escaping across three layers is fragile and has
+    # broken here before (a bare `"` inside an f-string terminated the outer
+    # bash string early) - a quoted heredoc passes the script through
+    # completely literally, no escaping needed at any layer.
+    LIVE_COUNT="$(ssh "$SSH_HOST" "$COMPOSE exec -T backend python -" 2>/dev/null <<'PYEOF' | sed -n 's/.*LIVE_COUNT_RESULT=\([0-9]*\).*/\1/p' | tail -1
 import asyncio
 from sqlalchemy import text
 from sqlalchemy.exc import ProgrammingError
 from app.core.clients.database import SessionLocal
 
+
 async def main():
     async with SessionLocal() as db:
         try:
             result = await db.execute(text(
-                \\\"SELECT COUNT(*) FROM contest WHERE status = 'PUBLISHED' \\\"
-                \\\"AND start_time <= now() AND end_time >= now() AND deleted_at IS NULL\\\"
+                "SELECT COUNT(*) FROM contest WHERE status = 'PUBLISHED' "
+                "AND start_time <= now() AND end_time >= now() AND deleted_at IS NULL"
             ))
             print(f"LIVE_COUNT_RESULT={result.scalar()}")
         except ProgrammingError:
-            # Fresh database, contest table doesn't exist yet - trivially no live contest.
+            # Fresh database, contest table does not exist yet - trivially no live contest.
             print("LIVE_COUNT_RESULT=0")
 
+
 asyncio.run(main())
-\"" 2>/dev/null | sed -n 's/.*LIVE_COUNT_RESULT=\([0-9]*\).*/\1/p' | tail -1)"
+PYEOF
+)"
     if ! [[ "$LIVE_COUNT" =~ ^[0-9]+$ ]]; then
         echo "Preflight check failed to get a live-contest count (got: '$LIVE_COUNT'). Refusing to proceed - re-run with --force only after checking by hand." >&2
         exit 1
@@ -220,11 +246,52 @@ scp -q "$ENV_TEST" "$SSH_HOST:$REMOTE_APP_DIR/backend/.env"
 ssh "$SSH_HOST" "cd $REMOTE_APP_DIR/backend && $COMPOSE up -d --force-recreate $BACKEND_SERVICES"
 wait_for_health "test env"
 
+# Hard safety check: confirm the RUNNING container's own config actually
+# resolved to the test database, not just that the .env file on disk says
+# so. A container that was merely `docker stop`/`docker start`-ed (instead
+# of recreated) keeps the environment it was CREATED with - env_file is
+# only re-read on create/recreate - so a stale container would silently
+# keep serving production the whole time while this script thinks it
+# swapped. This happened once during development; never again.
+log "Verifying the running container is actually on the test database"
+ACTUAL_DB="$(ssh "$SSH_HOST" "$COMPOSE exec -T backend python -" 2>/dev/null <<'PYEOF' | tail -1
+from app.core.config import config
+print(config.DATABASE_NAME)
+PYEOF
+)"
+if [[ "$ACTUAL_DB" != "$TEST_DB_NAME" ]]; then
+    echo "SAFETY ABORT: the backend container reports DATABASE_NAME='$ACTUAL_DB', expected '$TEST_DB_NAME'. It did NOT actually switch to the test database - refusing to seed or run anything against it. This usually means the container was restarted without --force-recreate somewhere. Nothing test-related has been touched yet; restoring the original .env now." >&2
+    exit 1
+fi
+echo "Confirmed: backend is on DATABASE_NAME=$ACTUAL_DB"
+
 # --- 5. Seed -------------------------------------------------------------------
 if [[ "$SKIP_SEED" -ne 1 ]]; then
     log "Seeding Keycloak student accounts (student1..student$STUDENT_COUNT)"
     # shellcheck disable=SC2029
     ssh "$SSH_HOST" "printf '%s\n' '$STUDENT_COUNT' | $COMPOSE exec -T backend python scripts/create_keycloak_users.py"
+
+    log "Syncing Keycloak accounts into the app database"
+    # create_keycloak_users.py only creates the Keycloak-side accounts;
+    # authenticated requests resolve the user via a row in the app's own
+    # `users` table, populated by this sync. Skipping it here means every
+    # student login succeeds (real Keycloak JWT) but every subsequent API
+    # call 404s with UserNotFoundError - found and fixed during development.
+    # shellcheck disable=SC2029
+    ssh "$SSH_HOST" "$COMPOSE exec -T backend python -" 2>/dev/null <<'PYEOF'
+import asyncio
+from app.core.clients.database import SessionLocal
+from app.service.user_service import UserService
+
+
+async def main():
+    async with SessionLocal() as db:
+        result = await UserService.sync_keycloak_users(db)
+        print(f"Synced {result['synced_count']} user(s), skipped {result['skipped_count']} (already existed)")
+
+
+asyncio.run(main())
+PYEOF
 
     log "Seeding verified DSA question bank"
     # shellcheck disable=SC2029
