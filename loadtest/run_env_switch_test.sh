@@ -2,7 +2,7 @@
 #
 # Run a Locust scenario against the LIVE backend with its database, Redis DB
 # index, and MinIO bucket temporarily swapped to isolated test values, then
-# restore the original .env unconditionally (success, failure, or Ctrl-C).
+# restore the original .env unconditionally (success, failure, Ctrl-C, or Ctrl-Z).
 #
 # This is an IN-PLACE swap of the single prod `icpc-backend` container's
 # config, not a separate deployment: real traffic hitting the backend during
@@ -42,9 +42,9 @@
 # Then confirm with:
 #   ssh amrita@<host> 'docker compose -f /home/amrita/Amrita-ICPC/backend/docker-compose.yml \
 #       exec -T backend python -c "from app.core.config import config; print(config.DATABASE_NAME)"'
-# A normal Ctrl-C (SIGINT) or a plain `kill` (SIGTERM) IS caught (see the
-# trap below) and restores automatically - only an unconditional SIGKILL
-# bypasses it.
+# A normal Ctrl-C (SIGINT), Ctrl-Z (SIGTSTP), or a plain `kill` (SIGTERM) IS
+# caught (see the trap below) and restores automatically - only an
+# unconditional SIGKILL bypasses it.
 #
 # Usage:
 #   loadtest/run_env_switch_test.sh --scenario scenarios/dashboard_locustfile.py \
@@ -132,6 +132,7 @@ log() { printf '\n=== %s ===\n' "$*"; }
 
 wait_for_health() {
     local label="$1"
+    local curl_output curl_exit
     log "Waiting for backend health ($label)"
     # A burst of "Connection reset by peer" right after --force-recreate is
     # expected and not a sign of a crash: Traefik's Docker service discovery
@@ -141,12 +142,13 @@ wait_for_health() {
     # loop gives it up to 150s and reports the specific curl failure each
     # attempt so it's clear it's actively retrying, not stuck.
     for i in $(seq 1 30); do
-        if curl -fsS -o /dev/null "$HEALTH_URL"; then
+        curl_output="$(curl -fsS -o /dev/null "$HEALTH_URL" 2>&1)" && curl_exit=0 || curl_exit=$?
+        if [[ "$curl_exit" -eq 0 ]]; then
             echo "Backend healthy ($label)."
             return 0
         fi
-        curl_exit=$?
-        echo "  attempt $i/30: not healthy yet (curl exit $curl_exit) - retrying in 5s"
+        curl_output="${curl_output//$'\n'/ }"
+        echo "  attempt $i/30: not healthy yet (curl exit $curl_exit: ${curl_output:-no output}) - retrying in 5s"
         sleep 5
     done
     echo "Backend did not report healthy within 150s ($label)." >&2
@@ -180,6 +182,13 @@ restore_prod_env() {
     fi
 }
 trap restore_prod_env EXIT INT TERM
+# Ctrl-Z (SIGTSTP) normally just PAUSES a job for later resumption - but
+# there is no safe "paused" state here once the backend is swapped onto the
+# test database, and a paused-and-forgotten job leaves prod stuck exactly
+# like the untrapped EXIT/INT/TERM cases this script otherwise guards
+# against. Converts an attempted suspend into an immediate abort + restore
+# instead of actually stopping (this also fires the EXIT trap above).
+trap 'echo "Ctrl-Z cannot safely pause this script once the backend is swapped - aborting and restoring instead." >&2; exit 130' TSTP
 
 # --- 1. Preflight: refuse to run over a live contest -------------------------
 if [[ "$FORCE" -ne 1 ]]; then
