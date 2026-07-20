@@ -32,6 +32,10 @@ loadtest/
                                     student typing throughout the contest.
     leaderboard_poll_locustfile.py  Scenario: students repeatedly refreshing
                                     the leaderboard.
+    full_user_journey_locustfile.py Scenario: realistic end-to-end student
+                                    session mix: dashboard, lobby/register,
+                                    start/resume, questions, workspace,
+                                    /run, /submit+poll, leaderboard.
   setup/
     setup_contest.py                 Creates one live, published,
                                     INDIVIDUAL-mode contest, clones every
@@ -85,7 +89,7 @@ scenarios use), read their target contest/question IDs from env vars, and
 name requests (`name=...`) so Locust groups stats by endpoint instead of by
 path param.
 
-All six scenarios above are built and Judge0/live-contest verified. New
+All seven scenarios above are built and Judge0/live-contest verified. New
 question bank content (`scripts/seed_question_bank.py` + `question_bank_data/`)
 is Judge0-verified per-question - see each file's module docstring for its
 own verification method.
