@@ -19,6 +19,15 @@ engine = create_async_engine(
     pool_pre_ping=True,
     pool_size=config.DATABASE_POOL_SIZE,
     max_overflow=config.DATABASE_MAX_OVERFLOW,
+    # DATABASE_HOST is PgBouncer in transaction-pooling mode in deployed
+    # environments (see the Ansible data-services role), which rotates the
+    # physical Postgres connection between transactions. asyncpg's default
+    # per-connection cache of named prepared statements does not survive
+    # that rotation ("prepared statement ... does not exist" errors under
+    # load) -- disabling it makes every query use an unnamed prepared
+    # statement instead, which is transaction-pooling safe. Harmless (and a
+    # no-op difference in practice) against a direct, unpooled Postgres too.
+    connect_args={"statement_cache_size": 0},
 )
 
 # Every process that imports this module (api + all Celery worker roles)
