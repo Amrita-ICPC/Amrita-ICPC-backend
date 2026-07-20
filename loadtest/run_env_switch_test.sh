@@ -134,6 +134,7 @@ if [[ -n "$SHAPE" ]]; then
     esac
 fi
 LOCUST_USERS="${LOCUST_USERS:-$STUDENT_COUNT}"
+QUIET_PYTHON_ENV="env ENVIRONMENT=staging LOG_LEVEL=WARNING"
 LOCUST_SPAWN_RATE="${LOCUST_SPAWN_RATE:-$LOCUST_USERS}"
 
 COMPOSE="docker compose -f $REMOTE_APP_DIR/backend/docker-compose.yml"
@@ -173,9 +174,23 @@ wait_for_health() {
     return 1
 }
 
+recreate_backend_services() {
+    local label="$1"
+    local output_file="$RUN_DIR/compose_${label}.log"
+    # shellcheck disable=SC2029
+    if ssh "$SSH_HOST" "cd $REMOTE_APP_DIR/backend && $COMPOSE up -d --force-recreate $BACKEND_SERVICES" > "$output_file" 2>&1; then
+        echo "Backend/celery containers recreated ($label). Details: $output_file"
+    else
+        echo "Failed to recreate backend/celery containers ($label). Compose output:" >&2
+        cat "$output_file" >&2
+        return 1
+    fi
+}
+
 RESTORED=0
+RESTORE_ARMED=0
 restore_prod_env() {
-    if [[ "$RESTORED" -eq 1 ]]; then
+    if [[ "$RESTORED" -eq 1 || "$RESTORE_ARMED" -ne 1 ]]; then
         return
     fi
     RESTORED=1
@@ -185,8 +200,7 @@ restore_prod_env() {
         return 1
     fi
     scp -q "$ENV_BACKUP" "$SSH_HOST:$REMOTE_APP_DIR/backend/.env"
-    # shellcheck disable=SC2029
-    ssh "$SSH_HOST" "cd $REMOTE_APP_DIR/backend && $COMPOSE up -d --force-recreate $BACKEND_SERVICES"
+    recreate_backend_services "post_restore"
     if wait_for_health "post-restore"; then
         echo "Restore confirmed: backend is back on the production .env."
     else
@@ -216,8 +230,7 @@ if [[ "$FORCE" -ne 1 ]]; then
     # bash/ssh/python quote-escaping across three layers is fragile and has
     # broken here before (a bare `"` inside an f-string terminated the outer
     # bash string early) - a quoted heredoc passes the script through
-    # completely literally, no escaping needed at any layer.
-    LIVE_COUNT="$(ssh "$SSH_HOST" "$COMPOSE exec -T backend python -" 2>/dev/null <<'PYEOF' | sed -n 's/.*LIVE_COUNT_RESULT=\([0-9]*\).*/\1/p' | tail -1
+    LIVE_COUNT="$(ssh "$SSH_HOST" "$COMPOSE exec -T backend $QUIET_PYTHON_ENV python -" 2>/dev/null <<'PYEOF' | sed -n 's/.*LIVE_COUNT_RESULT=\([0-9]*\).*/\1/p' | tail -1
 import asyncio
 from sqlalchemy import text
 from sqlalchemy.exc import ProgrammingError
@@ -260,6 +273,7 @@ if [[ ! -s "$ENV_BACKUP" ]]; then
     echo "Failed to read the remote .env - aborting before touching anything." >&2
     exit 1
 fi
+RESTORE_ARMED=1
 echo "Backed up to $ENV_BACKUP"
 
 # --- 3. Ensure the test database exists --------------------------------------
@@ -278,8 +292,7 @@ for key in DATABASE_NAME REDIS_DB MINIO_BUCKET_NAME; do
     grep -q "^${key}=" "$ENV_TEST" || { echo "Expected $key in .env, found none - aborting." >&2; exit 1; }
 done
 scp -q "$ENV_TEST" "$SSH_HOST:$REMOTE_APP_DIR/backend/.env"
-# shellcheck disable=SC2029
-ssh "$SSH_HOST" "cd $REMOTE_APP_DIR/backend && $COMPOSE up -d --force-recreate $BACKEND_SERVICES"
+recreate_backend_services "test_env"
 wait_for_health "test env"
 
 # Hard safety check: confirm the RUNNING container's own config actually
@@ -290,7 +303,7 @@ wait_for_health "test env"
 # keep serving production the whole time while this script thinks it
 # swapped. This happened once during development; never again.
 log "Verifying the running container is actually on the test database"
-ACTUAL_DB="$(ssh "$SSH_HOST" "$COMPOSE exec -T backend python -" 2>/dev/null <<'PYEOF' | tail -1
+ACTUAL_DB="$(ssh "$SSH_HOST" "$COMPOSE exec -T backend $QUIET_PYTHON_ENV python -" 2>/dev/null <<'PYEOF' | tail -1
 from app.core.config import config
 print(config.DATABASE_NAME)
 PYEOF
@@ -305,7 +318,7 @@ echo "Confirmed: backend is on DATABASE_NAME=$ACTUAL_DB"
 if [[ "$SKIP_SEED" -ne 1 ]]; then
     log "Seeding Keycloak student accounts (student1..student$STUDENT_COUNT)"
     # shellcheck disable=SC2029
-    ssh "$SSH_HOST" "printf '%s\n' '$STUDENT_COUNT' | $COMPOSE exec -T backend python scripts/create_keycloak_users.py"
+    ssh "$SSH_HOST" "printf '%s\n' '$STUDENT_COUNT' | $COMPOSE exec -T backend $QUIET_PYTHON_ENV python scripts/create_keycloak_users.py"
 
     log "Syncing Keycloak accounts into the app database"
     # create_keycloak_users.py only creates the Keycloak-side accounts;
@@ -314,7 +327,7 @@ if [[ "$SKIP_SEED" -ne 1 ]]; then
     # student login succeeds (real Keycloak JWT) but every subsequent API
     # call 404s with UserNotFoundError - found and fixed during development.
     # shellcheck disable=SC2029
-    ssh "$SSH_HOST" "$COMPOSE exec -T backend python -" 2>/dev/null <<'PYEOF'
+    ssh "$SSH_HOST" "$COMPOSE exec -T backend $QUIET_PYTHON_ENV python -" 2>/dev/null <<'PYEOF'
 import asyncio
 from app.core.clients.database import SessionLocal
 from app.service.user_service import UserService
@@ -331,17 +344,17 @@ PYEOF
 
     log "Seeding verified DSA question bank"
     # shellcheck disable=SC2029
-    ssh "$SSH_HOST" "$COMPOSE exec -T backend python scripts/seed_question_bank.py"
+    ssh "$SSH_HOST" "$COMPOSE exec -T backend $QUIET_PYTHON_ENV python scripts/seed_question_bank.py"
 
     if [[ "$SKIP_BULK_SEED" -ne 1 ]]; then
         log "Seeding bulk read-path dataset (100 contests / ~5.7k questions)"
         # shellcheck disable=SC2029
-        ssh "$SSH_HOST" "$COMPOSE exec -T backend python scripts/seed_contests.py"
+        ssh "$SSH_HOST" "$COMPOSE exec -T backend $QUIET_PYTHON_ENV python scripts/seed_contests.py"
     fi
 
     log "Creating + publishing the live load-test contest from the verified bank"
     # shellcheck disable=SC2029
-    CONTEST_ID="$(ssh "$SSH_HOST" "$COMPOSE exec -T backend python loadtest/setup/setup_contest.py" 2>/dev/null | sed -n 's/.*CONTEST_ID_RESULT=\([0-9a-fA-F-]*\).*/\1/p' | tail -1)"
+    CONTEST_ID="$(ssh "$SSH_HOST" "$COMPOSE exec -T backend $QUIET_PYTHON_ENV python loadtest/setup/setup_contest.py" 2>/dev/null | sed -n 's/.*CONTEST_ID_RESULT=\([0-9a-fA-F-]*\).*/\1/p' | tail -1)"
     if [[ -z "$CONTEST_ID" ]]; then
         echo "setup_contest.py did not print a contest id - aborting before load." >&2
         exit 1
@@ -375,6 +388,7 @@ if [[ -n "$SHAPE" ]]; then
             --host "$HOST" \
             --headless \
             --csv "$RUN_DIR/run" --csv-full-history \
+            --only-summary \
             --html "$RUN_DIR/report.html" \
             --json-file "$RUN_DIR/run" || LOCUST_EXIT=$?
 else
@@ -388,6 +402,7 @@ else
             --headless \
             --csv "$RUN_DIR/run" --csv-full-history \
             --html "$RUN_DIR/report.html" \
+            --only-summary \
             --json-file "$RUN_DIR/run" || LOCUST_EXIT=$?
 fi
 
@@ -403,8 +418,29 @@ ln -sfn "$RUN_DIR" "$REPO_ROOT/loadtest/logs/latest"
     echo "finished=$(date +%Y%m%d_%H%M%S)"
 } > "$RUN_DIR/meta.txt"
 
-log "Report: $RUN_DIR/report.html"
+log "Locust summary"
 "$REPO_ROOT/.venv/bin/python" "$REPO_ROOT/loadtest/summarize_report.py" "$RUN_DIR/run.json" || true
 
-# restore_prod_env runs automatically via the EXIT trap from here.
+# Restore before the final artifact block so the last thing on screen is where
+# to open the results, not container recreate noise.
+restore_prod_env
+
+log "Result artifacts"
+cat <<EOF
+Report directory:
+  $RUN_DIR
+
+Also available as:
+  $REPO_ROOT/loadtest/logs/latest
+
+Files:
+  $RUN_DIR/report.html
+  $RUN_DIR/run.json
+  $RUN_DIR/run_stats.csv
+  $RUN_DIR/run_stats_history.csv
+  $RUN_DIR/run_failures.csv
+  $RUN_DIR/run_exceptions.csv
+  $RUN_DIR/meta.txt
+EOF
+
 exit "${LOCUST_EXIT:-0}"

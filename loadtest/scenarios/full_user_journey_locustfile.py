@@ -107,10 +107,9 @@ class FullJourneyStudent(HttpUser):
 
         self.view_dashboard()
         self._browse_lobby()
-        self._ensure_registered()
-        self._start_or_resume_session()
-        self._fetch_questions(setup=True)
-        self._poll_runtime()
+        if self._start_or_resume_session():
+            self._fetch_questions(setup=True)
+            self._poll_runtime()
 
     def _auth_headers(self):
         return {"Authorization": f"Bearer {self.token_manager.get_access_token()}"}
@@ -119,6 +118,18 @@ class FullJourneyStudent(HttpUser):
         return (
             f"unexpected status {response.status_code} {action} for "
             f"{self.username}: {response.text[:200]}"
+        )
+
+    def _error_code(self, response) -> str | None:
+        try:
+            return response.json().get("error", {}).get("code")
+        except ValueError:
+            return None
+
+    def _is_no_team_member(self, response) -> bool:
+        return (
+            response.status_code == 404
+            and self._error_code(response) == "NO_CONTEST_TEAM_MEMBER"
         )
 
     @task(1)
@@ -151,7 +162,7 @@ class FullJourneyStudent(HttpUser):
             if response.status_code != 200:
                 response.failure(self._failure_text(response, "checking participation"))
 
-    def _ensure_registered(self):
+    def _ensure_registered(self) -> bool:
         with self.client.post(
             f"/api/v1/students/contests/{CONTEST_ID}/teams",
             json={"name": f"{self.username}-team"},
@@ -159,20 +170,41 @@ class FullJourneyStudent(HttpUser):
             name="/api/v1/students/contests/[id]/teams (setup)",
             catch_response=True,
         ) as response:
-            if response.status_code < 300 or response.status_code == 409:
+            if response.status_code < 300:
                 response.success()
-            else:
-                response.failure(self._failure_text(response, "registering team"))
+                return True
+            if response.status_code == 409 and self._error_code(response) in {
+                "STUDENT_ALREADY_IN_CONTEST",
+                "StudentAlreadyInContestError",
+            }:
+                response.success()
+                return True
 
-    def _start_or_resume_session(self):
+            response.failure(self._failure_text(response, "registering team"))
+            return False
+
+    def _start_or_resume_session(self, allow_retry: bool = True) -> bool:
         with self.client.post(
             f"/api/v1/students/contests/{CONTEST_ID}/start",
             headers=self._auth_headers(),
             name="/api/v1/students/contests/[id]/start (setup)",
             catch_response=True,
         ) as response:
-            if response.status_code != 200:
-                response.failure(self._failure_text(response, "starting session"))
+            if response.status_code == 200:
+                return True
+
+            if allow_retry and self._is_no_team_member(response):
+                # In production, students can arrive while registration state is
+                # still being established (or after a prior setup attempt was
+                # interrupted). Treat the first no-member response as setup
+                # noise, re-run idempotent registration, then retry once.
+                response.success()
+                self._ensure_registered()
+                time.sleep(0.5)
+                return self._start_or_resume_session(allow_retry=False)
+
+            response.failure(self._failure_text(response, "starting session"))
+            return False
 
     @task(2)
     def browse_in_contest(self):
@@ -190,7 +222,7 @@ class FullJourneyStudent(HttpUser):
             if response.status_code != 200:
                 response.failure(self._failure_text(response, "polling runtime"))
 
-    def _fetch_questions(self, setup: bool):
+    def _fetch_questions(self, setup: bool, allow_retry: bool = True):
         request_name = "/api/v1/students/contests/[id]/questions"
         if setup:
             request_name += " (setup)"
@@ -202,6 +234,13 @@ class FullJourneyStudent(HttpUser):
             catch_response=True,
         ) as response:
             if response.status_code != 200:
+                if setup and allow_retry and self._is_no_team_member(response):
+                    response.success()
+                    self._ensure_registered()
+                    self._start_or_resume_session()
+                    time.sleep(0.5)
+                    return self._fetch_questions(setup=True, allow_retry=False)
+
                 response.failure(self._failure_text(response, "fetching questions"))
                 return
 
