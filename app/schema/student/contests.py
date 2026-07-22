@@ -6,6 +6,7 @@ from app.utils.enums import (
     ContestMode,
     ContestQuestionStatus,
     ContestRunStatus,
+    ContestSessionCompletionStatus,
     ContestStatus,
     ContestTeamParticipationType,
     QuestionDifficulty,
@@ -196,6 +197,14 @@ class StudentContestSessionStatus(BaseModel):
     )
     already_started: bool = Field(
         ..., description="Whether the student/team has already started the session"
+    )
+    completion_status: ContestSessionCompletionStatus = Field(
+        ...,
+        description=(
+            "Completion state of the session: NOT_STARTED, IN_PROGRESS, "
+            "FINISHED (explicitly submitted via /finish), or MISSED "
+            "(timer expired without finishing)"
+        ),
     )
 
 

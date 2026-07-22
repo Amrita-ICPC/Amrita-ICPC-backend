@@ -105,6 +105,28 @@ class ContestRunStatus(str, enum.Enum):
     ENDED = "ENDED"
 
 
+class ContestSessionCompletionStatus(str, enum.Enum):
+    """
+    Enumeration of a student/team's completion state for their contest session.
+
+    Derived at read-time from the ContestTeamProgress row (if any) and the
+    remaining time in the session. Not persisted to the database.
+
+    Attributes:
+        NOT_STARTED: The session has not been started yet.
+        IN_PROGRESS: The session is active and still has time remaining.
+        FINISHED: The student/team explicitly ended the session (via /finish)
+            before time ran out.
+        MISSED: The session's timer expired without the student/team
+            explicitly finishing it.
+    """
+
+    NOT_STARTED = "NOT_STARTED"
+    IN_PROGRESS = "IN_PROGRESS"
+    FINISHED = "FINISHED"
+    MISSED = "MISSED"
+
+
 class SortOrder(str, enum.Enum):
     """
     Enumeration for sorting order.

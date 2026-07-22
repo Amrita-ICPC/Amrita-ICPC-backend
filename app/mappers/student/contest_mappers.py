@@ -58,6 +58,7 @@ from app.models.team import Team
 from app.schema.contest import ContestAudienceResponse
 from app.utils.enums import (
     ContestRunStatus,
+    ContestSessionCompletionStatus,
     ContestTeamMemberStatus,
     ContestTeamParticipationType,
     RegistrationState,
@@ -198,6 +199,7 @@ def to_student_contest_not_registered_response() -> StudentContestStatusResponse
             reason="Not registered for the contest",
             run_status=ContestRunStatus.UPCOMING,
             already_started=False,
+            completion_status=ContestSessionCompletionStatus.NOT_STARTED,
         ),
         team=None,
     )
@@ -244,6 +246,7 @@ def to_student_contest_status_response(
     team_id: UUID | None,
     run_status: ContestRunStatus,
     already_started: bool,
+    completion_status: ContestSessionCompletionStatus,
 ) -> StudentContestStatusResponse:
     """
     Map calculated registration, readiness, and team status to StudentContestStatusResponse.
@@ -272,6 +275,7 @@ def to_student_contest_status_response(
             reason=reason,
             run_status=run_status,
             already_started=already_started,
+            completion_status=completion_status,
         ),
         team=team_status,
     )

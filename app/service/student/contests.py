@@ -55,6 +55,7 @@ from app.utils.contest import (
 )
 from app.utils.enums import (
     ContestRunStatus,
+    ContestSessionCompletionStatus,
     ContestStatus,
     ContestTeamMemberStatus,
     ContestTeamParticipationType,
@@ -281,9 +282,11 @@ class StudentContestService:
         is_leader = contest_team.leader_id == user_id
 
         session_ended = False
+        completion_status = ContestSessionCompletionStatus.NOT_STARTED
         if already_started and active_progress:
             if active_progress.ended_at is not None:
                 session_ended = True
+                completion_status = ContestSessionCompletionStatus.FINISHED
             else:
                 base_end_time = active_progress.end_time
                 if base_end_time is not None:
@@ -293,6 +296,10 @@ class StudentContestService:
                     )
                     if remaining_seconds <= 0:
                         session_ended = True
+                        completion_status = ContestSessionCompletionStatus.MISSED
+
+            if not session_ended:
+                completion_status = ContestSessionCompletionStatus.IN_PROGRESS
 
         if is_draft:
             can_start = False
@@ -368,6 +375,7 @@ class StudentContestService:
             team_id=contest_team.team_id,
             run_status=run_status,
             already_started=already_started,
+            completion_status=completion_status,
         )
 
     # TODO: Handle scheduler exception and add a fallback for scheduler

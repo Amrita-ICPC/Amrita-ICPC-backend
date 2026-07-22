@@ -1,0 +1,155 @@
+{
+  "uid": "amrita-icpc-db-performance",
+  "title": "Amrita ICPC — Database Performance",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    { "type": "row", "title": "Query optimization (pg_stat_statements)", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }, "id": 100 },
+
+    {
+      "id": 1, "type": "table", "title": "Top 15 queries by total execution time",
+      "description": "Where the database is spending the most cumulative time. Start here -- the single biggest lever for overall load.",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "topk(15, pg_stat_statements_total_exec_time)", "format": "table", "instant": true }],
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] }
+    },
+    {
+      "id": 2, "type": "table", "title": "Top 15 queries by mean execution time (slowest per call)",
+      "description": "Catches queries that are individually slow even if rarely called -- the total-time ranking above would bury these.",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 10 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "topk(15, pg_stat_statements_mean_exec_time)", "format": "table", "instant": true }],
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] }
+    },
+    {
+      "id": 3, "type": "timeseries", "title": "Call rate, top 10 queries",
+      "description": "A query whose call rate is far higher than expected for the requests hitting it is the signature of an N+1 bug.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 19 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "topk(10, rate(pg_stat_statements_calls[5m]))", "legendFormat": "{{query}}" }],
+      "fieldConfig": { "defaults": { "unit": "cps" }, "overrides": [] }
+    },
+    {
+      "id": 4, "type": "timeseries", "title": "Rows per call, top 10 queries",
+      "description": "A query touching far more rows than expected per call usually means a missing WHERE clause, LIMIT, or index.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 19 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "topk(10, pg_stat_statements_rows / pg_stat_statements_calls)", "legendFormat": "{{query}}" }],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }
+    },
+    {
+      "id": 5, "type": "timeseries", "title": "Mean latency trend, top 5 queries by total time",
+      "description": "Watch for a query that used to be fast and is climbing -- a plan regression or growing table without a matching index.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 27 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "topk(5, pg_stat_statements_mean_exec_time)", "legendFormat": "{{query}}" }],
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] }
+    },
+
+    { "type": "row", "title": "Database health", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 35 }, "id": 200 },
+
+    {
+      "id": 10, "type": "timeseries", "title": "Connections by state",
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 36 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "sum(pg_stat_activity_count) by (state)", "legendFormat": "{{state}}" }],
+      "fieldConfig": { "defaults": { "unit": "none" }, "overrides": [] }
+    },
+    {
+      "id": 11, "type": "stat", "title": "Longest running transaction",
+      "description": "A climbing value points at a stuck or forgotten open transaction, which holds locks and blocks vacuum.",
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 36 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "max(pg_stat_activity_max_tx_duration)" }],
+      "fieldConfig": { "defaults": { "unit": "s", "thresholds": { "mode": "absolute", "steps": [
+        { "color": "green", "value": null }, { "color": "orange", "value": 30 }, { "color": "red", "value": 120 }
+      ] } }, "overrides": [] }
+    },
+    {
+      "id": 12, "type": "stat", "title": "Buffer cache hit ratio",
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 36 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "sum(rate(pg_stat_database_blks_hit[5m])) / (sum(rate(pg_stat_database_blks_hit[5m])) + sum(rate(pg_stat_database_blks_read[5m])))" }],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "thresholds": { "mode": "absolute", "steps": [
+        { "color": "red", "value": null }, { "color": "orange", "value": 0.9 }, { "color": "green", "value": 0.99 }
+      ] } }, "overrides": [] }
+    },
+    {
+      "id": 13, "type": "timeseries", "title": "Commits vs rollbacks",
+      "description": "A rising rollback rate usually means application errors or constraint violations hitting the database, not a DB-side problem itself.",
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 43 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum(rate(pg_stat_database_xact_commit[5m]))", "legendFormat": "commits" },
+        { "expr": "sum(rate(pg_stat_database_xact_rollback[5m]))", "legendFormat": "rollbacks" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+    },
+    {
+      "id": 14, "type": "stat", "title": "Deadlocks (5m rate)",
+      "description": "Should be zero. Any sustained non-zero rate means two queries are routinely taking locks in conflicting order.",
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 43 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "sum(rate(pg_stat_database_deadlocks[5m]))" }],
+      "fieldConfig": { "defaults": { "unit": "ops", "thresholds": { "mode": "absolute", "steps": [
+        { "color": "green", "value": null }, { "color": "red", "value": 0.001 }
+      ] } }, "overrides": [] }
+    },
+    {
+      "id": 15, "type": "timeseries", "title": "Locks by mode",
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 43 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "sum(pg_locks_count) by (mode)", "legendFormat": "{{mode}}" }],
+      "fieldConfig": { "defaults": { "unit": "none" }, "overrides": [] }
+    },
+    {
+      "id": 16, "type": "timeseries", "title": "Queries spilling to disk: temp files/sec",
+      "description": "A query whose sort/hash doesn't fit in work_mem spills to disk here. Sustained non-zero values are a direct signal to raise work_mem or add an index to avoid the sort.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 50 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "sum(rate(pg_stat_database_temp_files[5m])) by (datname)", "legendFormat": "{{datname}}" }],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+    },
+    {
+      "id": 17, "type": "timeseries", "title": "Queries spilling to disk: temp bytes/sec",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 50 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "sum(rate(pg_stat_database_temp_bytes[5m])) by (datname)", "legendFormat": "{{datname}}" }],
+      "fieldConfig": { "defaults": { "unit": "Bps" }, "overrides": [] }
+    },
+    {
+      "id": 18, "type": "timeseries", "title": "Checkpoints: scheduled vs forced",
+      "description": "Forced (\"requested\") checkpoints happening often means checkpoint_timeout/max_wal_size need tuning -- forced checkpoints are more expensive and hurt write latency.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 58 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum(rate(pg_stat_bgwriter_checkpoints_timed_total[5m]))", "legendFormat": "scheduled" },
+        { "expr": "sum(rate(pg_stat_bgwriter_checkpoints_req_total[5m]))", "legendFormat": "forced" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+    },
+    {
+      "id": 19, "type": "timeseries", "title": "Buffers written: checkpoint vs bgwriter vs backend",
+      "description": "Buffers written directly by backend processes (not the checkpointer or background writer) mean those processes are stalling on I/O -- background writer tuning needed.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 58 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum(rate(pg_stat_bgwriter_buffers_checkpoint_total[5m]))", "legendFormat": "checkpoint" },
+        { "expr": "sum(rate(pg_stat_bgwriter_buffers_clean_total[5m]))", "legendFormat": "bgwriter" },
+        { "expr": "sum(rate(pg_stat_bgwriter_buffers_backend_total[5m]))", "legendFormat": "backend (bad if high)" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+    },
+    {
+      "id": 20, "type": "timeseries", "title": "Database size",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 66 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "pg_database_size_bytes", "legendFormat": "{{datname}}" }],
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] }
+    }
+  ]
+}
