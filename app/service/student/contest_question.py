@@ -11,6 +11,7 @@ from redis.asyncio import Redis
 from app.core.cache import keys as cache_keys
 from app.core.cache.decorators import cache_get
 from app.core.clients.celery import celery_app
+from app.core.clients.judge0 import Judge0StatusCode
 from app.core.logger import logger
 from app.exceptions.auth import PermissionDeniedError
 from app.exceptions.base import AppBaseException
@@ -59,6 +60,7 @@ from app.schema.submission import (
     SubmissionDetailUserSchema,
 )
 from app.service.contest_event_service import ContestEventService
+from app.service.execution import TestCaseView, get_execution_strategy
 from app.service.student.workspace import WorkspaceService
 from app.utils.contest import calculate_effective_times
 from app.utils.enums import (
@@ -556,10 +558,21 @@ class StudentContestQuestionService:
             source_code=full_source_code,
             language_id=language_id,
         )
+        strategy = get_execution_strategy(
+            question_type=question.question_type,
+            language_id=language_id,
+        )
 
         # Submit code to Judge0 for all testcases in parallel
         submit_tasks = [
-            self.judge0_repo.submit_code(judge0_request, tc.input, tc.output)
+            self.judge0_repo.submit_code(
+                *strategy.build_submission(
+                    judge0_request,
+                    TestCaseView(
+                        input=tc.input, output=tc.output, is_ordered=tc.is_ordered
+                    ),
+                )
+            )
             for tc in non_hidden
         ]
         submissions = await asyncio.gather(*submit_tasks)
@@ -573,24 +586,40 @@ class StudentContestQuestionService:
         # Map results to Schema models
         results = []
         for testcase, judge0_result in zip(non_hidden, judge0_results):
-            status_id = judge0_result.status_id or 0
-            # Code run passed only if execution succeeded (status_id == 3 is ACCEPTED)
-            passed = status_id == 3
+            testcase_view = TestCaseView(
+                input=testcase.input,
+                output=testcase.output,
+                is_ordered=testcase.is_ordered,
+            )
+            judge0_ok = judge0_result.status_id == Judge0StatusCode.ACCEPTED.value
+            passed = strategy.passed(
+                judge0_accepted=judge0_ok,
+                stdout=judge0_result.stdout,
+                testcase=testcase_view,
+            )
+            # Judge0 reports ACCEPTED whenever a SQL query ran without error
+            # since no expected_output is sent for it -- the strategy's own
+            # comparison is what actually decides pass/fail for SQL.
+            status_description = (
+                "WRONG_ANSWER"
+                if judge0_ok and not passed
+                else (judge0_result.status.name if judge0_result.status else "Unknown")
+            )
 
             results.append(
                 StudentTestCaseRunResultResponse(
                     testcase_id=testcase.id,
                     passed=passed,
-                    status_description=judge0_result.status.name
-                    if judge0_result.status
-                    else "Unknown",
+                    status_description=status_description,
                     time=judge0_result.time or 0.0,
                     memory=(judge0_result.memory or 0) / 1024,
                     stdout=judge0_result.stdout,
-                    stderr=judge0_result.stderr,
-                    compile_output=judge0_result.compile_output,
+                    stderr=strategy.redact(judge0_result.stderr, testcase_view),
+                    compile_output=strategy.redact(
+                        judge0_result.compile_output, testcase_view
+                    ),
                     expected_output=testcase.output,
-                    input=testcase.input,
+                    input=strategy.visible_input(testcase_view),
                 )
             )
 

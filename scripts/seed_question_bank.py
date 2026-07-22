@@ -50,7 +50,7 @@ from app.models.language import Language
 from app.models.question import Question, QuestionLanguage, QuestionTemplate, TestCase
 from app.models.tag import QuestionTag, Tag
 from app.models.user import User
-from app.utils.enums import QuestionDifficulty, UserRole
+from app.utils.enums import QuestionDifficulty, QuestionType, UserRole
 from loadtest.question_bank_data.dp_recursion_questions import (
     QUESTIONS as DP_RECURSION_QUESTIONS,
 )
@@ -91,6 +91,13 @@ LANGUAGE_DEFS = [
         "file_extension": ".java",
         "monaco_language": "java",
     },
+    {
+        "id": 82,
+        "slug": "sql",
+        "name": "SQL (SQLite 3.27.2)",
+        "file_extension": ".sql",
+        "monaco_language": "sql",
+    },
 ]
 
 ALL_TAGS = [
@@ -113,11 +120,20 @@ ALL_TAGS = [
     "BFS",
     "DFS",
     "Binary Search",
+    # Added alongside the SQL (Judge0 SQLite) question below
+    "SQL",
+    "Joins",
 ]
 
 
-def tc(input_, output, is_hidden, weight=1):
-    return {"input": input_, "output": output, "is_hidden": is_hidden, "weight": weight}
+def tc(input_, output, is_hidden, weight=1, is_ordered=True):
+    return {
+        "input": input_,
+        "output": output,
+        "is_hidden": is_hidden,
+        "weight": weight,
+        "is_ordered": is_ordered,
+    }
 
 
 QUESTIONS = [
@@ -1324,13 +1340,124 @@ public:
             },
         },
     },
+    # ------------------------------------------------------------------
+    # 8. EASY - SQL (Judge0 SQLite) - LEFT/RIGHT JOIN
+    # ------------------------------------------------------------------
+    {
+        "title": "Employees and Departments (LEFT/RIGHT JOIN)",
+        "difficulty": QuestionDifficulty.EASY,
+        "time_limit_ms": 2000,
+        "memory_limit_mb": 256,
+        "tags": ["SQL", "Joins"],
+        "question_type": QuestionType.SQL,
+        "languages": ["sql"],
+        "text": """You are given two tables:
+
+```
+departments(id INTEGER PRIMARY KEY, name TEXT NOT NULL)
+employees(id INTEGER PRIMARY KEY, name TEXT NOT NULL, department_id INTEGER, salary INTEGER)
+```
+
+`employees.department_id` references `departments.id`, but it is not guaranteed that every employee has a department, or that every department has employees.
+
+Write a single query that returns every employee paired with their department name, **and** every department that has no employees at all - so no employee and no department is ever silently dropped from the result.
+
+### Output Format
+Two columns: `employee`, `department`. When an employee has no department, `department` is `NULL`. When a department has no employees, `employee` is `NULL`. Order the rows by `department`, then by `employee` (SQL sorts `NULL` before any other value).
+
+### Constraints
+- SQLite has no native `RIGHT JOIN`/`FULL JOIN` keyword in the version Judge0 runs (3.27.2 - added upstream only in 3.39+). Express "every department, even ones with no employees" with a `LEFT JOIN` in the opposite direction instead.
+
+### Example
+Given an `Engineering` department with two employees, a `Sales` department with one employee, a `Marketing` department with none, and one employee with no department at all, the result is:
+```
+employee|department
+Dave|NULL
+Alice|Engineering
+Bob|Engineering
+NULL|Marketing
+Carol|Sales
+```
+""",
+        "testcases": [
+            tc(
+                "CREATE TABLE departments (\n"
+                "    id INTEGER PRIMARY KEY,\n"
+                "    name TEXT NOT NULL\n"
+                ");\n\n"
+                "CREATE TABLE employees (\n"
+                "    id INTEGER PRIMARY KEY,\n"
+                "    name TEXT NOT NULL,\n"
+                "    department_id INTEGER,\n"
+                "    salary INTEGER,\n"
+                "    FOREIGN KEY (department_id) REFERENCES departments(id)\n"
+                ");\n\n"
+                "INSERT INTO departments (id, name) VALUES\n"
+                "    (1, 'Engineering'),\n"
+                "    (2, 'Sales'),\n"
+                "    (3, 'Marketing');\n\n"
+                "INSERT INTO employees (id, name, department_id, salary) VALUES\n"
+                "    (1, 'Alice', 1, 90000),\n"
+                "    (2, 'Bob', 1, 85000),\n"
+                "    (3, 'Carol', 2, 70000),\n"
+                "    (4, 'Dave', NULL, 60000);",
+                "employee|department\nDave|NULL\nAlice|Engineering\nBob|Engineering\nNULL|Marketing\nCarol|Sales",
+                False,
+                weight=2,
+            ),
+            tc(
+                "CREATE TABLE departments (\n"
+                "    id INTEGER PRIMARY KEY,\n"
+                "    name TEXT NOT NULL\n"
+                ");\n\n"
+                "CREATE TABLE employees (\n"
+                "    id INTEGER PRIMARY KEY,\n"
+                "    name TEXT NOT NULL,\n"
+                "    department_id INTEGER,\n"
+                "    salary INTEGER,\n"
+                "    FOREIGN KEY (department_id) REFERENCES departments(id)\n"
+                ");\n\n"
+                "INSERT INTO departments (id, name) VALUES\n"
+                "    (1, 'Engineering'),\n"
+                "    (2, 'Sales'),\n"
+                "    (3, 'Marketing');\n\n"
+                "INSERT INTO employees (id, name, department_id, salary) VALUES\n"
+                "    (1, 'Alice', 1, 90000),\n"
+                "    (2, 'Bob', 1, 85000),\n"
+                "    (3, 'Carol', 2, 70000),\n"
+                "    (4, 'Dave', NULL, 60000);",
+                "employee|department\nDave|NULL\nAlice|Engineering\nBob|Engineering\nNULL|Marketing\nCarol|Sales",
+                True,
+                weight=8,
+            ),
+        ],
+        "templates": {
+            "sql": {
+                "starter": "-- Write your query here",
+                "driver": "",
+                "solution": """SELECT e.name AS employee, d.name AS department
+FROM employees e
+LEFT JOIN departments d ON e.department_id = d.id
+UNION
+SELECT e.name AS employee, d.name AS department
+FROM departments d
+LEFT JOIN employees e ON e.department_id = d.id
+ORDER BY department, employee;""",
+            },
+        },
+    },
 ]
 
 # Additional DSA patterns (Dynamic Programming, Recursion/Backtracking,
 # Stack, Queue, Graph, Binary Search), authored + Judge0-verified separately
 # in loadtest/question_bank_data/ - see those files' module docstrings for
 # verification details.
-QUESTIONS = QUESTIONS + DP_RECURSION_QUESTIONS + STACK_QUEUE_QUESTIONS + GRAPH_BINARY_SEARCH_QUESTIONS
+QUESTIONS = (
+    QUESTIONS
+    + DP_RECURSION_QUESTIONS
+    + STACK_QUEUE_QUESTIONS
+    + GRAPH_BINARY_SEARCH_QUESTIONS
+)
 
 
 async def get_or_create_admin(session: AsyncSession) -> User:
@@ -1402,7 +1529,7 @@ async def main():
             admin = await get_or_create_admin(session)
             print(f"  using admin: {admin.name}")
 
-            print("Setting up languages (python, cpp, java)...")
+            print("Setting up languages (python, cpp, java, sql)...")
             languages = await get_or_create_languages(session)
             for slug, lang in languages.items():
                 print(f"  {slug} -> language_id={lang.id}")
@@ -1441,11 +1568,13 @@ async def main():
 
             print(f"\nCreating {len(QUESTIONS)} questions...")
             for q_def in QUESTIONS:
+                q_languages = q_def.get("languages", ("python", "cpp", "java"))
                 question = Question(
                     id=uuid.uuid4(),
                     title=q_def["title"],
                     question_text=q_def["text"],
                     difficulty=q_def["difficulty"],
+                    question_type=q_def.get("question_type", QuestionType.STANDARD),
                     time_limit_ms=q_def["time_limit_ms"],
                     memory_limit_mb=q_def["memory_limit_mb"],
                     created_by=admin.id,
@@ -1455,7 +1584,7 @@ async def main():
                 session.add(question)
                 await session.flush()
 
-                for slug in ("python", "cpp", "java"):
+                for slug in q_languages:
                     session.add(
                         QuestionLanguage(
                             question_id=question.id,
@@ -1472,6 +1601,7 @@ async def main():
                             output=tc_def["output"],
                             is_hidden=tc_def["is_hidden"],
                             weight=tc_def["weight"],
+                            is_ordered=tc_def.get("is_ordered", True),
                             order=order,
                             created_by=admin.id,
                             created_at=now,
@@ -1479,7 +1609,7 @@ async def main():
                         )
                     )
 
-                for slug in ("python", "cpp", "java"):
+                for slug in q_languages:
                     template = q_def["templates"][slug]
                     session.add(
                         QuestionTemplate(

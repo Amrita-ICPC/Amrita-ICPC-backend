@@ -1,7 +1,7 @@
 import dataclasses
 from uuid import UUID
 
-from app.utils.enums import QuestionDifficulty
+from app.utils.enums import QuestionDifficulty, QuestionType
 
 
 @dataclasses.dataclass
@@ -17,6 +17,7 @@ class CreateQuestionTestCaseData:
     is_hidden: bool
     weight: int
     order: int
+    is_ordered: bool = True
 
 
 @dataclasses.dataclass
@@ -53,6 +54,7 @@ class CreateQuestionData:
     time_limit_ms: int
     memory_limit_mb: int
     created_by: UUID
+    question_type: QuestionType = QuestionType.STANDARD
 
 
 @dataclasses.dataclass

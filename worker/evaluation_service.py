@@ -196,6 +196,7 @@ class EvaluationService:
             logger.warning(f"No testcases found for question {data.id}")
             return EvaluationPreparationDetails(
                 submission=submission,
+                question_type=data.question_type,
                 testcases=[],
                 final_source_code="",
                 max_score=0,
@@ -223,6 +224,7 @@ class EvaluationService:
 
         return EvaluationPreparationDetails(
             submission=submission,
+            question_type=data.question_type,
             testcases=testcases,
             final_source_code=final_source_code,
             max_score=max_score,
@@ -614,7 +616,7 @@ class EvaluationService:
                 stack_limit=prep.stack_limit,
             )
             tokens = await self.judge0_service.submit_testcases(
-                request_dto, prep.testcases
+                request_dto, prep.testcases, question_type=prep.question_type
             )
 
             if all(token is None for token in tokens):
@@ -797,6 +799,8 @@ class EvaluationService:
                     aligned_tokens,
                     results_by_token,
                     timed_out=timed_out,
+                    question_type=data.question_type,
+                    language_id=submission.language_id,
                 )
 
                 finalized_submission = await self.save_result(

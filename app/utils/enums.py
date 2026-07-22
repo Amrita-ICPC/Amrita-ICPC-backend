@@ -21,6 +21,20 @@ class UserRole(str, enum.Enum):
     manager = "manager"
 
 
+class QuestionType(str, enum.Enum):
+    """Execution model a question follows.
+
+    Attributes:
+        STANDARD: Imperative program judged by stdin/stdout diff (the
+            original, Judge0-native model).
+        SQL: A query judged against a per-testcase database fixture, with
+            the result set compared on the platform side.
+    """
+
+    STANDARD = "STANDARD"
+    SQL = "SQL"
+
+
 class QuestionDifficulty(str, enum.Enum):
     """
     Enumeration of question difficulty levels for contest problems.

@@ -5,7 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schema.tag import TagResponse
-from app.utils.enums import QuestionDifficulty
+from app.utils.enums import QuestionDifficulty, QuestionType
 
 PositiveLanguageId = Annotated[int, Field(gt=0)]
 
@@ -19,16 +19,35 @@ class QuestionBase(BaseModel):
     difficulty: QuestionDifficulty = Field(
         ..., description="Difficulty level of the question"
     )
+    question_type: QuestionType = Field(
+        default=QuestionType.STANDARD,
+        description="Execution model: STANDARD (stdin/stdout program) or SQL "
+        "(query judged against a per-testcase database fixture). Immutable "
+        "after creation.",
+    )
     time_limit_ms: int = Field(..., gt=0, description="Time limit in milliseconds")
     memory_limit_mb: int = Field(..., gt=0, description="Memory limit in megabytes")
 
 
 class QuestionTestCaseCreate(BaseModel):
-    input: str
-    output: str
+    input: str = Field(
+        ...,
+        description="Stdin for STANDARD questions; database fixture SQL "
+        "(schema + seed data) for SQL questions",
+    )
+    output: str = Field(
+        ...,
+        description="Expected stdout for STANDARD questions; expected result "
+        "set (SQLite '.mode list' text) for SQL questions",
+    )
     is_hidden: bool = True
     weight: int = Field(default=1, ge=1)
     order: int | None = Field(default=None, ge=0)
+    is_ordered: bool = Field(
+        default=True,
+        description="SQL questions only: whether row order in `output` must "
+        "match exactly, vs. comparing rows as an unordered set",
+    )
 
 
 class QuestionTemplateCreate(BaseModel):
@@ -44,6 +63,7 @@ class UpdateQuestionTestCaseRequest(BaseModel):
     is_hidden: bool | None = None
     weight: int | None = Field(default=None, ge=1)
     order: int | None = Field(default=None, ge=0)
+    is_ordered: bool | None = None
 
 
 class UpdateQuestionTemplateRequest(BaseModel):
@@ -191,6 +211,7 @@ class QuestionTestCaseResponse(BaseModel):
     is_hidden: bool
     weight: int
     order: int | None
+    is_ordered: bool = True
 
 
 class QuestionTemplateResponse(BaseModel):
@@ -233,6 +254,7 @@ class QuestionResponse(QuestionBase):
                 is_hidden=testcase.is_hidden,
                 weight=testcase.weight,
                 order=testcase.order,
+                is_ordered=testcase.is_ordered,
             )
             for testcase in (getattr(question, "testcases", []) or [])
         ]
@@ -259,6 +281,7 @@ class QuestionResponse(QuestionBase):
             title=getattr(question, "title", "") or "Untitled Question",
             question_text=question.question_text,
             difficulty=question.difficulty,
+            question_type=question.question_type,
             time_limit_ms=question.time_limit_ms,
             memory_limit_mb=question.memory_limit_mb,
             created_by=question.created_by,
@@ -407,6 +430,10 @@ class QuestionAndTestcasesResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    question_type: QuestionType = Field(
+        default=QuestionType.STANDARD,
+        description="Execution model, used to resolve the Judge0 execution strategy",
+    )
     time_limit_ms: int = Field(
         default=0, description="Per-problem CPU time limit in milliseconds"
     )
@@ -422,6 +449,7 @@ class QuestionAndTestcasesResponse(BaseModel):
     ) -> "QuestionAndTestcasesResponse":
         return cls(
             id=question.id,
+            question_type=getattr(question, "question_type", QuestionType.STANDARD),
             time_limit_ms=getattr(question, "time_limit_ms", 0) or 0,
             memory_limit_mb=getattr(question, "memory_limit_mb", 0) or 0,
             templates=[

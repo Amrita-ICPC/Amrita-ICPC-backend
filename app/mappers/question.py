@@ -30,6 +30,7 @@ def build_create_testcase_dtos(
                 is_hidden=testcase.is_hidden,
                 weight=testcase.weight,
                 order=testcase.order if testcase.order is not None else index,
+                is_ordered=testcase.is_ordered,
             )
         )
     return testcase_dtos
@@ -51,6 +52,7 @@ def build_update_testcase_dtos(
                 is_hidden=testcase.is_hidden,
                 weight=testcase.weight,
                 order=testcase.order if testcase.order is not None else index,
+                is_ordered=testcase.is_ordered,
             )
         )
     return testcase_dtos
@@ -71,6 +73,7 @@ def build_appended_testcase_dtos(
                 is_hidden=testcase.is_hidden,
                 weight=testcase.weight,
                 order=starting_order + index,
+                is_ordered=testcase.is_ordered,
             )
         )
     return testcase_dtos
@@ -89,6 +92,7 @@ def build_testcase_entities(
             is_hidden=testcase.is_hidden,
             weight=testcase.weight,
             order=testcase.order,
+            is_ordered=testcase.is_ordered,
             created_by=created_by,
         )
         for testcase in testcase_dtos
@@ -131,6 +135,7 @@ def build_create_question_dto(
         time_limit_ms=question_data.time_limit_ms,
         memory_limit_mb=question_data.memory_limit_mb,
         created_by=created_by,
+        question_type=question_data.question_type,
     )
 
 
@@ -188,6 +193,7 @@ def build_question_entity(data: CreateQuestionData) -> Question:
         title=data.title,
         question_text=data.question_text,
         difficulty=data.difficulty,
+        question_type=data.question_type,
         time_limit_ms=data.time_limit_ms,
         memory_limit_mb=data.memory_limit_mb,
         created_by=data.created_by,
@@ -203,6 +209,7 @@ def build_question_entity(data: CreateQuestionData) -> Question:
                 is_hidden=testcase.is_hidden,
                 weight=testcase.weight,
                 order=testcase.order,
+                is_ordered=testcase.is_ordered,
                 created_by=data.created_by,
             )
             for testcase in data.testcases

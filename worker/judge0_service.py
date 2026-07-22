@@ -6,7 +6,12 @@ from app.repositories.dto.evaluation import EvaluationResult
 from app.repositories.dto.judge0 import Judge0ExecutionRequestDTO, Judge0SubmissionDTO
 from app.repositories.judge0 import Judge0Repository
 from app.schema.question import QuestionTestCaseResponse
-from app.utils.enums import SubmissionStatus
+from app.service.execution import (
+    ExecutionStrategy,
+    TestCaseView,
+    get_execution_strategy,
+)
+from app.utils.enums import QuestionType, SubmissionStatus
 from app.utils.mapper import JUDGE0_TO_SUBMISSION_STATUS
 
 
@@ -15,6 +20,7 @@ def create_submission_testcase(
     testcase: TestCase | QuestionTestCaseResponse,
     result: Judge0SubmissionDTO,
     status: SubmissionStatus,
+    strategy: ExecutionStrategy,
     token: str | None = None,
 ) -> SubmissionTestCase:
     """Build a SubmissionTestCase row from a Judge0 result.
@@ -24,18 +30,27 @@ def create_submission_testcase(
         testcase: The testcase that was executed.
         result: The Judge0 result DTO for this testcase.
         status: Mapped platform verdict for this testcase.
+        strategy: The question's execution strategy, used to redact any
+            hidden judge setup (SQL's fixture) out of stderr before this row
+            is persisted -- submission detail views render stderr as-is.
         token: Judge0 token, persisted for audit/recovery.
 
     Returns:
         An unsaved SubmissionTestCase ORM row.
     """
+    testcase_view = TestCaseView(
+        input=testcase.input,
+        output=testcase.output,
+        is_ordered=getattr(testcase, "is_ordered", True),
+    )
+    stderr = strategy.redact(result.stderr or result.compile_output, testcase_view)
     return SubmissionTestCase(
         submission_id=submission_id,
         testcase_id=testcase.id,
         status=status,
         judge0_token=token,
         stdout=result.stdout,
-        stderr=result.stderr or result.compile_output,
+        stderr=stderr,
         time=int(result.time * 1000) if result.time is not None else None,
         memory=result.memory,
     )
@@ -51,6 +66,7 @@ class Judge0EvaluationService:
         self,
         request_dto: Judge0ExecutionRequestDTO,
         testcases: Sequence[TestCase] | Sequence[QuestionTestCaseResponse],
+        question_type: QuestionType = QuestionType.STANDARD,
     ) -> list[str | None]:
         """Batch-submit every testcase to Judge0 without waiting for results.
 
@@ -62,12 +78,27 @@ class Judge0EvaluationService:
             request_dto: Execution request carrying source code, language, and
                 the (already-capped) execution limits.
             testcases: Testcases to execute, each providing ``input``/``output``.
+            question_type: The question's execution model, used to resolve the
+                Judge0 execution strategy (SQL questions submit a different
+                program per testcase; see ``app.service.execution``).
 
         Returns:
             A list of Judge0 tokens (or ``None``) in ``testcases`` order.
         """
+        strategy = get_execution_strategy(
+            question_type=question_type,
+            language_id=request_dto.language_id,
+        )
         submissions = [
-            (request_dto, testcase.input, testcase.output) for testcase in testcases
+            strategy.build_submission(
+                request_dto,
+                TestCaseView(
+                    input=testcase.input,
+                    output=testcase.output,
+                    is_ordered=getattr(testcase, "is_ordered", True),
+                ),
+            )
+            for testcase in testcases
         ]
         return await self.judge0_repo.submit_batch(submissions)
 
@@ -78,6 +109,8 @@ class Judge0EvaluationService:
         tokens: Sequence[str | None],
         results_by_token: dict[str, Judge0SubmissionDTO],
         timed_out: bool = False,
+        question_type: QuestionType = QuestionType.STANDARD,
+        language_id: int | None = None,
     ) -> EvaluationResult:
         """Aggregate fetched Judge0 results into a final EvaluationResult.
 
@@ -93,10 +126,18 @@ class Judge0EvaluationService:
             results_by_token: Mapping of token -> result DTO fetched from Judge0.
             timed_out: When True, treat unresolved testcases as TLE instead of
                 SYSTEM_ERROR (the poller deadline elapsed).
+            question_type: The question's execution model. For SQL, Judge0's
+                own ACCEPTED verdict only means "ran without error" (no
+                expected_output is sent); the actual AC/WA verdict is decided
+                here via the strategy's result-set comparison.
 
         Returns:
             The aggregated EvaluationResult, ready to persist.
         """
+        strategy = get_execution_strategy(
+            question_type=question_type,
+            language_id=language_id,
+        )
         max_time = 0.0
         max_memory = 0
         passed_cases = 0
@@ -135,6 +176,18 @@ class Judge0EvaluationService:
             except Exception:
                 # status_id missing/unknown -> treat as a system error for this case.
                 status = SubmissionStatus.SYSTEM_ERROR
+
+            if status == SubmissionStatus.AC and not strategy.passed(
+                judge0_accepted=True,
+                stdout=result.stdout,
+                testcase=TestCaseView(
+                    input=testcase.input,
+                    output=testcase.output,
+                    is_ordered=getattr(testcase, "is_ordered", True),
+                ),
+            ):
+                status = SubmissionStatus.WA
+
             if result.time is not None:
                 max_time = max(max_time, result.time)
             if result.memory is not None:
@@ -142,7 +195,7 @@ class Judge0EvaluationService:
 
             testcase_results.append(
                 create_submission_testcase(
-                    submission_id, testcase, result, status, token=token
+                    submission_id, testcase, result, status, strategy, token=token
                 )
             )
 

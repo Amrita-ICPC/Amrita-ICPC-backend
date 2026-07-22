@@ -189,11 +189,21 @@ class ErrorResponse(BaseModel):
 
 
 class DraftTestCase(BaseModel):
-    """Ephemeral test case for draft testing."""
+    """Ephemeral test case for draft testing.
+
+    For SQL drafts (``language_id`` matching the configured Judge0 SQLite
+    language), ``input`` is the database fixture SQL and ``expected_output``
+    is the expected result set, mirroring ``TestCase`` for SQL questions.
+    """
 
     input: str = Field(..., description="Standard input for the test case")
     expected_output: str = Field(
         ..., description="Expected standard output for comparison"
+    )
+    is_ordered: bool = Field(
+        default=True,
+        description="SQL drafts only: whether row order in expected_output "
+        "must match exactly",
     )
 
 

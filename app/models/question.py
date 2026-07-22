@@ -16,7 +16,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
 from app.models.language import Language
-from app.utils.enums import QuestionDifficulty, SubmissionStatus
+from app.utils.enums import QuestionDifficulty, QuestionType, SubmissionStatus
 
 SUBMISSION_STATUS_ENUM = Enum(
     SubmissionStatus,
@@ -36,6 +36,9 @@ class Question(Base):
     question_text: Mapped[str] = mapped_column(Text, nullable=False)
     difficulty: Mapped[QuestionDifficulty] = mapped_column(
         Enum(QuestionDifficulty), nullable=False
+    )
+    question_type: Mapped[QuestionType] = mapped_column(
+        Enum(QuestionType), nullable=False, default=QuestionType.STANDARD
     )
 
     time_limit_ms: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -120,8 +123,17 @@ class TestCase(Base):
         ForeignKey("question.id", ondelete="CASCADE"), nullable=False
     )
 
+    # For QuestionType.SQL questions, `input` holds the database fixture
+    # (schema DDL + seed data) and `output` holds the expected result set
+    # instead of stdin/stdout.
     input: Mapped[str] = mapped_column(Text, nullable=False)
     output: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # SQL-only: whether row order in `output` must match exactly. Defaults to
+    # True (exact match) so an author must explicitly opt a testcase into
+    # unordered comparison, rather than accidentally accepting any row order
+    # for a query that actually depends on one. Unused for STANDARD questions.
+    is_ordered: Mapped[bool] = mapped_column(Boolean, default=True)
 
     is_hidden: Mapped[bool] = mapped_column(Boolean, default=True)
     weight: Mapped[int] = mapped_column(Integer, default=1)  # for scoring

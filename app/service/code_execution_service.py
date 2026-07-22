@@ -23,6 +23,7 @@ from app.repositories.judge0 import Judge0Repository
 from app.repositories.question import QuestionRepository
 from app.repositories.testcase import TestCaseRepository
 from app.schema.execution import CodeRunResponse, DraftCodeRunRequest, TestCaseRunResult
+from app.service.execution import TestCaseView, get_execution_strategy
 from app.utils.enums import ExecutionStatus
 
 JUDGE0_TO_EXECUTION_STATUS: dict[Judge0StatusCode, ExecutionStatus] = {
@@ -86,6 +87,24 @@ class CodeExecutionService:
             "message": mask_message(result.message),
         }
 
+    @staticmethod
+    def _testcase_view(testcase) -> TestCaseView:
+        """Adapt a persisted TestCase row to the strategy's TestCaseView."""
+        return TestCaseView(
+            input=testcase.input,
+            output=testcase.output,
+            is_ordered=testcase.is_ordered,
+        )
+
+    @staticmethod
+    def _draft_testcase_view(testcase) -> TestCaseView:
+        """Adapt an ephemeral DraftTestCase to the strategy's TestCaseView."""
+        return TestCaseView(
+            input=testcase.input,
+            output=testcase.expected_output,
+            is_ordered=testcase.is_ordered,
+        )
+
     async def run_code(
         self,
         question_id: UUID,
@@ -130,10 +149,16 @@ class CodeExecutionService:
             source_code=source_code,
             language_id=language_id,
         )
+        strategy = get_execution_strategy(
+            question_type=question.question_type,
+            language_id=language_id,
+        )
 
         logger.debug(f"Submitting code to Judge0 for {len(testcases)} test cases")
         submit_tasks = [
-            self.judge0_repo.submit_code(request, tc.input, tc.output)
+            self.judge0_repo.submit_code(
+                *strategy.build_submission(request, self._testcase_view(tc))
+            )
             for tc in testcases
         ]
         submissions = await asyncio.gather(*submit_tasks)
@@ -207,13 +232,19 @@ class CodeExecutionService:
             )
 
         first_testcase = token_to_testcase[first_token]
+        first_testcase_view = self._testcase_view(first_testcase)
+        first_judge0_ok = first_result.status == Judge0StatusCode.ACCEPTED
         first_execution = Judge0ExecutionResultDTO(
             question_id=str(question_id),
             testcase_id=str(first_testcase.id),
             status=first_result.status,
-            passed=(first_result.status == Judge0StatusCode.ACCEPTED),
+            passed=strategy.passed(
+                judge0_accepted=first_judge0_ok,
+                stdout=first_result.stdout,
+                testcase=first_testcase_view,
+            ),
             stdout=first_result.stdout,
-            stderr=first_result.stderr,
+            stderr=strategy.redact(first_result.stderr, first_testcase_view),
             expected_output=first_testcase.output,
             time=first_result.time,
             memory=first_result.memory,
@@ -288,13 +319,21 @@ class CodeExecutionService:
                     )
 
                 testcase = token_to_testcase[token]
+                testcase_view = self._testcase_view(testcase)
+                testcase_judge0_ok = (
+                    submission_result.status == Judge0StatusCode.ACCEPTED
+                )
                 execution_result = Judge0ExecutionResultDTO(
                     question_id=str(question_id),
                     testcase_id=str(testcase.id),
                     status=submission_result.status,
-                    passed=(submission_result.status == Judge0StatusCode.ACCEPTED),
+                    passed=strategy.passed(
+                        judge0_accepted=testcase_judge0_ok,
+                        stdout=submission_result.stdout,
+                        testcase=testcase_view,
+                    ),
                     stdout=submission_result.stdout,
-                    stderr=submission_result.stderr,
+                    stderr=strategy.redact(submission_result.stderr, testcase_view),
                     expected_output=testcase.output,
                     time=submission_result.time,
                     memory=submission_result.memory,
@@ -308,7 +347,14 @@ class CodeExecutionService:
                 execution_result.status,
                 ExecutionStatus.RUNTIME_ERROR,
             )
-            if execution_result.status not in JUDGE0_TO_EXECUTION_STATUS:
+            if (
+                execution_result.status == Judge0StatusCode.ACCEPTED
+                and not execution_result.passed
+            ):
+                # Judge0 ran the submission without error but the strategy's
+                # own comparison rejected it (SQL result-set mismatch).
+                execution_status = ExecutionStatus.WRONG_ANSWER
+            elif execution_result.status not in JUDGE0_TO_EXECUTION_STATUS:
                 logger.warning(
                     f"Unmapped Judge0 status {execution_result.status.name}, "
                     f"defaulting to RUNTIME_ERROR"
@@ -370,12 +416,17 @@ class CodeExecutionService:
             source_code=source_code,
             language_id=request.language_id,
         )
+        strategy = get_execution_strategy(language_id=request.language_id)
 
         logger.debug(
             f"Submitting draft code to Judge0 for {len(request.test_cases)} test cases"
         )
         submit_tasks = [
-            self.judge0_repo.submit_code(judge0_request, tc.input, tc.expected_output)
+            self.judge0_repo.submit_code(
+                *strategy.build_submission(
+                    judge0_request, self._draft_testcase_view(tc)
+                )
+            )
             for tc in request.test_cases
         ]
         submissions = await asyncio.gather(*submit_tasks)
@@ -425,13 +476,19 @@ class CodeExecutionService:
 
         # Map first result
         first_testcase = token_to_testcase[first_token]
+        first_testcase_view = self._draft_testcase_view(first_testcase)
+        first_judge0_ok = first_result.status == Judge0StatusCode.ACCEPTED
         first_execution = Judge0ExecutionResultDTO(
             question_id="draft",
             testcase_id="draft_0",
             status=first_result.status,
-            passed=(first_result.status == Judge0StatusCode.ACCEPTED),
+            passed=strategy.passed(
+                judge0_accepted=first_judge0_ok,
+                stdout=first_result.stdout,
+                testcase=first_testcase_view,
+            ),
             stdout=first_result.stdout,
-            stderr=first_result.stderr,
+            stderr=strategy.redact(first_result.stderr, first_testcase_view),
             expected_output=first_testcase.expected_output,
             time=first_result.time,
             memory=first_result.memory,
@@ -481,15 +538,23 @@ class CodeExecutionService:
                     continue
 
                 testcase = token_to_testcase[token]
+                testcase_view = self._draft_testcase_view(testcase)
+                testcase_judge0_ok = (
+                    submission_result.status == Judge0StatusCode.ACCEPTED
+                )
 
                 all_execution_results.append(
                     Judge0ExecutionResultDTO(
                         question_id="draft",
                         testcase_id=f"draft_{i}",
                         status=submission_result.status,
-                        passed=(submission_result.status == Judge0StatusCode.ACCEPTED),
+                        passed=strategy.passed(
+                            judge0_accepted=testcase_judge0_ok,
+                            stdout=submission_result.stdout,
+                            testcase=testcase_view,
+                        ),
                         stdout=submission_result.stdout,
-                        stderr=submission_result.stderr,
+                        stderr=strategy.redact(submission_result.stderr, testcase_view),
                         expected_output=testcase.expected_output,
                         time=submission_result.time,
                         memory=submission_result.memory,
@@ -498,12 +563,15 @@ class CodeExecutionService:
 
         testcase_results: list[TestCaseRunResult] = []
         for i, res in enumerate(all_execution_results):
+            status = JUDGE0_TO_EXECUTION_STATUS.get(
+                res.status, ExecutionStatus.RUNTIME_ERROR
+            )
+            if res.status == Judge0StatusCode.ACCEPTED and not res.passed:
+                status = ExecutionStatus.WRONG_ANSWER
             testcase_results.append(
                 TestCaseRunResult(
                     testcase_id=f"draft_{i}",
-                    status=JUDGE0_TO_EXECUTION_STATUS.get(
-                        res.status, ExecutionStatus.RUNTIME_ERROR
-                    ),
+                    status=status,
                     passed=res.passed,
                     stdout=res.stdout,
                     stderr=res.stderr,

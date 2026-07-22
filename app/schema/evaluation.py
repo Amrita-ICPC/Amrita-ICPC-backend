@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.question import Submission
 from app.schema.question import QuestionTestCaseResponse
-from app.utils.enums import EvaluationScope, EvaluationStatus
+from app.utils.enums import EvaluationScope, EvaluationStatus, QuestionType
 
 
 class EvaluationTriggerRequest(BaseModel):
@@ -200,6 +200,7 @@ class EvaluationPreparationDetails(BaseModel):
     """Details prepared for executing a submission evaluation."""
 
     submission: Submission
+    question_type: QuestionType = QuestionType.STANDARD
     testcases: list[QuestionTestCaseResponse]
     final_source_code: str
     max_score: int

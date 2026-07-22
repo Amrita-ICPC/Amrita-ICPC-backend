@@ -422,6 +422,7 @@ class QuestionRepository:
                 is_hidden=testcase.is_hidden,
                 weight=testcase.weight,
                 order=testcase.order,
+                is_ordered=testcase.is_ordered,
                 created_by=created_by,
             )
             entity.question_id = question.id

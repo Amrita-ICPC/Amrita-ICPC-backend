@@ -153,6 +153,12 @@ class Config(BaseSettings):
     JUDGE0_API_TIMEOUT: Optional[int] = Field(
         default=30, description="Judge0 API timeout"
     )
+    JUDGE0_SQLITE_LANGUAGE_ID: int = Field(
+        default=82,
+        description="Judge0 language ID for SQL (SQLite). Verify against "
+        "GET /languages/all on the target Judge0 instance -- this ID has "
+        "shifted across Judge0 releases.",
+    )
 
     # Judge0 execution limits (global safety caps).
     # Per-problem limits (Question.time_limit_ms / memory_limit_mb) are clamped
