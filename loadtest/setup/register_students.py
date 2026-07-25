@@ -76,6 +76,16 @@ def register_one(host: str, contest_id: str, username: str) -> tuple[str, bool, 
         if response.status_code < 300 or response.status_code == 409:
             return username, True, ""
 
+        if response.status_code in (429, 502, 503, 504):
+            # Transient overload signals (rate limited / bad gateway / service
+            # unavailable / gateway timeout) -- exactly what a burst of
+            # concurrent registrations can trigger. Retry like a connection
+            # error instead of failing the student outright.
+            last_error = f"status {response.status_code}: {response.text[:200]}"
+            if attempt < MAX_ATTEMPTS:
+                time.sleep(RETRY_BACKOFF_SECONDS * attempt)
+            continue
+
         # Non-transient (auth, validation, server bug) - retrying won't help.
         return username, False, f"status {response.status_code}: {response.text[:200]}"
 
