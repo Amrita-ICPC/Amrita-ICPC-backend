@@ -1,5 +1,8 @@
 from uuid import UUID
 
+from app.core.cache.decorators import delete_cache_keys
+from app.exceptions.submission import InvalidSubmissionScoreError
+from app.repositories.contest import ContestRepository
 from app.repositories.submission import ContestSubmissionRepository
 from app.schema.submission import (
     SubmissionDetailLanguageSchema,
@@ -12,10 +15,15 @@ from app.schema.submission import (
 
 
 class SubmissionService:
-    """Service layer for submission read operations."""
+    """Service layer for submission reads and instructor/admin score overrides."""
 
-    def __init__(self, repository: ContestSubmissionRepository):
+    def __init__(
+        self,
+        repository: ContestSubmissionRepository,
+        contest_repository: ContestRepository,
+    ):
         self.repository = repository
+        self.contest_repository = contest_repository
 
     async def get_submission_detail(
         self, submission_id: UUID
@@ -75,3 +83,32 @@ class SubmissionService:
                 for row in rows
             ],
         )
+
+    async def update_submission_score(
+        self, submission_id: UUID, score: int
+    ) -> SubmissionDetailResponse:
+        """Manually override the score of a single submission.
+
+        Instructors/admins can use this to grade a submission that hasn't
+        been auto-evaluated yet, or to override the score of one that has.
+        Since a question can have multiple submissions per student, the
+        override targets exactly one submission by ID rather than a
+        question/student pair. The contest leaderboard is resynced through
+        the same live per-member recompute the auto-evaluation pipeline
+        uses, so the change is reflected immediately.
+        """
+        context = await self.repository.get_submission_score_context(submission_id)
+        if score > context.max_score:
+            raise InvalidSubmissionScoreError(score, context.max_score)
+
+        await self.repository.apply_submission_score(submission_id, score)
+
+        if context.contest_team_member_id is not None:
+            await self.contest_repository.recompute_member_score(
+                context.contest_id,
+                context.contest_team_id,
+                context.contest_team_member_id,
+            )
+            await delete_cache_keys(f"contest:{context.contest_id}:leaderboard*")
+
+        return await self.get_submission_detail(submission_id)

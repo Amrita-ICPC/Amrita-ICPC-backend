@@ -401,18 +401,6 @@ class ContestQuestionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class UpdateContestQuestionScoreRequest(BaseModel):
-    """Schema for updating the score (marks/points) of a contest question."""
-
-    score: int = Field(
-        ...,
-        gt=0,
-        description="Points/marks awarded for solving this question. Must be a positive integer.",
-    )
-
-    model_config = ConfigDict(from_attributes=True)
-
-
 class ReorderContestQuestionItem(BaseModel):
     """Schema for a single question reorder item."""
 

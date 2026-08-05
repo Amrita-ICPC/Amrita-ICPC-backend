@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import case, func, select
+from sqlalchemy import and_, case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions.submission import SubmissionNotFoundError
@@ -238,6 +238,51 @@ class ContestSubmissionRepository:
             .limit(limit)
         )
         return total, list(result.all())
+
+    async def get_submission_score_context(self, submission_id: uuid.UUID):
+        """Fetch the contest/question linkage needed to validate and cascade
+        a manual score override for a submission.
+
+        Returns the question's configured max score (so the override can be
+        bounds-checked) plus the contest team/member ids the submission
+        belongs to (so the leaderboard can be resynced afterwards).
+        """
+        result = await self.db.execute(
+            select(
+                Submission.id.label("submission_id"),
+                ContestSubmission.contest_id,
+                ContestSubmission.contest_team_id,
+                ContestSubmission.contest_team_member_id,
+                ContestQuestion.score.label("max_score"),
+            )
+            .select_from(Submission)
+            .join(ContestSubmission, ContestSubmission.submission_id == Submission.id)
+            .join(
+                ContestQuestion,
+                and_(
+                    ContestQuestion.contest_id == ContestSubmission.contest_id,
+                    ContestQuestion.question_id == Submission.question_id,
+                ),
+            )
+            .where(Submission.id == submission_id)
+        )
+        row = result.one_or_none()
+        if row is None:
+            raise SubmissionNotFoundError(submission_id)
+        return row
+
+    async def apply_submission_score(
+        self, submission_id: uuid.UUID, score: int
+    ) -> None:
+        """Persist a manually overridden score for a submission.
+
+        Works regardless of the submission's ``is_evaluated`` state, so staff
+        can grade ahead of, or override, the automated verdict.
+        """
+        await self.db.execute(
+            update(Submission).where(Submission.id == submission_id).values(score=score)
+        )
+        await self.db.flush()
 
     def _build_submission_status_subquery(self):
         """Build the subquery that computes each submission's verdict from its testcases."""

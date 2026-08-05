@@ -5,12 +5,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import instructor_manager_admin_procedure
 from app.core.clients.database import get_db
+from app.core.logger import logger
 from app.core.response import create_api_response
+from app.repositories.contest import ContestRepository
 from app.repositories.submission import ContestSubmissionRepository
 from app.schema.base import APIResponse
 from app.schema.submission import (
     SubmissionDetailResponse,
     SubmissionTestCaseListResponse,
+    UpdateSubmissionScoreRequest,
 )
 from app.service.submission_service import SubmissionService
 from app.utils.pagination import get_pagination
@@ -19,8 +22,11 @@ router = APIRouter()
 
 
 def get_submission_service(db: AsyncSession = Depends(get_db)) -> SubmissionService:
-    """Dependency injector for submission reads."""
-    return SubmissionService(repository=ContestSubmissionRepository(db))
+    """Dependency injector for submission reads and score overrides."""
+    return SubmissionService(
+        repository=ContestSubmissionRepository(db),
+        contest_repository=ContestRepository(db),
+    )
 
 
 @router.get(
@@ -79,4 +85,32 @@ async def get_submission_testcases(
         message="Submission testcases fetched successfully",
         status_code=status.HTTP_200_OK,
         pagination=pagination,
+    )
+
+
+@router.patch(
+    "/{submission_id}/score",
+    response_model=APIResponse[SubmissionDetailResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Override a submission's score",
+    description="Staff-only. Lets an instructor/manager/admin manually set or "
+    "override the mark awarded for a specific submission, whether it has "
+    "been auto-evaluated yet or not. A question can have multiple "
+    "submissions per student; this targets exactly one submission by ID.",
+    dependencies=[instructor_manager_admin_procedure],
+)
+async def update_submission_score(
+    request: Request,
+    submission_id: UUID,
+    payload: UpdateSubmissionScoreRequest,
+    service: SubmissionService = Depends(get_submission_service),
+) -> APIResponse[SubmissionDetailResponse]:
+    """Manually override the score of a single submission."""
+    submission = await service.update_submission_score(submission_id, payload.score)
+    logger.info(f"Submission {submission_id} score manually updated (actor=REDACTED)")
+    return create_api_response(
+        request,
+        data=submission,
+        message="Submission score updated successfully",
+        status_code=status.HTTP_200_OK,
     )

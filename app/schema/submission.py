@@ -194,6 +194,19 @@ class SubmissionDetailResponse(BaseModel):
     source_code: str
 
 
+class UpdateSubmissionScoreRequest(BaseModel):
+    """Schema for an instructor/admin manually overriding a submission's score."""
+
+    score: int = Field(
+        ...,
+        ge=0,
+        description=(
+            "New score to award for this submission. Must be between 0 and "
+            "the question's configured max score for the contest."
+        ),
+    )
+
+
 class SubmissionTestCaseResultSchema(BaseModel):
     """Single testcase result for a submission."""
 
