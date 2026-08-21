@@ -11,6 +11,7 @@ from redis.asyncio import Redis
 from app.core.cache import keys as cache_keys
 from app.core.cache.decorators import cache_get
 from app.core.clients.celery import celery_app
+from app.core.clients.database import SessionLocal
 from app.core.clients.judge0 import Judge0StatusCode
 from app.core.logger import logger
 from app.exceptions.auth import PermissionDeniedError
@@ -514,42 +515,65 @@ class StudentContestQuestionService:
     ) -> StudentCodeRunResponse:
         """
         Execute student code against all non-hidden test cases of the question.
+        Uses a temporary DB session to fetch details and closes it before Judge0 execution/polling.
         """
         import asyncio
 
-        # Validate student eligibility, contest runtime status, session progress, and remaining time.
-        await self._validate_session_and_get_contest(contest_id, user_id)
-
-        # Retrieve contest question details (includes templates and language mappings)
-        question = await self.repository.get_contest_question_details(
-            contest_id, question_id
-        )
-        if not question:
-            raise QuestionNotInContestError(str(question_id), str(contest_id))
-
-        # Retrieve public (non-hidden) test cases
-        non_hidden = await self.testcase_repository.get_non_hidden_by_question(
-            question_id
-        )
-        if not non_hidden:
-            raise QuestionNotFoundError(
-                f"No non-hidden test case found for question {question_id}"
+        async with SessionLocal() as db:
+            temp_service = StudentContestQuestionService(
+                repository=StudentContestQuestionRepository(db),
+                contest_repository=ContestRepository(db),
+                contest_team_repository=ContestTeamRepository(db),
+                contest_team_progress_repository=ContestTeamProgressRepository(db),
+                testcase_repository=TestCaseRepository(db),
+                workspace_service=WorkspaceService(self.redis),
+                judge0_repository=Judge0Repository(),
+                question_repository=QuestionRepository(db),
+                redis=self.redis,
             )
 
-        # Retrieve driver code from template if available
-        driver_code = ""
-        for template in question.templates:
-            if template.language_id == language_id:
-                driver_code = template.driver_code or ""
-                break
+            # Validate student eligibility, contest runtime status, session progress, and remaining time.
+            await temp_service._validate_session_and_get_contest(contest_id, user_id)
 
+            # Retrieve contest question details (includes templates and language mappings)
+            question = await temp_service.repository.get_contest_question_details(
+                contest_id, question_id
+            )
+            if not question:
+                raise QuestionNotInContestError(str(question_id), str(contest_id))
+
+            # Retrieve public (non-hidden) test cases
+            non_hidden = (
+                await temp_service.testcase_repository.get_non_hidden_by_question(
+                    question_id
+                )
+            )
+            if not non_hidden:
+                raise QuestionNotFoundError(
+                    f"No non-hidden test case found for question {question_id}"
+                )
+
+            question_type = question.question_type
+
+            # Retrieve driver code from template if available
+            driver_code = ""
+            for template in question.templates:
+                if template.language_id == language_id:
+                    driver_code = template.driver_code or ""
+                    break
+
+            testcases_data = [
+                (tc.id, tc.input, tc.output, tc.is_ordered) for tc in non_hidden
+            ]
+
+        # DB connection is now closed before calling Judge0!
         full_source_code = code
         if driver_code:
             full_source_code = f"{code}\n\n{driver_code}"
 
         logger.info(
             f"Running code for user {user_id} on question {question_id} in contest {contest_id} "
-            f"against {len(non_hidden)} test cases"
+            f"against {len(testcases_data)} test cases"
         )
 
         # Build Judge0 request DTO with full source code (solution + driver)
@@ -559,37 +583,43 @@ class StudentContestQuestionService:
             language_id=language_id,
         )
         strategy = get_execution_strategy(
-            question_type=question.question_type,
+            question_type=question_type,
             language_id=language_id,
+        )
+
+        judge0_repo = (
+            self.judge0_repo
+            if hasattr(self, "judge0_repo") and self.judge0_repo
+            else Judge0Repository()
         )
 
         # Submit code to Judge0 for all testcases in parallel
         submit_tasks = [
-            self.judge0_repo.submit_code(
+            judge0_repo.submit_code(
                 *strategy.build_submission(
                     judge0_request,
                     TestCaseView(
-                        input=tc.input, output=tc.output, is_ordered=tc.is_ordered
+                        input=tc_input, output=tc_output, is_ordered=tc_is_ordered
                     ),
                 )
             )
-            for tc in non_hidden
+            for _, tc_input, tc_output, tc_is_ordered in testcases_data
         ]
         submissions = await asyncio.gather(*submit_tasks)
 
         # Wait for all submissions in parallel
-        wait_tasks = [
-            self.judge0_repo.wait_for_completion(sub.token) for sub in submissions
-        ]
+        wait_tasks = [judge0_repo.wait_for_completion(sub.token) for sub in submissions]
         judge0_results = await asyncio.gather(*wait_tasks)
 
         # Map results to Schema models
         results = []
-        for testcase, judge0_result in zip(non_hidden, judge0_results):
+        for (tc_id, tc_input, tc_output, tc_is_ordered), judge0_result in zip(
+            testcases_data, judge0_results
+        ):
             testcase_view = TestCaseView(
-                input=testcase.input,
-                output=testcase.output,
-                is_ordered=testcase.is_ordered,
+                input=tc_input,
+                output=tc_output,
+                is_ordered=tc_is_ordered,
             )
             judge0_ok = judge0_result.status_id == Judge0StatusCode.ACCEPTED.value
             passed = strategy.passed(
@@ -608,7 +638,7 @@ class StudentContestQuestionService:
 
             results.append(
                 StudentTestCaseRunResultResponse(
-                    testcase_id=testcase.id,
+                    testcase_id=tc_id,
                     passed=passed,
                     status_description=status_description,
                     time=judge0_result.time or 0.0,
@@ -618,7 +648,7 @@ class StudentContestQuestionService:
                     compile_output=strategy.redact(
                         judge0_result.compile_output, testcase_view
                     ),
-                    expected_output=testcase.output,
+                    expected_output=tc_output,
                     input=strategy.visible_input(testcase_view),
                 )
             )
@@ -789,18 +819,31 @@ class StudentContestQuestionService:
 
         return [StudentSubmissionResponse.model_validate(sub) for sub in submissions]
 
+    @staticmethod
     async def subscribe_submission_events(
-        self, contest_id: UUID, user_id: UUID
+        contest_id: UUID, user_id: UUID, redis_client: Redis
     ) -> AsyncGenerator[ServerSentEvent, None]:
         """
         Subscribe to submission progress/status updates via Redis pubsub and yield them.
         """
-        # Validate student eligibility, contest runtime status, session progress, and remaining time.
-        session_data = await self._validate_session_and_get_contest(
-            contest_id=contest_id, user_id=user_id
-        )
+        async with SessionLocal() as db:
+            service = StudentContestQuestionService(
+                repository=StudentContestQuestionRepository(db),
+                contest_repository=ContestRepository(db),
+                contest_team_repository=ContestTeamRepository(db),
+                contest_team_progress_repository=ContestTeamProgressRepository(db),
+                testcase_repository=TestCaseRepository(db),
+                workspace_service=WorkspaceService(redis_client),
+                judge0_repository=Judge0Repository(),
+                question_repository=QuestionRepository(db),
+                redis=redis_client,
+            )
+            # Validate student eligibility, contest runtime status, session progress, and remaining time.
+            session_data = await service._validate_session_and_get_contest(
+                contest_id=contest_id, user_id=user_id
+            )
 
-        pubsub = self.redis.pubsub()
+        pubsub = redis_client.pubsub()
         channel = get_contest_channel_key(
             contest_id,
             session_data.team_id,
@@ -813,6 +856,16 @@ class StudentContestQuestionService:
 
         try:
             while True:
+                _, remaining_seconds = calculate_effective_times(
+                    base_end_time=session_data.base_end_time,
+                    extra_time_seconds=session_data.extra_time_seconds,
+                )
+                if remaining_seconds <= 0:
+                    logger.info(
+                        f"Contest session ended for user {user_id} in contest {contest_id}, closing stream."
+                    )
+                    break
+
                 message = await pubsub.get_message(
                     ignore_subscribe_messages=True, timeout=15.0
                 )

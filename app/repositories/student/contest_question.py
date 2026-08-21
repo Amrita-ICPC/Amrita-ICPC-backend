@@ -112,19 +112,14 @@ class StudentContestQuestionRepository:
         from app.models.question import QuestionLanguage, QuestionTemplate
         from app.models.tag import QuestionTag
 
-        # Verify the question is in the contest first
-        in_contest_stmt = select(ContestQuestion).where(
-            ContestQuestion.contest_id == contest_id,
-            ContestQuestion.question_id == question_id,
-        )
-        in_contest_res = await self.db.execute(in_contest_stmt)
-        if not in_contest_res.scalars().first():
-            return None
-
-        # Fetch the question with relationships
+        # Fetch the question in the contest with eagerly loaded relationships
         stmt = (
             select(Question)
-            .where(Question.id == question_id)
+            .join(ContestQuestion, ContestQuestion.question_id == Question.id)
+            .where(
+                ContestQuestion.contest_id == contest_id,
+                Question.id == question_id,
+            )
             .options(
                 selectinload(Question.languages).joinedload(QuestionLanguage.language),
                 selectinload(Question.tags).joinedload(QuestionTag.tag),

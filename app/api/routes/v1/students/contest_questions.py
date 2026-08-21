@@ -345,13 +345,15 @@ async def get_question_submissions(
 async def get_submission_events_stream(
     contest_id: UUID,
     user_id: UUID = Depends(get_current_user_id),
-    service: StudentContestQuestionService = Depends(get_student_contest_service),
+    redis_client: Redis = Depends(get_redis),
 ):
     """
     Establish a Server-Sent Events (SSE) stream for submission progress updates.
     """
     try:
-        async for event in service.subscribe_submission_events(contest_id, user_id):
+        async for event in StudentContestQuestionService.subscribe_submission_events(
+            contest_id=contest_id, user_id=user_id, redis_client=redis_client
+        ):
             yield event
     except asyncio.CancelledError:
         logger.info("SSE connection cancelled by client")
