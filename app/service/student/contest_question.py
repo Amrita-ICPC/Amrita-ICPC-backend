@@ -849,12 +849,12 @@ class StudentContestQuestionService:
             session_data.team_id,
             session_data.contest_team_member_id,
         )
-        await pubsub.subscribe(channel)
-        logger.info(f"Subscribed to {channel}")
-
-        yield ServerSentEvent(comment="stream of contest lifecycle updates")
 
         try:
+            await pubsub.subscribe(channel)
+            logger.info(f"Subscribed to {channel}")
+            yield ServerSentEvent(comment="stream of contest lifecycle updates")
+
             while True:
                 _, remaining_seconds = calculate_effective_times(
                     base_end_time=session_data.base_end_time,

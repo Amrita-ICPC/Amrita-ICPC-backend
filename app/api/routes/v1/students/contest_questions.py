@@ -1,8 +1,9 @@
 import asyncio
+from typing import AsyncGenerator
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, status
-from fastapi.sse import EventSourceResponse
+from fastapi.sse import EventSourceResponse, ServerSentEvent
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -346,7 +347,7 @@ async def get_submission_events_stream(
     contest_id: UUID,
     user_id: UUID = Depends(get_current_user_id),
     redis_client: Redis = Depends(get_redis),
-):
+) -> AsyncGenerator[ServerSentEvent, None]:
     """
     Establish a Server-Sent Events (SSE) stream for submission progress updates.
     """
