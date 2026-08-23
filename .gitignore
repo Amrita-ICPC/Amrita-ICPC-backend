@@ -33,5 +33,4 @@ celerybeat-schedule-wal
 loadtest/logs/*
 !loadtest/logs/.gitkeep
 loadtest/.tunnel.env
-
 graphify-out/
