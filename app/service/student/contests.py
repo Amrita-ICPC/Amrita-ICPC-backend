@@ -107,7 +107,13 @@ class StudentContestService:
         key_builder=lambda self, user_id, request, search, pagination: (
             f"student:contests:user:{user_id}:reg:{request.registered}:results_published:{request.results_published}:status:{','.join(request.status) if request.status else 'any'}:search:{search or 'none'}:skip:{pagination.skip}:limit:{pagination.limit}:min_team:{request.min_team_size}:max_team:{request.max_team_size}"
         ),
-        ttl=300,
+        # run_status is computed from start_time/end_time at request time and
+        # baked into the cached payload, but nothing busts this cache when a
+        # contest crosses a time boundary (upcoming -> live -> ended) - only
+        # explicit mutations do (see student_contests_bust()). Keep the TTL
+        # short so the dashboard reflects a contest going live/ending within
+        # a bounded window instead of sitting stale for up to 5 minutes.
+        ttl=30,
     )
     async def get_all_contests(
         self,
@@ -154,7 +160,10 @@ class StudentContestService:
         key_builder=lambda self, contest_id, user_id: (
             f"student:contest:user:{user_id}:contest:{contest_id}"
         ),
-        ttl=300,
+        # Same time-boundary staleness issue as get_all_contests above:
+        # run_status here is also computed from start_time/end_time and
+        # nothing busts this cache when the contest's window changes.
+        ttl=30,
     )
     async def get_contest_by_id(
         self, contest_id: UUID, user_id: UUID
