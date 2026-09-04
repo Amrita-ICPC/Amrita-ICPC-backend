@@ -382,6 +382,22 @@ class ContestTeam(Base):
                 "approval_status IN ('WAITING', 'APPROVED') OR team_status IN ('DRAFT', 'CONFIRMED')"
             ),
         ),
+        Index(
+            "ix_contest_team_contest_id_team_status",
+            "contest_id",
+            "team_status",
+        ),
+        Index(
+            "ix_contest_team_contest_id_approval_status",
+            "contest_id",
+            "approval_status",
+        ),
+        Index(
+            "ix_contest_team_contest_id_team_status_approval_status",
+            "contest_id",
+            "team_status",
+            "approval_status",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
