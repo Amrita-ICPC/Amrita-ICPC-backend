@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Enum, ForeignKey
+from sqlalchemy import Enum, ForeignKey, Index
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -98,6 +98,17 @@ class ContestAudience(Base):
     """
 
     __tablename__ = "contest_audience"
+    __table_args__ = (
+        # The primary key is (contest_id, audience_id), so its btree only
+        # serves lookups led by contest_id. This mirror index covers the
+        # reverse direction -- resolving which contests a given audience is
+        # attached to -- without falling back to a scan.
+        Index(
+            "ix_contest_audience_audience_id_contest_id",
+            "audience_id",
+            "contest_id",
+        ),
+    )
 
     contest_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
