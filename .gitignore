@@ -34,3 +34,4 @@ loadtest/logs/*
 !loadtest/logs/.gitkeep
 loadtest/.tunnel.env
 graphify-out/
+docs/
