@@ -65,6 +65,17 @@ class UserAudience(Base):
     """
 
     __tablename__ = "user_audience"
+    __table_args__ = (
+        # The primary key is (user_id, audience_id), so its btree only serves
+        # lookups led by user_id. This mirror index covers the reverse
+        # direction -- resolving which users belong to a given audience --
+        # without falling back to a scan.
+        Index(
+            "ix_user_audience_audience_id_user_id",
+            "audience_id",
+            "user_id",
+        ),
+    )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
