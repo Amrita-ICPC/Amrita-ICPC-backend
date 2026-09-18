@@ -129,14 +129,15 @@ class ContestSessionCompletionStatus(str, enum.Enum):
     Attributes:
         NOT_STARTED: The session has not been started yet.
         IN_PROGRESS: The session is active and still has time remaining.
-        FINISHED: The student/team explicitly ended the session (via /finish)
-            before time ran out.
-        MISSED: The session's timer expired without the student/team
-            explicitly finishing it.
+        SUBMITTED: The student/team started a session and the session or contest
+            time has ended.
+        FINISHED: Backward compatibility / alias for session finished.
+        MISSED: The contest ended without the student/team starting a session.
     """
 
     NOT_STARTED = "NOT_STARTED"
     IN_PROGRESS = "IN_PROGRESS"
+    SUBMITTED = "SUBMITTED"
     FINISHED = "FINISHED"
     MISSED = "MISSED"
 

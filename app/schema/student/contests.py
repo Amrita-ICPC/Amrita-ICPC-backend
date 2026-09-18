@@ -202,8 +202,7 @@ class StudentContestSessionStatus(BaseModel):
         ...,
         description=(
             "Completion state of the session: NOT_STARTED, IN_PROGRESS, "
-            "FINISHED (explicitly submitted via /finish), or MISSED "
-            "(timer expired without finishing)"
+            "SUBMITTED (session ended), or MISSED (contest ended without starting)"
         ),
     )
 

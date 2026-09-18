@@ -1,6 +1,6 @@
 import asyncio
 from datetime import datetime, timezone
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 from uuid import UUID
 
 from fastapi import status
@@ -48,6 +48,13 @@ from app.schema.student.contests import (
     StudentContestRegistrationRequest,
     StudentContestStatusResponse,
 )
+from app.service.student.rules import (
+    RegistrationStatusHandler,
+    StartReadinessContext,
+    StartReadinessHandler,
+    build_registration_status_chain,
+    build_start_readiness_chain,
+)
 from app.utils.contest import (
     calculate_base_end_time,
     calculate_effective_times,
@@ -56,10 +63,8 @@ from app.utils.contest import (
 from app.utils.enums import (
     ContestRunStatus,
     ContestSessionCompletionStatus,
-    ContestStatus,
     ContestTeamMemberStatus,
     ContestTeamParticipationType,
-    RegistrationState,
     TeamApprovalStatus,
     TeamMemberRole,
     TeamStatus,
@@ -85,6 +90,8 @@ class StudentContestService:
         contest_student_guard: ContestStudentGuard,
         contest_team_progress_repository: ContestTeamProgressRepository,
         redis: Redis,
+        registration_status_handler: Optional[RegistrationStatusHandler] = None,
+        start_readiness_handler: Optional[StartReadinessHandler] = None,
     ) -> None:
         """Initialize the StudentContestService with required dependencies.
 
@@ -94,6 +101,8 @@ class StudentContestService:
             team_repository: Repository for team operations.
             contest_student_guard: Guard for student eligibility checks.
             redis: Redis client instance.
+            registration_status_handler: Handler for evaluating team registration status.
+            start_readiness_handler: Handler for evaluating contest session start readiness.
         """
         self.repository = repository
         self.contest_student_guard = contest_student_guard
@@ -102,6 +111,12 @@ class StudentContestService:
         self.contest_team_repository = contest_team_reposiotry
         self.contest_team_progress_repository = contest_team_progress_repository
         self.redis = redis
+        self.registration_status_handler = (
+            registration_status_handler or build_registration_status_chain()
+        )
+        self.start_readiness_handler = (
+            start_readiness_handler or build_start_readiness_chain()
+        )
 
     @cache_get(
         key_builder=lambda self, user_id, request, search, pagination: (
@@ -250,17 +265,9 @@ class StudentContestService:
         # contest_team_members = contest_team.contest_team_member
 
         # Calculate status and readiness
-        is_draft = contest_team.team_status == TeamStatus.DRAFT
         registered = True
         is_approved = contest_team.approval_status == TeamApprovalStatus.APPROVED
-        if is_draft:
-            registration_status = RegistrationState.NOT_REGISTERED
-        elif contest_team.approval_status == TeamApprovalStatus.WAITING:
-            registration_status = RegistrationState.PENDING_APPROVAL
-        elif contest_team.approval_status == TeamApprovalStatus.APPROVED:
-            registration_status = RegistrationState.APPROVED
-        else:
-            registration_status = RegistrationState.NOT_REGISTERED
+        registration_status = self.registration_status_handler.check(contest_team)
 
         # Get contest runtime status
         run_status = compute_run_status(contest.start_time, contest.end_time)
@@ -287,7 +294,6 @@ class StudentContestService:
         )
 
         # Determine readiness by evaluating start/end time, runtime status, and leader checks
-        datetime.now(timezone.utc)
         is_leader = contest_team.leader_id == user_id
 
         session_ended = False
@@ -295,7 +301,10 @@ class StudentContestService:
         if already_started and active_progress:
             if active_progress.ended_at is not None:
                 session_ended = True
-                completion_status = ContestSessionCompletionStatus.FINISHED
+                completion_status = ContestSessionCompletionStatus.SUBMITTED
+            elif run_status == ContestRunStatus.ENDED:
+                session_ended = True
+                completion_status = ContestSessionCompletionStatus.SUBMITTED
             else:
                 base_end_time = active_progress.end_time
                 if base_end_time is not None:
@@ -305,39 +314,28 @@ class StudentContestService:
                     )
                     if remaining_seconds <= 0:
                         session_ended = True
-                        completion_status = ContestSessionCompletionStatus.MISSED
+                        completion_status = ContestSessionCompletionStatus.SUBMITTED
 
             if not session_ended:
                 completion_status = ContestSessionCompletionStatus.IN_PROGRESS
-
-        if is_draft:
-            can_start = False
-            reason = "Team is in draft status"
-        elif not is_approved:
-            can_start = False
-            reason = "Team is not approved by contest organizers"
-        elif contest.status == ContestStatus.CANCELLED:
-            can_start = False
-            reason = "Contest has been cancelled"
-        elif run_status == ContestRunStatus.UPCOMING:
-            can_start = False
-            reason = "Contest has not started yet"
-        elif run_status == ContestRunStatus.ENDED:
-            can_start = False
-            reason = "Contest has already ended"
-        elif session_ended:
-            can_start = False
-            reason = "Contest session has already ended"
-        elif (
-            not already_started
-            and contest.participation_type == ContestTeamParticipationType.LEADER_ONLY
-            and not is_leader
-        ):
-            can_start = False
-            reason = "Only the team leader can start the contest session"
         else:
-            can_start = True
-            reason = None
+            if run_status == ContestRunStatus.ENDED:
+                completion_status = ContestSessionCompletionStatus.MISSED
+            else:
+                completion_status = ContestSessionCompletionStatus.NOT_STARTED
+
+        # Evaluate start readiness via Chain of Responsibility
+        readiness_context = StartReadinessContext(
+            contest=contest,
+            contest_team=contest_team,
+            run_status=run_status,
+            session_ended=session_ended,
+            already_started=already_started,
+            is_leader=is_leader,
+        )
+        readiness_result = self.start_readiness_handler.check(readiness_context)
+        can_start = readiness_result.can_start
+        reason = readiness_result.reason
 
         # Calculate member details using pure mapper
         members = [
