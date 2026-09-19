@@ -458,6 +458,13 @@ class ContestTeamMember(Base):
             unique=True,
             postgresql_where=text("status IN ('ACCEPTED', 'INVITED')"),
         ),
+        Index(
+            "uq_contest_active_student",
+            "contest_id",
+            "user_id",
+            unique=True,
+            postgresql_where=text("status IN ('ACCEPTED')"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
