@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
+from sqlalchemy.exc import IntegrityError
+
 from app.core.cache import keys as cache_keys
 from app.core.cache.decorators import cache_delete
 from app.core.guards.contest_student import ContestStudentGuard
@@ -182,22 +184,28 @@ class ContestTeamService:
                 contest_id=contest_id,
             )
 
-        # Map and create ContestTeam
-        contest_team = to_contest_team(
-            contest_id=contest_id,
-            team=team,
-            contest=contest,
-        )
-        contest_team = await self.repository.create_contest_team(contest_team)
+        try:
+            # Map and create ContestTeam
+            contest_team = to_contest_team(
+                contest_id=contest_id,
+                team=team,
+                contest=contest,
+            )
+            contest_team = await self.repository.create_contest_team(contest_team)
 
-        # Map and create ContestTeamMembers
-        contest_team_members = to_contest_team_members(
-            contest_id=contest_id,
-            contest_team_id=contest_team.id,
-            member_ids=contest_team_import.member_ids,
-            user_id=user_id,
-        )
-        await self.repository.create_contest_team_members(contest_team_members)
+            # Map and create ContestTeamMembers
+            contest_team_members = to_contest_team_members(
+                contest_id=contest_id,
+                contest_team_id=contest_team.id,
+                member_ids=contest_team_import.member_ids,
+                user_id=user_id,
+            )
+            await self.repository.create_contest_team_members(contest_team_members)
+        except IntegrityError as e:
+            raise StudentAlreadyInContestError(
+                user_id=str(contest_team_import.member_ids),
+                contest_id=str(contest_id),
+            ) from e
 
         return None
 
@@ -282,18 +290,24 @@ class ContestTeamService:
             approval_status=approval_status,
             team_id=None,
         )
-        contest_team = await self.repository.create_contest_team(contest_team)
+        try:
+            contest_team = await self.repository.create_contest_team(contest_team)
 
-        # Add the leader to the ContestTeamMember table
-        # When creating a team, the leader is automatically accepted
-        contest_team_member = ContestTeamMember(
-            contest_id=contest_id,
-            contest_team_id=contest_team.id,
-            user_id=user_id,
-            status=ContestTeamMemberStatus.ACCEPTED,
-            confirmed_at=datetime.now(timezone.utc),
-        )
-        await self.repository.create_contest_team_members([contest_team_member])
+            # Add the leader to the ContestTeamMember table
+            # When creating a team, the leader is automatically accepted
+            contest_team_member = ContestTeamMember(
+                contest_id=contest_id,
+                contest_team_id=contest_team.id,
+                user_id=user_id,
+                status=ContestTeamMemberStatus.ACCEPTED,
+                confirmed_at=datetime.now(timezone.utc),
+            )
+            await self.repository.create_contest_team_members([contest_team_member])
+        except IntegrityError as e:
+            raise StudentAlreadyInContestError(
+                user_id=str(user_id),
+                contest_id=str(contest_id),
+            ) from e
 
         return None
 
